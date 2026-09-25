@@ -85,6 +85,20 @@ des champs de preuve à compléter avant toute soumission.
   pas le blocage CRAN de `n4m` ni l'absence de check Windows/macOS du même
   tarball. Le présent ajout documentaire est postérieur à ce tarball ; une
   archive de soumission finale devra être reconstruite et recontrôlée.
+- `nirs4all` R 0.4.0.9022 ([PR #19](https://github.com/GBeurier/nirs4all-r/pull/19))
+  exécute aussi les recettes JSON/YAML `n4m.SparsePLSDA` avec cibles facteurs,
+  chaînes ou codes numériques, et sélectionne une variante par accuracy.
+  Les classes numériques restent numériques dans les résultats. Sont testés
+  la sélection Kennard–Stone, un jeu catégoriel de `nirs4all-formats`, la
+  correspondance des prédictions avec un processus Python n4m distinct pour
+  SNV→sparse PLS-DA et le parcours DAG strict. Le tarball issu de `f199749`,
+  SHA-256
+  `10a94ad79899e28a4e8ae1cfeaee10441fc21b68f717d91c34c57ea8c9f6be5a`,
+  a passé `R CMD check --as-cran --no-manual` Linux/R 4.6.0 avec tous les
+  `Suggests` : 0 erreur, 1 avertissement CRAN-incoming. Cet alias n'est pas
+  encore qualifié dans les lecteurs Python/Core/WASM, et son état entraîné
+  reste un RDS. Le présent ajout documentaire est postérieur au tarball ;
+  une archive finale devra être rebâtie et contrôlée.
 - Les résultats de Windows/macOS et la portabilité Archive V2/V3 Python↔R du
   pipeline entraîné complet restent à qualifier pour **ce tarball 0.4.0.9021**.
   R-universe publie déjà `nirs4all` 0.4.0.9018 depuis `nirs4all-r` : son
