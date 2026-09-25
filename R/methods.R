@@ -92,13 +92,14 @@ nirs4all_sparse_pls_da <- function(n_components = 2L,
       !is.finite(sparsity_lambda) || sparsity_lambda < 0)
     stop("sparsity_lambda must be a finite non-negative number", call. = FALSE)
   scores <- function(state, X) {
-    if (!is.list(state) || !is.matrix(state$coefficients) ||
-        ncol(X) != nrow(state$coefficients) ||
-        length(state$x_mean) != ncol(X) ||
-        length(state$y_mean) != ncol(state$coefficients))
+    if (!is.list(state) || typeof(state$native_model) != "externalptr" ||
+        !is.character(state$classes) || length(state$classes) < 2L)
       stop("invalid sparse PLS-DA model state", call. = FALSE)
-    out <- sweep(X, 2L, state$x_mean, "-") %*% state$coefficients
-    sweep(out, 2L, state$y_mean, "+")
+    out <- n4m::n4m_predict(state$native_model, X)
+    if (!is.matrix(out) || !identical(dim(out), c(nrow(X), length(state$classes))) ||
+        any(!is.finite(out)))
+      stop("n4m returned invalid sparse PLS-DA scores", call. = FALSE)
+    out
   }
   controller <- nirs4all_controller(
     fit = function(X, y) {
@@ -118,8 +119,11 @@ nirs4all_sparse_pls_da <- function(n_components = 2L,
           any(!is.finite(coefficients)) || any(!is.finite(x_mean)) ||
           any(!is.finite(y_mean)))
         stop("n4m returned an invalid sparse PLS-DA model", call. = FALSE)
+      intercept <- as.numeric(y_mean - drop(x_mean %*% coefficients))
+      native_model <- n4m::n4m_model_import_linear_predictor(
+        coefficients, intercept, nrow(X))
       list(coefficients = coefficients, x_mean = x_mean, y_mean = y_mean,
-           classes = classes)
+           native_model = native_model, classes = classes)
     },
     predict = function(state, X)
       factor(state$classes[max.col(scores(state, X), ties.method = "first")],
@@ -133,6 +137,7 @@ nirs4all_sparse_pls_da <- function(n_components = 2L,
       probabilities
     },
     task = "classification", name = "n4m:sparse_pls_da")
+  controller$format <- "n4mm_sparse_pls_da"
   controller$spec <- list(learner = "sparse_pls_da",
                           n_components = as.integer(n_components),
                           sparsity_lambda = sparsity_lambda)
