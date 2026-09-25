@@ -22,6 +22,26 @@ lm_pipeline <- nirs4all_pipeline(learner = nirs4all_lm())
 lm_fit <- nirs4all_fit(lm_pipeline, X[, c(2L, 7L), drop = FALSE], y)
 stopifnot(max(abs(nirs4all_predict(lm_fit, X[, c(2L, 7L), drop = FALSE]) - y)) < 1e-10)
 
+for (method in c("ridge", "ridge_pls", "robust_pls", "cppls",
+                 "sparse_simpls", "ecr", "continuum_regression", "mir_pls")) {
+  params <- if (identical(method, "ridge")) list(ridge_lambda = 0.5) else list()
+  learner <- nirs4all_n4m_method(method, n_components = 2L, params = params)
+  method_fit <- nirs4all_fit(nirs4all_pipeline(learner = learner), X, y)
+  reference <- n4m::n4m_method(method, X, y, 2L, params = params)
+  stopifnot(max(abs(predict(method_fit, X) -
+                    as.numeric(reference$predictions))) < 1e-10)
+  method_path <- tempfile(fileext = ".rds")
+  nirs4all_save(method_fit, method_path)
+  stopifnot(isTRUE(all.equal(predict(nirs4all_load(method_path), X),
+                             predict(method_fit, X), tolerance = 1e-12)))
+  unlink(method_path)
+}
+bad <- tryCatch(nirs4all_n4m_method("kernel_pls"), error = identity)
+stopifnot(inherits(bad, "error"), grepl("unsupported", conditionMessage(bad)))
+bad <- tryCatch(nirs4all_n4m_method("ridge", params = list(lamda = 1)),
+                error = identity)
+stopifnot(inherits(bad, "error"), grepl("params", conditionMessage(bad)))
+
 bad <- tryCatch(nirs4all_predict(fitted, X[, -1L, drop = FALSE]), error = identity)
 stopifnot(inherits(bad, "error"), grepl("expected", conditionMessage(bad)))
 named_X <- X

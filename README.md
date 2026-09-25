@@ -48,7 +48,11 @@ The adapter reads a trusted RDS data sidecar; do not run it on untrusted files.
 Set `NIRS4ALL_REQUIRE_DAG_PARITY=1` and `NIRS4ALL_DAGML_CLI=/absolute/path`
 when running the package tests to require native CV/OOF/refit/replay checks.
 
-`nirs4all_lm()` uses base R. `nirs4all_ranger()` and
+`nirs4all_n4m_method()` exposes eight native linear MethodResult regressors:
+ridge, ridge-PLS, robust PLS, CPPLS, sparse SIMPLS, ECR, continuum regression
+and MIR-PLS. These use `n4m` for fitting and coefficient-based prediction;
+their R model bundles are not N4MM exports. `nirs4all_lm()` uses base R.
+`nirs4all_ranger()` and
 `nirs4all_glmnet(lambda, alpha)` are optional random-forest and
 regularized-regression controllers. A user-defined controller can be
 provided with `nirs4all_controller(fit, predict, name)`; its state is R-only.
@@ -65,8 +69,11 @@ both row names and target names exist, fitting requires exact sample alignment.
 Unnamed data are treated positionally. The package test suite always compares
 all four portable Python examples (SNV, Savitzky-Golay, Kennard-Stone, and a
 PLS component sweep) against a vendored Python oracle. This tests the n4m
-numerical path; a separate strict test checks native DAG-ML execution with
-PLS, `lm`, `ranger`, `glmnet` and `torch` against manual fold-local fits.
+numerical path. A second frozen Python `n4m` oracle checks six MethodResult
+regressors, including solver-sensitive CPPLS, ridge-PLS and continuum
+regression. A separate strict test checks native DAG-ML execution with
+PLS, `n4m` ridge/CPPLS, `lm`, `ranger`, `glmnet` and `torch` against manual
+fold-local fits.
 Neither test qualifies arbitrary n4m compositions or complex DAG graphs.
 
 Current missing product gates are documented in

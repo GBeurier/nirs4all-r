@@ -75,6 +75,9 @@ learner_from_task <- function(task) {
                        scale_x = if (is.null(params$scale_x)) TRUE else params$scale_x,
                        center_y = if (is.null(params$center_y)) TRUE else params$center_y,
                        scale_y = if (is.null(params$scale_y)) TRUE else params$scale_y),
+    n4m_method = nirs4all_n4m_method(
+      method = params$method, n_components = as.integer(params$n_components),
+      params = if (is.null(params$params)) list() else params$params),
     lm = nirs4all_lm(),
     ranger = do.call(nirs4all_ranger, c(
       list(num.trees = as.integer(params$num_trees),
