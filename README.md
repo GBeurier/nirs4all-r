@@ -133,9 +133,26 @@ outcome$bundle$selected_variant_id
 outcome$bundle$metadata$variant_catalog
 ```
 
+Set `split_steps = TRUE` to execute each preprocessing step as its own DAG-ML
+transform node. Fixed candidates may use different n4m steps and learners,
+provided they have the same number of preprocessing steps:
+
+```r
+candidates <- list(
+  snv_pls = nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(2)),
+  msc_pls = nirs4all_pipeline(list(nirs4all_msc()), nirs4all_pls(3))
+)
+outcome <- nirs4all_dag_cv_refit_predict(candidates, X, y,
+  split_steps = TRUE, cli = "/path/to/dag-ml-cli")
+```
+
+The R process adapters exchange fold-scoped matrices locally; this is not a
+cross-language model format or a general branch/merge graph API.
+
 Use `nirs4all_dag_predict(outcome, new_X)` for independent samples after the
-refit. It verifies the winning artifact's SHA-256 fingerprint before loading
-the R model and enforces its training feature order. Keep `outcome$workdir`
+refit. It verifies the winning model and transform artifacts' SHA-256
+fingerprints before loading them and enforces the model's training feature
+order. Keep `outcome$workdir`
 and load only trusted RDS artifacts. This prediction runs locally, not as a
 new DAG-ML phase, and it does not create a test score.
 
