@@ -144,6 +144,15 @@ learner_from_task <- function(task) {
       epochs = if (is.null(params$epochs)) 100L else as.integer(params$epochs),
       learning_rate = if (is.null(params$learning_rate)) 0.001 else as.numeric(params$learning_rate),
       seed = if (is.null(params$seed)) 1L else as.integer(params$seed)),
+    torch_module = {
+      builder <- model_spec_from_task(params)
+      if (!is.function(builder))
+        stop("torch module specification is not a builder function")
+      nirs4all_torch_module(builder, name = params$name,
+        epochs = as.integer(params$epochs),
+        learning_rate = as.numeric(params$learning_rate),
+        seed = as.integer(params$seed))
+    },
     stop(paste("unknown R learner:", kind)))
 }
 steps_from_task <- function(task) {
