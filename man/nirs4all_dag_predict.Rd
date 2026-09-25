@@ -9,4 +9,4 @@ nirs4all_dag_predict(outcome, X)
 \item{outcome}{Result of \code{nirs4all_dag_cv_refit_predict()} with its persistent workdir and artifact available.}
 \item{X}{Finite numeric samples-by-features matrix or a \code{nirs4all_dataset} from \code{nirs4all_from_formats()}.}
 }
-\value{Numeric predictions in input row order.}
+\value{Numeric regression predictions or factor class predictions in input row order.}

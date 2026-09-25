@@ -2,13 +2,22 @@
 #' @param fit Function accepting transformed `X` and `y`, returning state.
 #' @param predict Function accepting state and transformed `X`, returning predictions.
 #' @param name Stable controller label.
+#' @param task Either `"regression"` or `"classification"`.
+#' @param predict_proba Optional classification probability function.
 #' @export
-nirs4all_controller <- function(fit, predict, name) {
+nirs4all_controller <- function(fit, predict, name, task = "regression",
+                                predict_proba = NULL) {
   if (!is.function(fit) || !is.function(predict))
     stop("fit and predict must be functions", call. = FALSE)
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name))
     stop("name must be a non-empty string", call. = FALSE)
-  structure(list(fit = fit, predict = predict, name = name, portable = FALSE),
+  if (!is.character(task) || length(task) != 1L || is.na(task) ||
+      !(task %in% c("regression", "classification")))
+    stop("task must be regression or classification", call. = FALSE)
+  if (!is.null(predict_proba) && !is.function(predict_proba))
+    stop("predict_proba must be a function", call. = FALSE)
+  structure(list(fit = fit, predict = predict, predict_proba = predict_proba,
+                 task = task, name = name, portable = FALSE),
             class = "nirs4all_controller")
 }
 
@@ -103,6 +112,65 @@ nirs4all_ranger <- function(num.trees = 500L, seed = 1L, ...) {
       as.numeric(stats::predict(state, data = frame)$predictions)
     }, name = "ranger:regression")
   controller$spec <- list(learner = "ranger", num_trees = as.integer(num.trees),
+                          seed = as.integer(seed), extra = extra)
+  controller
+}
+
+#' Optional ranger probability-forest classification controller
+#'
+#' Fits a factor response with fixed class levels. Predictions are factors and
+#' probabilities retain those levels as column names. The explicit seed makes
+#' refits independent of the caller's global R RNG state.
+#' @param num.trees Number of trees.
+#' @param seed Explicit non-negative random seed.
+#' @param ... Additional `ranger::ranger()` parameters; model identity and
+#'   probability mode cannot be overridden.
+#' @export
+nirs4all_ranger_classifier <- function(num.trees = 500L, seed = 1L, ...) {
+  if (!requireNamespace("ranger", quietly = TRUE))
+    stop("Install the optional 'ranger' package first", call. = FALSE)
+  if (length(num.trees) != 1L || !is.numeric(num.trees) || !is.finite(num.trees) ||
+      num.trees < 1L || num.trees > .Machine$integer.max ||
+      num.trees != floor(num.trees))
+    stop("num.trees must be a positive integer", call. = FALSE)
+  if (length(seed) != 1L || !is.numeric(seed) || !is.finite(seed) ||
+      seed < 0L || seed > .Machine$integer.max || seed != floor(seed))
+    stop("seed must be a non-negative integer", call. = FALSE)
+  extra <- list(...)
+  if (anyNA(names(extra)) || any(!nzchar(names(extra))) ||
+      any(names(extra) %in% c("formula", "data", "num.trees", "seed",
+                              "dependent.variable.name", "probability")))
+    stop("ranger extra parameters must be named and cannot override reserved fields",
+         call. = FALSE)
+  probabilities <- function(state, X) {
+    frame <- as.data.frame(X)
+    names(frame) <- paste0("x", seq_len(ncol(X)))
+    values <- stats::predict(state$model, data = frame)$predictions
+    if (!is.matrix(values) || !identical(colnames(values), state$classes))
+      stop("ranger returned probabilities with unexpected class columns", call. = FALSE)
+    values
+  }
+  controller <- nirs4all_controller(
+    fit = function(X, y) {
+      if (!is.factor(y) || length(levels(y)) < 2L ||
+          any(tabulate(as.integer(y), nbins = nlevels(y)) == 0L))
+        stop("each class must occur in the training fold", call. = FALSE)
+      frame <- as.data.frame(X)
+      names(frame) <- paste0("x", seq_len(ncol(X)))
+      frame$y <- y
+      model <- do.call(ranger::ranger, c(list(formula = y ~ ., data = frame,
+        num.trees = as.integer(num.trees), seed = as.integer(seed),
+        probability = TRUE), extra))
+      list(model = model, classes = levels(y))
+    },
+    predict = function(state, X) {
+      values <- probabilities(state, X)
+      factor(state$classes[max.col(values, ties.method = "first")],
+             levels = state$classes)
+    }, predict_proba = probabilities, task = "classification",
+    name = "ranger:classification")
+  controller$spec <- list(learner = "ranger_classifier",
+                          num_trees = as.integer(num.trees),
                           seed = as.integer(seed), extra = extra)
   controller
 }
