@@ -1,0 +1,9 @@
+\name{nirs4all_pipeline_from_portable}
+\alias{nirs4all_pipeline_from_portable}
+\title{Convert a portable JSON/YAML recipe into an R pipeline}
+\usage{nirs4all_pipeline_from_portable(source)}
+\arguments{\item{source}{Definition accepted by \code{nirs4all_load_pipeline()}.}}
+\value{An unfitted \code{nirs4all_pipeline()}.}
+\description{The bounded reader accepts native SNV, Savitzky-Golay and PLS
+components. Splitters and component sweeps are refused because a single
+fitted pipeline cannot represent an entire selection experiment.}

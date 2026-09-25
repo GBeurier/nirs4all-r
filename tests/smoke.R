@@ -7,8 +7,12 @@ y <- 2 + 0.7 * X[, 2L] - 0.3 * X[, 7L]
 pipeline <- nirs4all_pipeline(list(nirs4all_snv(), nirs4all_savgol(5L)),
                              nirs4all_pls(n_components = 2L))
 fitted <- nirs4all_fit(pipeline, X, y)
-expected <- n4m::n4m_predict(fitted$state,
-  n4m::savgol_transform(n4m::snv_transform(X), 5L, 2L, mode = "interp"))
+transformed <- n4m::savgol_transform(n4m::snv_transform(X),
+                                     5L, 2L, mode = "interp")
+plain_model <- n4m::n4m_fit(transformed, y, algo = "pls_simpls",
+                            n_components = 2L)
+expected <- n4m::n4m_predict(plain_model, transformed)
+stopifnot(identical(fitted$preprocessing_owner, "embedded_methods"))
 stopifnot(isTRUE(all.equal(nirs4all_predict(fitted, X), as.numeric(expected),
                            tolerance = 1e-12)))
 path <- tempfile(fileext = ".rds")
@@ -17,6 +21,35 @@ reloaded <- nirs4all_load(path)
 stopifnot(isTRUE(all.equal(predict(reloaded, X), predict(fitted, X),
                            tolerance = 1e-12)))
 unlink(path)
+
+native_bytes <- nirs4all_export_native_model(fitted)
+native_info <- n4m::n4m_model_pipeline_info(native_bytes)
+stopifnot(identical(native_info$semantic_profile, 1L),
+          identical(native_info$window_length, 5L),
+          identical(native_info$polyorder, 2L),
+          identical(native_info$raw_n_features, ncol(X)))
+native_import <- nirs4all_import_native_model(native_bytes, pipeline)
+stopifnot(max(abs(predict(native_import, X) - predict(fitted, X))) < 1e-12)
+recipe <- nirs4all_export_pipeline(pipeline, "yaml")
+native_import_recipe <- nirs4all_import_native_model(native_bytes, recipe)
+stopifnot(max(abs(predict(native_import_recipe, X) - predict(fitted, X))) < 1e-12)
+wrong_recipe <- nirs4all_pipeline(list(nirs4all_snv(), nirs4all_savgol(7L)),
+                                  nirs4all_pls(2L))
+stopifnot(inherits(try(nirs4all_import_native_model(native_bytes, wrong_recipe),
+                     silent = TRUE), "try-error"))
+wrong_components <- n4m::n4m_fit(X, y, "pls_simpls", 1L,
+  embedded_snv_savgol = c(5, 2))
+stopifnot(inherits(try(nirs4all_import_native_model(
+  n4m::n4m_model_export(wrong_components), pipeline), silent = TRUE),
+  "try-error"))
+stopifnot(inherits(try(nirs4all_import_native_model(
+  native_bytes, pipeline, feature_names = letters[1:9]), silent = TRUE),
+  "try-error"))
+external_fit <- nirs4all_fit(
+  nirs4all_pipeline(list(nirs4all_snv(with_mean = FALSE)), nirs4all_pls(2L)),
+  X, y)
+stopifnot(inherits(try(nirs4all_export_native_model(external_fit), silent = TRUE),
+                   "try-error"))
 
 preprocess_cases <- list(
   snv_flags = list(step = nirs4all_snv(with_mean = FALSE),

@@ -29,7 +29,7 @@ future samples. EMSC also records its polynomial degree in the step definition.
 Other train-fitted preprocessing such as baseline centering still needs an
 explicitly serialized fit state.
 Until the upstream `n4m` R release lands, this development branch requires
-`n4m >= 1.0.21.9001` from its `feat/r-preprocessing-parity` branch.
+`n4m >= 1.0.21.9002` from its `feat/r-preprocessing-parity` branch.
 
 The optional `nirs4allformats` reader can feed either path without reparsing
 spectra in this package. It accepts homogeneous one-dimensional signals and
@@ -58,12 +58,17 @@ PLS). Its output is checked by the R, Python and WASM readers. It rejects
 unsupported native options rather than dropping them. This is a recipe export,
 not an export of a trained model.
 
-For this subset, Python-style, `n4m.*` and language-neutral method names
-resolve to the same R `n4m` operations. This is recipe portability, not yet
-full binary portability: the existing fitted-pipeline RDS contains portable
-N4MM model bytes but wraps them in an R-specific object. Cross-language
-Archive V2/V3 pipeline replay and retraining still need a validated native
-archive reader and explicit preprocessing-state/lineage contracts.
+For the exact default SNV → Savitzky-Golay smoothing → SIMPLS profile,
+`nirs4all_fit()` now embeds preprocessing in the native N4MM format-2 model.
+`nirs4all_export_native_model()` returns that fitted state as raw bytes;
+`nirs4all_import_native_model()` accepts that JSON/YAML recipe or an R
+pipeline, validates its native descriptor and predicts directly on raw
+spectra. A strict test
+fits in R and predicts in a fresh Python process, then fits via Python n4m
+and predicts in R, with numerical equality. Other preprocessor combinations
+still use R-owned fit state and are refused by this export API. The RDS bundle
+remains R-specific. Cross-language Archive V2/V3 replay, recipe/lineage
+packaging and retraining still need a validated native archive bridge.
 
 The former core R upstream accessors are also available here:
 `nirs4all_upstreams()`, `nirs4all_require()`, `formats()`, `methods()`,
@@ -143,8 +148,9 @@ their R model bundles are not N4MM exports. `nirs4all_lm()` uses base R.
 regularized-regression controllers. A user-defined controller can be
 provided with `nirs4all_controller(fit, predict, name)`; its state is R-only.
 The `n4m` PLS model is saved as portable N4MM bytes inside the RDS bundle.
-This makes the native model portable, not the surrounding R preprocessing or
-custom-controller code.
+The exact default SNV → SG → SIMPLS profile now embeds its preprocessing in
+those bytes; other pipelines still leave R preprocessing outside the model.
+Custom-controller code and state remain R-specific.
 `nirs4all_torch_mlp()` provides an optional CPU neural-network regressor
 through the R `torch` runtime. Torch modules are saved with `torch`'s own
 serializer inside the RDS bundle; they are R-specific and not ONNX exports.

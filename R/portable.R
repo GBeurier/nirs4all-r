@@ -296,6 +296,39 @@ nirs4all_parse_execution_plan <- function(source) {
        learner = learner$spec)
 }
 
+#' Convert a portable JSON/YAML recipe into an R pipeline
+#'
+#' The bounded reader accepts native SNV, Savitzky-Golay and PLS components.
+#' Splitters and component sweeps are refused because a single fitted pipeline
+#' cannot represent an entire selection experiment.
+#' @param source Definition accepted by [nirs4all_load_pipeline()].
+#' @return An unfitted [nirs4all_pipeline()].
+#' @export
+nirs4all_pipeline_from_portable <- function(source) {
+  plan <- nirs4all_parse_execution_plan(source)
+  if (!is.null(plan$splitter) || length(plan$n_components) != 1L)
+    stop("a single fitted pipeline cannot include a splitter or component sweep",
+         call. = FALSE)
+  steps <- lapply(plan$preprocessing, function(step) {
+    if (identical(step$type, "StandardNormalVariate")) {
+      params <- step$params
+      return(nirs4all_snv(params$ddof, params$with_mean, params$with_std))
+    }
+    if (identical(step$type, "SavitzkyGolay")) {
+      params <- step$params
+      mode <- c("mirror", "constant", "nearest", "wrap", "interp")[[params[[4L]] + 1L]]
+      return(nirs4all_savgol(params[[1L]], params[[2L]], params[[3L]],
+                             delta = 1, mode = mode, cval = params[[5L]]))
+    }
+    stop("unsupported portable preprocessing step", call. = FALSE)
+  })
+  spec <- plan$learner
+  learner <- nirs4all_pls(plan$n_components[[1L]], algo = spec$algo,
+    center_x = spec$center_x, scale_x = spec$scale_x,
+    center_y = spec$center_y, scale_y = spec$scale_y)
+  nirs4all_pipeline(steps, learner)
+}
+
 nirs4all_portable_dataset <- function(dataset) {
   if (inherits(dataset, "nirs4all_dataset"))
     return(list(X = dataset$X, y = dataset$y))

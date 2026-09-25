@@ -1,7 +1,7 @@
 Package: nirs4all
 Type: Package
 Title: Composable Near-Infrared Spectroscopy Pipelines for R
-Version: 0.4.0.9004
+Version: 0.4.0.9005
 Authors@R: c(person("Gregory", "Beurier", email = "gregory.beurier@cirad.fr", role = c("aut", "cre")), person("nirs4all", "contributors", role = "ctb"))
 Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     Composes portable preprocessing (including local and robust normalization,
@@ -18,7 +18,7 @@ License: AGPL (>= 3)
 URL: https://github.com/GBeurier/nirs4all-r
 BugReports: https://github.com/GBeurier/nirs4all-r/issues
 Depends: R (>= 4.1)
-Imports: jsonlite, n4m (>= 1.0.21.9001), stats, tools, yaml
+Imports: jsonlite, n4m (>= 1.0.21.9002), stats, tools, yaml
 Suggests: dagml, dagmldata, digest, glmnet, nirs4alldatasets, nirs4allformats, nirs4allio, ranger, torch
 Additional_repositories: https://gbeurier.r-universe.dev
 Encoding: UTF-8

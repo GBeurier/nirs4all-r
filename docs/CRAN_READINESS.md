@@ -10,9 +10,10 @@ des champs de preuve à compléter avant toute soumission.
 
 ## Vérification actuellement réalisée
 
-- `R CMD build .` a produit `nirs4all_0.4.0.9004.tar.gz`.
+- `R CMD build .` a produit `nirs4all_0.4.0.9005.tar.gz`.
 - `R CMD check --as-cran --no-manual` sous R 4.6.0 (Linux) a exécuté les tests
-  du paquet, y compris les exemples Python/n4m, les formats et le chemin DAG
+  du paquet, y compris les exemples Python/n4m, un aller-retour N4MM format 2
+  R→Python→R en processus Python distinct, les formats et le chemin DAG
   natif. Après installation des tarballs R-universe `dagmldata` et
   `nirs4alldatasets`, **tous les `Suggests` étaient disponibles** et le
   contrôle a été relancé sans `_R_CHECK_FORCE_SUGGESTS_=false` : 0 erreur,
@@ -21,14 +22,16 @@ des champs de preuve à compléter avant toute soumission.
   tests stricts provenait encore du build local, pas du tarball du paquet.
 - Les résultats de Windows/macOS et la portabilité Archive V2/V3 Python↔R du
   pipeline entraîné complet restent à qualifier.
-- Le tarball autonome `n4m_1.0.21.9001.tar.gz` de la branche compatible a
-  également passé `R CMD check --as-cran --no-manual` sous Linux/R 4.6.0 :
+- Le tarball autonome `n4m_1.0.21.9002.tar.gz`, avec 238 unités natives
+  vendorizées, a passé `R CMD check --as-cran --no-manual` sous Linux/R 4.6.0 :
   0 erreur, 0 avertissement, 2 notes (nouvelle soumission/version de
-  développement et flag `-march=nocona` injecté par le R conda local).
+  développement et `-march=nocona` injecté par le R conda local). Les tests
+  incluent le N4MM format 2 SNV→SG, son inspection et le refus des octets
+  tronqués.
 
 ## Blocage de politique et ordre de soumission
 
-`n4m (>= 1.0.21.9001)` est dans `Imports`, mais n'est pas dans CRAN ni dans le
+`n4m (>= 1.0.21.9002)` est dans `Imports`, mais n'est pas dans CRAN ni dans le
 dépôt logiciel Bioconductor. La [politique CRAN sur les dépendances](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande que les dépendances fortes (`Depends`, `Imports`, `LinkingTo`) soient
 disponibles dans l'un de ces dépôts ; `Additional_repositories` couvre les
@@ -53,4 +56,4 @@ Avant une soumission `nirs4all` :
 La [politique CRAN de soumission](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande un `R CMD check --as-cran` du tarball à envoyer et, en principe, aucun
 avertissement ni note significative. Aucun formulaire de soumission ne doit
-présenter la version `0.4.0.9004` comme prête tant que ces gates restent ouverts.
+présenter la version `0.4.0.9005` comme prête tant que ces gates restent ouverts.
