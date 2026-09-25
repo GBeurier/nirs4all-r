@@ -106,6 +106,19 @@ outcome$fit_cv_result_count
 outcome$replay_prediction_blocks
 ```
 
+For repeated samples, batches or sites, pass aligned `group_ids`. The R
+frontend assigns whole groups to folds deterministically; DAG-ML validates
+group boundaries before fitting. Named group IDs must match `sample_ids`
+exactly, and there must be at least one distinct group per fold:
+
+```r
+outcome <- nirs4all_dag_cv_refit_predict(
+  pipeline, X, y, folds = 4,
+  sample_ids = rownames(X), group_ids = batch_id,
+  cli = "/path/to/dag-ml-cli"
+)
+```
+
 Pass a named list to compare complete preprocessing/learner pipelines on the
 same folds. DAG-ML ranks their OOF RMSE and refits only the winner:
 
@@ -172,7 +185,9 @@ regression. A separate strict test checks native DAG-ML execution with
 PLS, `n4m` ridge/CPPLS, `lm`, `ranger`, `glmnet`, `parsnip` and `torch` against manual
 fold-local fits. It also checks a five-candidate PLS sweep against manual
 fold-local OOF calculations and the selected refit, plus cross-family
-selection among `n4m` PLS/ridge and `ranger`. External predictions are checked
+selection among `n4m` PLS/ridge and `ranger`. Grouped CV is tested against
+manual group-exclusive fold fits, including a tampered group-ID rejection.
+External predictions are checked
 against independent full-data fits.
 Neither test qualifies arbitrary n4m compositions or complex DAG graphs.
 
