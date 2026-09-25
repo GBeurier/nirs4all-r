@@ -172,6 +172,11 @@ outside the model. The separate recipe is required to retrain, and N4MM
 format 1 does not expose scaling flags for independent recipe verification.
 `parsnip` and `mlr3` fitted states remain R-specific, as do custom-controller
 code and state.
+For portable n4m recipes, `nirs4all_expand_portable_pipelines()` expands the
+bounded Python `_or_`/`_cartesian_` preprocessing generators and PLS component
+ranges into named R pipelines. These can be passed to
+`nirs4all_dag_cv_refit_predict()` for native OOF selection; generator modifiers,
+other operators, and arbitrary DAG branches still fail explicitly.
 `nirs4all_torch_mlp()` provides an optional CPU neural-network regressor
 through the R `torch` runtime. Torch modules are saved with `torch`'s own
 serializer inside the RDS bundle; they are R-specific and not ONNX exports.
