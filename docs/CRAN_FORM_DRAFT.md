@@ -89,7 +89,18 @@ The subsequent 0.4.0.9026 development line adds a bounded JSON trained n4m
 PLS envelope with hash-checked manifest and N4MM payload, verified locally
 for R/Python held-out prediction in both directions and a fresh Python Methods
 retrain. It is not a DAG-ML Archive V2/V3 package and does not carry full
-sample identity or selection provenance. An initial source tarball passed
-Linux/R 4.6.0 `--as-cran --no-manual` with zero errors and the expected
-CRAN-incoming warning; a subsequent N4MM re-export fix requires a rebuilt
-tarball and a fresh check before citing the result in a submission form.
+sample identity or selection provenance. The final exact source tarball
+(`6f1c08ad76a58a454f96de4376fe93de2bc8491ee56b295ac0979803be3e798d`
+SHA-256) passed Linux/R 4.6.0 `--as-cran --no-manual` with zero errors and the
+expected CRAN-incoming warning, including the N4MM re-export fix and strict
+DAG/Formats/Python/torch tests. This is not a CRAN multi-OS result.
+
+The 0.4.0.9027 development line routes the eight affine MethodResult
+controllers' normal R prediction path through native `n4m_predict` and adds
+`nirs4all_retrain()` for a new fit from an imported recipe. The exact source
+tarball checked on Linux/R 4.6.0 has SHA-256
+`968c858c9731d4a984102cda24f4c1da49e81e4f99b765c6d81069fe402509b3`:
+zero errors, one expected CRAN-incoming warning, with all `Suggests` and strict
+DAG/Formats/Python/torch tests active. It is still a development snapshot,
+not a submission candidate; any later source edit requires a fresh exact-file
+check before using this result in a form.
