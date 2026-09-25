@@ -12,7 +12,8 @@ if (identical(args, "--describe")) {
     capabilities = list("control_frames_v1", "node_task_json_v1",
                         "node_result_json_v1", "parallel_invocation_v1",
                         "persistent_workers", "worker_env",
-                        "stateful_refit_artifacts")), auto_unbox = TRUE), "\n", sep = "")
+                        "stateful_refit_artifacts",
+                        "portable_artifact_bridge_v1")), auto_unbox = TRUE), "\n", sep = "")
   quit(save = "no", status = 0L)
 }
 suppressPackageStartupMessages(library(nirs4all))
@@ -86,6 +87,10 @@ for (key in names(data$model_specs)) {
     stop("R model specification fingerprint mismatch")
 }
 if (identical(args, "--verify")) quit(save = "no", status = 0L)
+
+raw_payloads <- new.env(parent = emptyenv())
+hydrated_payloads <- new.env(parent = emptyenv())
+next_hydrated_handle <- 2000000000L
 
 as_ids <- function(value) as.character(unlist(value, use.names = FALSE))
 sample_rows <- function(ids) {
@@ -241,6 +246,14 @@ artifact_location <- function(node) {
   file.path(normalizePath(artifact_dir, mustWork = TRUE),
             paste0("model-", safe_handle(node), ".rds"))
 }
+native_artifact_location <- function(node) {
+  dir.create(artifact_dir, recursive = TRUE, showWarnings = FALSE)
+  file.path(normalizePath(artifact_dir, mustWork = TRUE),
+            paste0("model-", safe_handle(node), ".n4mm"))
+}
+native_artifact_uri <- function(node) {
+  paste0("methods/", gsub(":", "_", node, fixed = TRUE), ".n4mm")
+}
 transform_data_location <- function(handle) {
   file.path(normalizePath(artifact_dir, mustWork = TRUE),
             paste0("data-", handle, ".rds"))
@@ -332,6 +345,7 @@ record_result <- function(task, raw_line) {
   controller <- task$node_plan$controller_id
   artifact_id <- paste0("artifact:", node, ":nirs4all-r:refit")
   artifact_path <- artifact_location(node)
+  native_path <- native_artifact_location(node)
   all_ids <- as_ids(dsl$split_invocation$fold_set$sample_ids)
   if (identical(phase, "FIT_CV")) {
     fold <- fold_ids(task$fold_id)
@@ -473,15 +487,34 @@ record_result <- function(task, raw_line) {
                                    levels = data$class_levels)
                           else data$y[train_rows])
     if (identical(phase, "REFIT")) {
-      nirs4all_save(fitted, artifact_path)
-      artifact <- list(id = artifact_id, kind = "nirs4all_r_model",
-                       controller_id = controller, backend = "rds",
-                       uri = artifact_path,
-                       content_fingerprint = digest::digest(artifact_path,
-                                                           algo = "sha256", file = TRUE),
-                       size_bytes = as.integer(file.info(artifact_path)$size),
-                       plugin = "nirs4all-r",
-                       plugin_version = as.character(utils::packageVersion("nirs4all")))
+      has_external_transform <- any(vapply(dsl$steps, function(step)
+        step$kind %in% c("transform", "concat_transform"), logical(1)))
+      recipe <- structure(list(steps = fitted$steps, learner = fitted$learner),
+                          class = "nirs4all_pipeline")
+      native <- if (!has_external_transform &&
+                    !is.null(nirs4all:::nirs4all_native_model_profile(recipe)))
+        nirs4all_export_native_model(fitted) else NULL
+      if (is.null(native)) {
+        nirs4all_save(fitted, artifact_path)
+        artifact <- list(id = artifact_id, kind = "nirs4all_r_model",
+                         controller_id = controller, backend = "rds",
+                         uri = artifact_path,
+                         content_fingerprint = digest::digest(artifact_path,
+                                                             algo = "sha256", file = TRUE),
+                         size_bytes = as.integer(file.info(artifact_path)$size),
+                         plugin = "nirs4all-r",
+                         plugin_version = as.character(utils::packageVersion("nirs4all")))
+      } else {
+        writeBin(native, native_path)
+        assign(artifact_id, native, envir = raw_payloads)
+        artifact <- list(id = artifact_id, kind = "n4m_model",
+                         controller_id = controller, backend = "raw",
+                         uri = native_artifact_uri(node),
+                         content_fingerprint = digest::digest(native, algo = "sha256",
+                                                              serialize = FALSE),
+                         size_bytes = length(native), plugin = "nirs4all-r",
+                         plugin_version = as.character(utils::packageVersion("nirs4all")))
+      }
       artifacts <- list(artifact)
       artifact_handles <- setNames(list(list(
         handle = safe_handle(artifact_id), kind = "model",
@@ -490,12 +523,41 @@ record_result <- function(task, raw_line) {
   } else {
     inputs <- task$artifact_inputs
     expected <- Filter(function(input) identical(input$artifact$id, artifact_id), inputs)
-    if (length(expected) != 1L ||
-        !identical(expected[[1L]]$artifact$uri, artifact_path) ||
-        !identical(expected[[1L]]$artifact$content_fingerprint,
-                   digest::digest(artifact_path, algo = "sha256", file = TRUE)))
+    if (length(expected) != 1L)
       stop("PREDICT artifact identity or content mismatch")
-    fitted <- nirs4all_load(artifact_path)
+    artifact <- expected[[1L]]$artifact
+    if (identical(artifact$backend, "raw")) {
+      handles <- Filter(function(name) startsWith(name, "artifact:"),
+                        names(task$input_handles))
+      if (length(handles) != 1L ||
+          !identical(artifact$kind, "n4m_model") ||
+          !identical(artifact$uri, native_artifact_uri(node)))
+        stop("PREDICT native artifact identity mismatch")
+      handle <- task$input_handles[[handles[[1L]]]]
+      if (!identical(handle$kind, "model") ||
+          !identical(handle$owner_controller, controller))
+        stop("PREDICT native artifact handle owner mismatch")
+      key <- as.character(handle$handle)
+      native <- if (exists(key, envir = hydrated_payloads, inherits = FALSE))
+        get(key, envir = hydrated_payloads, inherits = FALSE) else if
+        (file.exists(native_path))
+        readBin(native_path, "raw", n = file.info(native_path)$size) else NULL
+      if (!is.raw(native) ||
+          !identical(artifact$content_fingerprint,
+                     digest::digest(native, algo = "sha256", serialize = FALSE)) ||
+          !identical(as.numeric(artifact$size_bytes), as.numeric(length(native))))
+        stop("PREDICT native artifact content mismatch")
+      fitted <- nirs4all_import_native_model(native,
+        nirs4all_pipeline(steps_from_task(task), learner_from_task(task)),
+        feature_names = colnames(matrices$prediction))
+    } else {
+      if (!identical(artifact$backend, "rds") ||
+          !identical(artifact$uri, artifact_path) ||
+          !identical(artifact$content_fingerprint,
+                     digest::digest(artifact_path, algo = "sha256", file = TRUE)))
+        stop("PREDICT artifact identity or content mismatch")
+      fitted <- nirs4all_load(artifact_path)
+    }
   }
   predictions <- nirs4all_predict(fitted, matrices$prediction)
   classification <- identical(fitted$task, "classification")
@@ -553,6 +615,59 @@ handle_line <- function(line) {
   if (is.list(payload) && is.character(payload$type) && length(payload$type) == 1L) {
     if (identical(payload$type, "init")) { emit_ack("initialized"); return(TRUE) }
     if (identical(payload$type, "close")) { emit_ack("closed"); return(FALSE) }
+    if (identical(payload$type, "portable_artifact")) {
+      task <- payload$task
+      result <- switch(task$operation,
+        export_artifact_payload = {
+          id <- task$artifact_id
+          if (!is.character(id) || length(id) != 1L ||
+              !exists(id, envir = raw_payloads, inherits = FALSE))
+            stop("unknown native artifact export ID")
+          list(operation = "exported_artifact_payload", schema_version = 1L,
+               payload = as.list(as.integer(get(id, envir = raw_payloads,
+                                                 inherits = FALSE))))
+        },
+        hydrate_artifact_payload = {
+          bytes <- as.numeric(unlist(task$payload, use.names = FALSE))
+          artifact <- task$request$artifact
+          if (!length(bytes) || anyNA(bytes) || any(bytes < 0 | bytes > 255) ||
+              any(bytes != floor(bytes)) ||
+              !identical(artifact$backend, "raw") ||
+              !identical(artifact$kind, "n4m_model") ||
+              !identical(artifact$controller_id, "controller:nirs4all-r") ||
+              !identical(task$request$controller_id, "controller:nirs4all-r") ||
+              !identical(artifact$uri,
+                         native_artifact_uri(task$request$node_id)))
+            stop("invalid native artifact hydration payload")
+          bytes <- as.raw(as.integer(bytes))
+          if (!identical(artifact$content_fingerprint,
+                         digest::digest(bytes, algo = "sha256", serialize = FALSE)) ||
+              !identical(as.numeric(artifact$size_bytes), as.numeric(length(bytes))))
+            stop("native artifact hydration content mismatch")
+          n4m::n4m_model_import(bytes)
+          next_hydrated_handle <<- next_hydrated_handle + 1L
+          handle <- next_hydrated_handle
+          assign(as.character(handle), bytes, envir = hydrated_payloads)
+          list(operation = "hydrated_artifact_payload", schema_version = 1L,
+               handle = list(handle = handle, kind = "model",
+                             owner_controller = task$request$controller_id))
+        },
+        release_hydrated_artifact_payload = {
+          key <- as.character(task$handle$handle)
+          if (!identical(task$handle$kind, "model") ||
+              !identical(task$handle$owner_controller,
+                         "controller:nirs4all-r") ||
+              !exists(key, envir = hydrated_payloads, inherits = FALSE))
+            stop("unknown hydrated native artifact handle")
+          rm(list = key, envir = hydrated_payloads)
+          list(operation = "released_hydrated_artifact_payload",
+               schema_version = 1L)
+        },
+        stop("unsupported portable artifact operation"))
+      emit(jsonlite::toJSON(list(type = "portable_artifact", schema_version = 1L,
+                                 result = result), auto_unbox = TRUE, null = "null"))
+      return(TRUE)
+    }
     if (!identical(payload$type, "task")) stop("unsupported process frame")
     result <- record_result(payload$task, line)
     emit(paste0('{"type":"result","schema_version":1,"result":', result, '}'))
