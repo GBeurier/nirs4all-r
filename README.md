@@ -70,6 +70,24 @@ the full Python `nirs4all` parser, with Core/WASM qualification still open.
 Unsupported settings fail rather than being dropped. This exports a recipe,
 not a trained model.
 
+For an R-specific JSON/YAML recipe, use `scope = "r_native"` and
+`nirs4all_r_pipeline_from_recipe()`. The closed model aliases cover regression
+and classification forests via `ranger`, Gaussian elastic-net via `glmnet`,
+and CPU MLPs via R `torch`; the same n4m preprocessing and feature-branch
+syntax can precede them. For example:
+
+```r
+recipe <- nirs4all_export_pipeline(
+  nirs4all_pipeline(list(nirs4all_snv(ddof = 1L)),
+                   nirs4all_ranger(num.trees = 200L, seed = 7L)),
+  format = "yaml", scope = "r_native")
+fitted <- nirs4all_fit(nirs4all_r_pipeline_from_recipe(recipe), X, y)
+```
+
+These `r.*` aliases deliberately remain R-only: they neither convert a
+scikit-learn pipeline nor transfer fitted `ranger`/`glmnet`/`torch` binaries.
+The default cross-language export remains restricted to qualified n4m recipes.
+
 The R reader also imports Python-style `branch` → `merge: features` recipes
 with n4m-only preprocessing branches. For branches containing only default
 SNV/SG, the R exporter emits the named Python feature-merge syntax; Python's
