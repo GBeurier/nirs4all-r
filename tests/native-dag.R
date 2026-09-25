@@ -116,6 +116,53 @@ if (available) {
     }
     message("native DAG parity: ", name, " CV/OOF/refit/replay passed")
   }
+  # Transform nodes must exchange their actual matrices between process workers.
+  # MSC/EMSC are fitted on each fold's training rows, never on validation rows.
+  for (steps in list(
+    list(nirs4all_snv(), nirs4all_msc()),
+    list(nirs4all_savgol(5L), nirs4all_emsc(2L)))) {
+    graph_pipeline <- nirs4all_pipeline(steps, nirs4all_pls(2L))
+    graph <- nirs4all_dag_cv_refit_predict(
+      graph_pipeline, X, y, folds = 3L, cli = cli,
+      split_steps = TRUE, process_workers = 2L)
+    stopifnot(identical(as.integer(graph$fit_cv_result_count), 9L),
+              identical(as.integer(graph$refit_result_count), 3L),
+              length(graph$bundle$refit_artifacts) == 3L)
+    graph_replay <- graph$replay_prediction_blocks[[1L]]
+    replay_ids <- as.character(unlist(graph_replay$sample_ids))
+    replay_values <- vapply(graph_replay$values,
+                            function(value) as.numeric(value[[1L]]), numeric(1))
+    fitted <- nirs4all_fit(graph_pipeline, X, y)
+    stopifnot(max(abs(replay_values -
+      predict(fitted, X)[match(replay_ids, ids)])) < 1e-10)
+    external_X <- X[1:4, , drop = FALSE] + 0.01
+    stopifnot(max(abs(nirs4all_dag_predict(graph, external_X) -
+      predict(fitted, external_X))) < 1e-10)
+    expected_oof <- numeric(nrow(X))
+    for (fold in 0:2) {
+      validation <- seq_len(nrow(X))[(seq_len(nrow(X)) - 1L) %% 3L == fold]
+      training <- setdiff(seq_len(nrow(X)), validation)
+      expected_oof[validation] <- predict(nirs4all_fit(graph_pipeline,
+        X[training, , drop = FALSE], y[training]),
+        X[validation, , drop = FALSE])
+    }
+    for (average in graph$oof_average_results) {
+      block <- average$aggregated_predictions[[1L]]
+      block_ids <- vapply(block$unit_ids, `[[`, "", "id")
+      values <- vapply(block$values,
+        function(value) as.numeric(value[[1L]]), numeric(1))
+      stopifnot(max(abs(values - expected_oof[match(block_ids, ids)])) < 1e-10)
+    }
+    transform_artifact <- graph$bundle$refit_artifacts[[2L]]$artifact$uri
+    state <- readRDS(transform_artifact)
+    state$n_features <- state$n_features + 1L
+    saveRDS(state, transform_artifact)
+    rejected <- tryCatch(nirs4all_dag_predict(graph, external_X),
+                         error = function(error) conditionMessage(error))
+    stopifnot(is.character(rejected),
+              grepl("artifact identity or content mismatch", rejected))
+  }
+  message("native multi-node n4m transform graph CV/OOF/refit/replay passed")
   verify_tamper_rejected <- function(workdir) {
     data_path <- file.path(workdir, "data.rds")
     tampered <- readRDS(data_path)

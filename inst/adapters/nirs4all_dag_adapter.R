@@ -198,6 +198,41 @@ artifact_location <- function(node) {
   file.path(normalizePath(artifact_dir, mustWork = TRUE),
             paste0("model-", safe_handle(node), ".rds"))
 }
+transform_data_location <- function(handle) {
+  file.path(normalizePath(artifact_dir, mustWork = TRUE),
+            paste0("data-", handle, ".rds"))
+}
+input_matrices <- function(task, train_ids, prediction_ids) {
+  raw <- function(ids) if (is.null(ids)) NULL else
+    data$X[sample_rows(ids), , drop = FALSE]
+  upstream <- task$input_handles[["data:x"]]
+  if (is.null(upstream) ||
+      !identical(upstream$owner_controller, "controller:nirs4all-r-transform"))
+    return(list(train = raw(train_ids), prediction = raw(prediction_ids)))
+  if (!identical(upstream$kind, "data") ||
+      !is.numeric(upstream$handle) || length(upstream$handle) != 1L)
+    stop("invalid upstream transform data handle")
+  path <- transform_data_location(as.integer(upstream$handle))
+  if (!file.exists(path)) stop("missing upstream transform matrix sidecar")
+  payload <- readRDS(path)
+  producer_keys <- names(task$input_handles)
+  producer_keys <- producer_keys[endsWith(producer_keys, ".x_out")]
+  expected_key <- paste0(payload$node_id, ".x_out")
+  if (!identical(payload$handle, as.integer(upstream$handle)) ||
+      length(producer_keys) != 1L ||
+      !identical(producer_keys[[1L]], expected_key) ||
+      !identical(payload$phase, task$phase) ||
+      !identical(payload$fold_id, task$fold_id) ||
+      !identical(payload$variant_id, task$variant_id) ||
+      !identical(payload$train_ids, train_ids) ||
+      !identical(payload$prediction_ids, prediction_ids) ||
+      (!is.null(train_ids) && (!is.matrix(payload$train) ||
+        nrow(payload$train) != length(train_ids))) ||
+      !is.matrix(payload$prediction) ||
+      nrow(payload$prediction) != length(prediction_ids))
+    stop("upstream transform sidecar does not match DAG task identity")
+  list(train = payload$train, prediction = payload$prediction)
+}
 prediction_block <- function(node, partition, fold_id, ids, values) {
   list(producer_node = node, partition = partition, fold_id = fold_id,
        sample_ids = as.list(ids),
@@ -241,6 +276,78 @@ record_result <- function(task, raw_line) {
     partition <- "final"
   }
   sample_rows(prediction_ids)
+  matrices <- input_matrices(task, train_ids, prediction_ids)
+  if (identical(controller, "controller:nirs4all-r-transform")) {
+    steps <- steps_from_task(task)
+    if (length(steps) != 1L) stop("transform node needs one n4m step")
+    if (!identical(phase, "PREDICT")) {
+      transformed <- nirs4all:::nirs4all_fit_transform(matrices$train, steps)
+      prediction_matrix <- nirs4all:::nirs4all_transform(
+        matrices$prediction, steps, transformed$states)
+      if (identical(phase, "REFIT"))
+        saveRDS(list(steps = steps, states = transformed$states,
+                     n_features = ncol(matrices$train)), artifact_path)
+      train_matrix <- transformed$X
+    } else {
+      inputs <- task$artifact_inputs
+      expected <- Filter(function(input) identical(input$artifact$id, artifact_id), inputs)
+      if (length(expected) != 1L ||
+          !identical(expected[[1L]]$artifact$uri, artifact_path) ||
+          !identical(expected[[1L]]$artifact$content_fingerprint,
+                     digest::digest(artifact_path, algo = "sha256", file = TRUE)))
+        stop("PREDICT transform artifact identity or content mismatch")
+      state <- readRDS(artifact_path)
+      if (!identical(state$steps, steps) ||
+          !identical(state$n_features, ncol(matrices$prediction)))
+        stop("PREDICT transform state does not match its node")
+      train_matrix <- NULL
+      prediction_matrix <- nirs4all:::nirs4all_transform(
+        matrices$prediction, steps, state$states)
+    }
+    handle <- safe_handle(paste(node, phase, task$variant_id,
+                                task$fold_id, sep = ":"))
+    saveRDS(list(handle = handle, node_id = node, phase = phase, fold_id = task$fold_id,
+                 variant_id = task$variant_id, train_ids = train_ids,
+                 prediction_ids = prediction_ids, train = train_matrix,
+                 prediction = prediction_matrix), transform_data_location(handle))
+    artifacts <- list()
+    artifact_handles <- empty_object
+    if (identical(phase, "REFIT")) {
+      artifacts <- list(list(id = artifact_id, kind = "nirs4all_r_transform",
+        controller_id = controller, backend = "rds", uri = artifact_path,
+        content_fingerprint = digest::digest(artifact_path,
+          algo = "sha256", file = TRUE),
+        size_bytes = as.integer(file.info(artifact_path)$size),
+        plugin = "nirs4all-r",
+        plugin_version = as.character(utils::packageVersion("nirs4all"))))
+      artifact_handles <- setNames(list(list(
+        handle = safe_handle(artifact_id), kind = "model",
+        owner_controller = controller)), artifact_id)
+    }
+    result <- list(node_id = node,
+      outputs = list(x_out = list(handle = handle, kind = "data",
+        owner_controller = controller)),
+      predictions = list(), artifacts = artifacts,
+      artifact_handles = artifact_handles,
+      lineage = list(record_id = paste("lineage", node, phase,
+          if (is.null(task$variant_id)) "base" else task$variant_id,
+          if (is.null(task$fold_id)) "none" else task$fold_id, sep = ":"),
+        run_id = task$run_id, node_id = node, phase = phase,
+        controller_id = controller,
+        controller_version = task$node_plan$controller_version,
+        variant_id = task$variant_id, fold_id = task$fold_id,
+        branch_path = if (is.null(task$branch_path)) list() else task$branch_path,
+        input_lineage = list(), artifact_refs = artifacts,
+        params_fingerprint = task$node_plan$params_fingerprint,
+        data_model_shape_fingerprint = NULL,
+        aggregation_policy_fingerprint = NULL,
+        seed = "__DAGML_U64_SEED__", unsafe_flags = list(),
+        metrics = empty_object, loss_attestations = list(),
+        early_stopping_records = list()))
+    encoded <- jsonlite::toJSON(result, auto_unbox = TRUE, null = "null", digits = 17)
+    return(sub('"seed":"__DAGML_U64_SEED__"',
+      paste0('"seed":', seed_decimal), encoded, fixed = TRUE))
+  }
   artifacts <- list()
   artifact_handles <- empty_object
   if (!identical(phase, "PREDICT")) {
@@ -248,7 +355,7 @@ record_result <- function(task, raw_line) {
     learner <- learner_from_task(task)
     fitted <- nirs4all_fit(nirs4all_pipeline(steps = steps_from_task(task),
                                             learner = learner),
-                          data$X[train_rows, , drop = FALSE], data$y[train_rows])
+                          matrices$train, data$y[train_rows])
     if (identical(phase, "REFIT")) {
       nirs4all_save(fitted, artifact_path)
       artifact <- list(id = artifact_id, kind = "nirs4all_r_model",
@@ -274,7 +381,7 @@ record_result <- function(task, raw_line) {
       stop("PREDICT artifact identity or content mismatch")
     fitted <- nirs4all_load(artifact_path)
   }
-  predictions <- nirs4all_predict(fitted, data$X[sample_rows(prediction_ids), , drop = FALSE])
+  predictions <- nirs4all_predict(fitted, matrices$prediction)
   result <- list(
     node_id = node,
     outputs = list(oof = list(handle = safe_handle(paste(node, phase, sep = ":")),
