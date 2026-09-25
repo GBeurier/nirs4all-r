@@ -47,6 +47,12 @@ predictions <- predict(fit, nirs4all_from_formats("new_spectra.csv"))
 #     nirs4all_dag_predict(outcome, nirs4all_from_formats("new_spectra.csv"))
 ```
 
+For classification CSVs, the Rust reader puts text reference labels in
+per-record metadata. If explicitly selected as `target`, the R converter
+requires that label to be present and non-empty for every sample, then passes
+the named character vector to a classification controller. Numeric targets
+retain their original regression behavior. No CSV parsing is duplicated here.
+
 The former `nirs4all-core` R JSON/YAML PipelineConfigs reader has moved here.
 `nirs4all_load_pipeline()` and `nirs4all_run_portable_pipeline()` preserve its
 bounded Kennard-Stone/SNV/Savitzky-Golay/PLS subset, including component
