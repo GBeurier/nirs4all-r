@@ -52,5 +52,35 @@ if (nzchar(python)) {
   python_predictions <- jsonlite::fromJSON(result_file)$predictions
   stopifnot(max(abs(predict(imported, X) - python_predictions)) < 1e-10,
             max(abs(predict(imported, X) - expected)) < 1e-10)
+  plain_pipeline <- nirs4all_pipeline(learner = nirs4all_pls(2L))
+  plain_recipe <- nirs4all_export_pipeline(plain_pipeline, "json")
+  plain_fit <- nirs4all_fit(plain_pipeline, X, y)
+  plain_bytes <- nirs4all_export_native_model(plain_fit)
+  stopifnot(identical(n4m::n4m_model_descriptor(plain_bytes)$format_version, 1L))
+  writeBin(plain_bytes, model_file)
+  output <- suppressWarnings(system2(python,
+    c(shQuote(helper), "predict_plain", shQuote(model_file), shQuote(request_file),
+      shQuote(result_file)), stdout = TRUE, stderr = TRUE))
+  status <- attr(output, "status")
+  if (is.null(status)) status <- 0L
+  if (status != 0L) stop("Python plain N4MM replay failed: ",
+                         paste(output, collapse = "\n"))
+  plain_expected <- predict(plain_fit, X)
+  stopifnot(max(abs(jsonlite::fromJSON(result_file)$predictions -
+                    plain_expected)) < 1e-10)
+  unlink(c(model_file, result_file))
+  output <- suppressWarnings(system2(python,
+    c(shQuote(helper), "fit_plain", shQuote(model_file), shQuote(request_file),
+      shQuote(result_file)), stdout = TRUE, stderr = TRUE))
+  status <- attr(output, "status")
+  if (is.null(status)) status <- 0L
+  if (status != 0L) stop("Python plain N4MM fit failed: ",
+                         paste(output, collapse = "\n"))
+  plain_python_bytes <- readBin(model_file, what = "raw",
+                                n = file.info(model_file)$size)
+  plain_imported <- nirs4all_import_native_model(plain_python_bytes, plain_recipe)
+  stopifnot(max(abs(predict(plain_imported, X) -
+                    jsonlite::fromJSON(result_file)$predictions)) < 1e-10,
+            max(abs(predict(plain_imported, X) - plain_expected)) < 1e-10)
   unlink(work, recursive = TRUE)
 }

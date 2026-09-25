@@ -50,6 +50,18 @@ external_fit <- nirs4all_fit(
   X, y)
 stopifnot(inherits(try(nirs4all_export_native_model(external_fit), silent = TRUE),
                    "try-error"))
+plain_pipeline <- nirs4all_pipeline(learner = nirs4all_pls(2L))
+plain_fit <- nirs4all_fit(plain_pipeline, X, y)
+plain_bytes <- nirs4all_export_native_model(plain_fit)
+stopifnot(identical(n4m::n4m_model_descriptor(plain_bytes)$format_version, 1L),
+          !isTRUE(n4m::n4m_model_pipeline_info(plain_bytes)$present))
+plain_import <- nirs4all_import_native_model(
+  plain_bytes, nirs4all_export_pipeline(plain_pipeline, "json"))
+stopifnot(max(abs(predict(plain_import, X) - predict(plain_fit, X))) < 1e-12,
+          inherits(try(nirs4all_import_native_model(plain_bytes, pipeline),
+                       silent = TRUE), "try-error"),
+          inherits(try(nirs4all_import_native_model(native_bytes, plain_pipeline),
+                       silent = TRUE), "try-error"))
 
 preprocess_cases <- list(
   snv_flags = list(step = nirs4all_snv(with_mean = FALSE),
