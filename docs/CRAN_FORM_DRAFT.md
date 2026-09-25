@@ -41,7 +41,7 @@ and the [submission checklist](https://cran.r-project.org/web/packages/submissio
 
 ## Do not use the local result as final evidence
 
-On 2026-09-25, `nirs4all_0.4.0.9020.tar.gz` passed Linux/R 4.6.0 checks with
+On 2026-09-25, `nirs4all_0.4.0.9021.tar.gz` passed Linux/R 4.6.0 checks with
 0 errors but 1 CRAN-incoming warning: `n4m` is still outside CRAN/Bioconductor,
 and this run did not force all optional `Suggests` to be installed. The R-universe
 `dagml` source package was installed and exercised with a locally built DAG CLI.
@@ -49,6 +49,6 @@ and this run did not force all optional `Suggests` to be installed. The R-univer
 2 notes after an autonomous vendored-source build. Both are development
 versions. An earlier `nirs4all` 0.4.0.9018 build passed the R-universe
 Linux/Windows/macOS/WASM matrix and installed with public `n4m` sources in a
-fresh Linux R library, but that is not a multi-OS check of the exact 0.4.0.9020
+fresh Linux R library, but that is not a multi-OS check of the exact 0.4.0.9021
 tarball. Complete trained-pipeline interoperability is also not yet qualified. The
 form text above is a template, not a claim that these gates have passed.

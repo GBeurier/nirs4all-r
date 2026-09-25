@@ -10,7 +10,7 @@ des champs de preuve à compléter avant toute soumission.
 
 ## Vérification actuellement réalisée
 
-- `R CMD build .` a produit `nirs4all_0.4.0.9020.tar.gz`.
+- `R CMD build .` a produit `nirs4all_0.4.0.9021.tar.gz`.
 - `R CMD check --as-cran --no-manual` sous R 4.6.0 (Linux) a exécuté les tests
   du paquet, y compris les exemples Python/n4m, les aller-retour N4MM
   formats 1 (PLS seul) et 2 (SNV→SG→PLS) R↔Python en processus Python distinct,
@@ -64,14 +64,24 @@ des champs de preuve à compléter avant toute soumission.
   de classification `torch` a passé séparément avec le mode DAG strict.
   Ce résultat ne remplace pas un contrôle 0.4.0.9020 avec **tous** les
   `Suggests` installés. Le CLI DAG-ML provenait encore du build local.
+- Le tarball 0.4.0.9021 ajoute le classifieur `n4m` sparse PLS-DA et son
+  alias JSON/YAML. Les scores et labels prédits hors échantillon concordent
+  avec le binding Python n4m à `1e-10` ; CV/OOF/refit/inférence DAG ont passé
+  avec vérification par folds indépendants. `R CMD check --as-cran --no-manual`
+  sous Linux/R 4.6.0 a terminé avec 0 erreur et 1 avertissement *CRAN incoming*
+  en désactivant le contrôle obligatoire des `Suggests` absents de la machine.
+  Le mode strict ciblé de ce classifieur a passé ; le mode strict global
+  échoue seulement parce que `ranger`, `glmnet`, `parsnip`, `mlr3` et `rpart`
+  ne sont pas installés ici. Les pseudo-probabilités softmax ne sont pas
+  calibrées ; l'état appris de ce classifieur n'est pas portable entre langages.
 - Les résultats de Windows/macOS et la portabilité Archive V2/V3 Python↔R du
-  pipeline entraîné complet restent à qualifier pour **ce tarball 0.4.0.9020**.
+  pipeline entraîné complet restent à qualifier pour **ce tarball 0.4.0.9021**.
   R-universe publie déjà `nirs4all` 0.4.0.9018 depuis `nirs4all-r` : son
   rebuild a réussi sur Linux, Windows, macOS et WASM. Ses sources publiques
   et celles de `n4m` 1.0.21.9002 ont été installées dans une bibliothèque R
   vierge sous Linux/R 4.6.0 avec GCC système ; un pipeline
   SNV→Savitzky-Golay→PLS a ajusté et prédit sans checkout local. Cette preuve
-  de distribution ne remplace ni le check multi-OS du tarball 0.4.0.9020 ni la
+  de distribution ne remplace ni le check multi-OS du tarball 0.4.0.9021 ni la
   publication de `dagml`, encore en attente de synchronisation.
 - Le tarball autonome `n4m_1.0.21.9002.tar.gz`, avec 238 unités natives
   vendorizées, a passé `R CMD check --as-cran --no-manual` sous Linux/R 4.6.0 :
@@ -107,4 +117,4 @@ Avant une soumission `nirs4all` :
 La [politique CRAN de soumission](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande un `R CMD check --as-cran` du tarball à envoyer et, en principe, aucun
 avertissement ni note significative. Aucun formulaire de soumission ne doit
-présenter la version `0.4.0.9020` comme prête tant que ces gates restent ouverts.
+présenter la version `0.4.0.9021` comme prête tant que ces gates restent ouverts.
