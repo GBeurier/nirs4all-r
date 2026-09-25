@@ -70,3 +70,10 @@ not cross-language retraining or a complete trained DAG archive. Its first
 Linux/R 4.6.0 strict check had 0 errors and the same CRAN-incoming warning;
 the final rebuilt archive with the out-of-sample regression test still needs
 its own exact-file check. Do not use these observations as form claims.
+
+The 0.4.0.9024 development line embeds eligible native N4MM refit payloads
+in its DAG bundle. This is model prediction portability only; trained-pipeline
+archive and retraining provenance remain open. An initial 0.4.0.9024 source
+tarball passed the strict Linux/R 4.6.0 check with zero errors and one
+expected CRAN-incoming warning. The eventual submission tarball must be
+checked independently before citing it in a submission form.
