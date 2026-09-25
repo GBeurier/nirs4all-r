@@ -52,6 +52,12 @@ sweeps, and are checked against the four frozen Python examples. Unsupported
 operators fail explicitly. Holdout selection RMSE is not an independent test
 score; use the native DAG path for CV/OOF/refit.
 
+`nirs4all_export_pipeline()` emits JSON or YAML from an unfitted R pipeline
+for the currently shared Core profile (default SNV, unit-spacing SG, default
+PLS). Its output is checked by the R, Python and WASM readers. It rejects
+unsupported native options rather than dropping them. This is a recipe export,
+not an export of a trained model.
+
 For this subset, Python-style, `n4m.*` and language-neutral method names
 resolve to the same R `n4m` operations. This is recipe portability, not yet
 full binary portability: the existing fitted-pipeline RDS contains portable

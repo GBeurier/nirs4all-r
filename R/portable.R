@@ -99,6 +99,66 @@ nirs4all_load_pipeline <- function(source) {
             class = "nirs4all_pipeline_definition")
 }
 
+#' Export a qualified R pipeline as a cross-language recipe
+#'
+#' Writes only the currently shared Core portable subset: default SNV,
+#' Savitzky-Golay with unit spacing, and default native PLS settings. Other
+#' n4m steps or settings fail explicitly until the Python/Rust/WASM contract
+#' supports them. This exports a recipe for fitting, not a trained model.
+#' @param pipeline An unfitted [nirs4all_pipeline()].
+#' @param format `"json"` or `"yaml"`.
+#' @param file Optional output path. If omitted, returns serialized text.
+#' @param name Pipeline name in the exported definition.
+#' @return Serialized text, invisibly if `file` is provided.
+#' @export
+nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
+                                    file = NULL, name = "pipeline") {
+  if (!inherits(pipeline, "nirs4all_pipeline"))
+    stop("pipeline must be an unfitted nirs4all_pipeline", call. = FALSE)
+  format <- match.arg(format)
+  if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name))
+    stop("name must be a non-empty string", call. = FALSE)
+  if (!is.null(file) && (!is.character(file) || length(file) != 1L ||
+                        is.na(file) || !nzchar(file)))
+    stop("file must be a non-empty path", call. = FALSE)
+  steps <- lapply(pipeline$steps, function(step) {
+    if (identical(step$kind, "snv")) {
+      if (!identical(step$ddof, 0L) || !identical(step$with_mean, TRUE) ||
+          !identical(step$with_std, TRUE))
+        stop("cross-language recipe export supports default SNV only", call. = FALSE)
+      return(list(class = "n4m.SNV"))
+    }
+    if (identical(step$kind, "savgol")) {
+      if (!isTRUE(step$delta == 1))
+        stop("cross-language recipe export supports Savitzky-Golay delta=1 only",
+             call. = FALSE)
+      return(list(class = "n4m.SavitzkyGolay",
+                  params = list(window_length = step$window_length,
+                                polyorder = step$polyorder, deriv = step$deriv,
+                                delta = step$delta, mode = step$mode,
+                                cval = step$cval)))
+    }
+    stop(sprintf("cross-language recipe export does not support step '%s'",
+                 step$kind), call. = FALSE)
+  })
+  spec <- pipeline$learner$spec
+  if (!is.list(spec) || !identical(spec$learner, "pls") ||
+      !identical(spec$algo, "pls_simpls") ||
+      !all(vapply(spec[c("center_x", "scale_x", "center_y", "scale_y")],
+                  identical, logical(1), TRUE)))
+    stop("cross-language recipe export supports default n4m PLS only",
+         call. = FALSE)
+  steps[[length(steps) + 1L]] <- list(model = list(
+    class = "n4m.PLS",
+    params = list(n_components = spec$n_components)))
+  definition <- list(name = name, pipeline = steps)
+  serialized <- if (identical(format, "json"))
+    as.character(jsonlite::toJSON(definition, auto_unbox = TRUE, pretty = TRUE))
+  else yaml::as.yaml(definition)
+  if (!is.null(file)) writeLines(serialized, file, useBytes = TRUE)
+  if (is.null(file)) serialized else invisible(serialized)
+}
+
 #' List operator classes in a portable definition
 #' @param definition A loaded pipeline or nested definition.
 #' @return Character vector of fully qualified class names.

@@ -2,7 +2,7 @@ library(nirs4all)
 # Exact copies of nirs4all-core/tests/parity/fixtures at transfer time.
 # Pinning their bytes makes later upstream fixture changes an explicit review.
 fixture_md5 <- c(
-  execution_contract_cases.json = "00529a1e435aebed79ca228335640812",
+  execution_contract_cases.json = "389d097b2a9d6dab37b873856c641f04",
   portable_kennard_stone_snv_pls.json = "2fd94920f19bb5c6834676bbabc5836e",
   portable_methods_pipeline.json = "3b3960e41c925c17fb3dbf9470ee8789",
   portable_savgol_pls.json = "aa12b986359c3a05cfa057880292797b",
@@ -130,3 +130,37 @@ bad_params <- native_alias
 bad_params$pipeline[[1L]]$params$unknown <- 1L
 stopifnot(inherits(try(nirs4all_parse_execution_plan(bad_params), silent = TRUE),
                    "try-error"))
+
+# Export from idiomatic R to the shared historical Core syntax. Non-default
+# native options are refused until Python/Rust/WASM execute them identically.
+r_pipeline <- nirs4all_pipeline(
+  list(nirs4all_snv(), nirs4all_savgol(11L, 2L, mode = "interp")),
+  nirs4all_pls(2L))
+r_X <- matrix(as.numeric(unlist(dataset$X)), dataset$rows, dataset$cols,
+              byrow = TRUE)
+r_y <- as.numeric(unlist(dataset$y))
+expected_fit <- nirs4all_fit(r_pipeline, r_X, r_y)
+for (extension in c("json", "yaml")) {
+  path <- tempfile(fileext = paste0(".", extension))
+  serialized <- nirs4all_export_pipeline(r_pipeline, extension, path,
+                                        name = "r_roundtrip")
+  stopifnot(is.character(serialized), length(serialized) == 1L,
+            identical(nirs4all_load_pipeline(path)$name, "r_roundtrip"),
+            identical(nirs4all_parse_execution_plan(path)$n_components, 2L),
+            identical(nirs4all_portable_class_names(nirs4all_load_pipeline(path)),
+                      c("n4m.SNV", "n4m.SavitzkyGolay", "n4m.PLS")))
+  result <- nirs4all_run_portable_pipeline(path, dataset)
+  stopifnot(max(abs(result$selected$predictions -
+                    nirs4all_predict(expected_fit, r_X))) < 1e-10)
+  unlink(path)
+}
+reject_export <- function(pipeline) {
+  stopifnot(inherits(try(nirs4all_export_pipeline(pipeline), silent = TRUE),
+                     "try-error"))
+}
+reject_export(nirs4all_pipeline(list(nirs4all_snv(ddof = 1L)), nirs4all_pls()))
+reject_export(nirs4all_pipeline(list(nirs4all_msc()), nirs4all_pls()))
+reject_export(nirs4all_pipeline(list(nirs4all_savgol(5L, delta = 2)),
+                                   nirs4all_pls()))
+reject_export(nirs4all_pipeline(list(), nirs4all_pls(algo = "pls_nipals")))
+reject_export(nirs4all_pipeline(list(), nirs4all_lm()))

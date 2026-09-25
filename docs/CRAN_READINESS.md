@@ -7,7 +7,7 @@ de soumission CRAN. Le produit public R s'appelle `nirs4all` et sa source est
 
 ## Vérification actuellement réalisée
 
-- `R CMD build .` a produit `nirs4all_0.4.0.9003.tar.gz`.
+- `R CMD build .` a produit `nirs4all_0.4.0.9004.tar.gz`.
 - `R CMD check --as-cran --no-manual` sous R 4.6.0 (Linux) a exécuté les tests
   du paquet, y compris les exemples Python/n4m, les formats et le chemin DAG
   natif. Après installation des tarballs R-universe `dagmldata` et
@@ -50,4 +50,4 @@ Avant une soumission `nirs4all` :
 La [politique CRAN de soumission](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande un `R CMD check --as-cran` du tarball à envoyer et, en principe, aucun
 avertissement ni note significative. Aucun formulaire de soumission ne doit
-présenter la version `0.4.0.9003` comme prête tant que ces gates restent ouverts.
+présenter la version `0.4.0.9004` comme prête tant que ces gates restent ouverts.
