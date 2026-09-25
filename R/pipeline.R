@@ -336,6 +336,29 @@ nirs4all_fit <- function(pipeline, X, y = NULL) {
                  feature_names = colnames(X)), class = "nirs4all_fitted")
 }
 
+#' Retrain a fitted pipeline on fresh data
+#'
+#' Reuses only the recipe (preprocessing steps and learner configuration), not
+#' any fitted preprocessing state or model weights. The ordered input feature
+#' schema must match the original fit. This also accepts a pipeline imported
+#' with [nirs4all_import_trained_pipeline()].
+#' @param object A fitted [nirs4all_fit()] result.
+#' @param X Numeric samples-by-features matrix or a [nirs4all_from_formats()]
+#'   dataset.
+#' @param y Target vector, or `NULL` when `X` is a nirs4all dataset.
+#' @return A newly fitted pipeline with independent state.
+#' @export
+nirs4all_retrain <- function(object, X, y = NULL) {
+  if (!inherits(object, "nirs4all_fitted"))
+    stop("object must be a fitted nirs4all pipeline", call. = FALSE)
+  input <- if (inherits(X, "nirs4all_dataset")) X$X else X
+  input <- nirs4all_matrix(input, object$n_features)
+  if (!is.null(object$feature_names) &&
+      !identical(colnames(input), object$feature_names))
+    stop("X feature names or order differ from training", call. = FALSE)
+  nirs4all_fit(nirs4all_pipeline(object$steps, object$learner), X, y)
+}
+
 #' Predict from a fitted pipeline
 #' @param object Fitted pipeline.
 #' @param X Numeric samples-by-features matrix.
