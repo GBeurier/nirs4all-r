@@ -32,6 +32,10 @@ check_fresh_process <- function(learner, label, tolerance) {
 }
 
 check_fresh_process(nirs4all_pls(n_components = 2L), "n4m", 1e-12)
+if (requireNamespace("mlr3", quietly = TRUE) &&
+    requireNamespace("rpart", quietly = TRUE))
+  check_fresh_process(nirs4all_mlr3(mlr3::lrn("regr.rpart", minsplit = 3L,
+                                             cp = 0)), "mlr3", 1e-12)
 if (requireNamespace("torch", quietly = TRUE) && torch::torch_is_installed())
   check_fresh_process(nirs4all_torch_mlp(hidden = 8L, epochs = 10L,
                                         seed = 10L), "torch", 1e-6)

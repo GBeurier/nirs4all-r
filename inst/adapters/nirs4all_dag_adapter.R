@@ -93,6 +93,17 @@ safe_handle <- function(value) {
   for (byte in as.integer(charToRaw(value))) acc <- (acc * 31 + byte) %% 2147483647
   as.integer(if (acc == 0) 1 else acc)
 }
+model_spec_from_task <- function(params) {
+  key <- params$spec_key
+  if (!is.character(key) || length(key) != 1L ||
+      !grepl("^[0-9a-f]{64}$", key))
+    stop("invalid R model specification key")
+  spec_bytes <- data$model_specs[[key]]
+  if (!is.raw(spec_bytes) ||
+      !identical(digest::digest(spec_bytes, algo = "sha256", serialize = FALSE), key))
+    stop("R model specification fingerprint mismatch")
+  unserialize(spec_bytes)
+}
 learner_from_task <- function(task) {
   params <- task$node_plan$params
   kind <- params$learner
@@ -116,18 +127,17 @@ learner_from_task <- function(task) {
                             alpha = if (is.null(params$alpha)) 1 else as.numeric(params$alpha),
                             standardize = if (is.null(params$standardize)) TRUE else params$standardize),
     parsnip = {
-      key <- params$spec_key
-      if (!is.character(key) || length(key) != 1L ||
-          !grepl("^[0-9a-f]{64}$", key))
-        stop("invalid parsnip model specification key")
-      spec_bytes <- data$model_specs[[key]]
-      if (!is.raw(spec_bytes) ||
-          !identical(digest::digest(spec_bytes, algo = "sha256", serialize = FALSE), key))
-        stop("parsnip model specification fingerprint mismatch")
-      spec <- unserialize(spec_bytes)
+      spec <- model_spec_from_task(params)
       if (!identical(spec$engine, params$engine))
         stop("parsnip model specification engine mismatch")
       nirs4all_parsnip(spec)
+    },
+    mlr3 = {
+      learner <- model_spec_from_task(params)
+      if (!inherits(learner, "LearnerRegr") ||
+          !identical(learner$id, params$engine))
+        stop("mlr3 learner specification identity mismatch")
+      nirs4all_mlr3(learner)
     },
     torch_mlp = nirs4all_torch_mlp(
       hidden = if (is.null(params$hidden)) 32L else as.integer(params$hidden),
