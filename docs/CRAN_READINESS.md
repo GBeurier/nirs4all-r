@@ -16,6 +16,10 @@ de soumission CRAN. Le produit public R s'appelle `nirs4all` et sa source est
   contrôle complet de toutes les dépendances facultatives.
 - Les résultats de Windows/macOS et la portabilité Archive V2/V3 Python↔R du
   pipeline entraîné complet restent à qualifier.
+- Le tarball autonome `n4m_1.0.21.9001.tar.gz` de la branche compatible a
+  également passé `R CMD check --as-cran --no-manual` sous Linux/R 4.6.0 :
+  0 erreur, 0 avertissement, 2 notes (nouvelle soumission/version de
+  développement et flag `-march=nocona` injecté par le R conda local).
 
 ## Blocage de politique et ordre de soumission
 
