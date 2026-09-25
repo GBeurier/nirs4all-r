@@ -56,6 +56,10 @@ if (available) {
     stopifnot(length(replay_values) == nrow(case$X),
               max(abs(replay_values - refit[match(replay_ids, ids)])) <=
                 case$tolerance)
+    new_X <- case$X[1:4, , drop = FALSE] + 0.01
+    external <- nirs4all_dag_predict(outcome, new_X)
+    manual_external <- predict(nirs4all_fit(case$pipeline, case$X, y), new_X)
+    stopifnot(max(abs(external - manual_external)) <= case$tolerance)
 
     expected_oof <- numeric(nrow(case$X))
     for (fold in 0:2) {
@@ -116,6 +120,7 @@ if (available) {
                      numeric(1))
     expected <- predict(nirs4all_fit(pipeline, dataset), dataset)
     stopifnot(max(abs(values - expected[match(ids, dataset$sample_ids)])) < 1e-10)
+    stopifnot(max(abs(nirs4all_dag_predict(outcome, dataset) - expected)) < 1e-10)
     message("formats file → native DAG CV/refit/replay passed")
   }
 
@@ -184,5 +189,44 @@ if (available) {
                       oracle_X)
   row_ids <- sprintf("sample:%08d", seq_len(nrow(oracle_X)))
   stopifnot(max(abs(replay_values - expected[match(replay_ids, row_ids)])) < 1e-10)
+  external_X <- oracle_X[1:5, , drop = FALSE] + 0.01
+  external <- nirs4all_dag_predict(selected, external_X)
+  manual_external <- predict(nirs4all_fit(candidates[[winner]], oracle_X,
+                                         oracle_y), external_X)
+  stopifnot(max(abs(external - manual_external)) < 1e-10)
+  altered <- selected
+  altered$bundle$refit_artifacts[[1L]]$artifact$content_fingerprint <-
+    paste(rep("0", 64L), collapse = "")
+  stopifnot(inherits(try(nirs4all_dag_predict(altered, external_X),
+                         silent = TRUE), "try-error"))
   message("native DAG model selection on Python n4m example passed: ", winner)
+
+  mixed <- list(
+    pls = nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(3L)),
+    ridge = nirs4all_pipeline(list(nirs4all_snv()),
+      nirs4all_n4m_method("ridge", params = list(ridge_lambda = 0.2))))
+  if (requireNamespace("ranger", quietly = TRUE))
+    mixed$forest <- nirs4all_pipeline(learner = nirs4all_ranger(
+      num.trees = 20L, seed = 10L, num.threads = 1L))
+  mixed_outcome <- nirs4all_dag_cv_refit_predict(mixed, oracle_X, oracle_y,
+                                                  folds = 4L, cli = cli)
+  mixed_catalog <- mixed_outcome$bundle$metadata$variant_catalog
+  mixed_labels <- stats::setNames(vapply(mixed_catalog, function(variant)
+    variant$choices$nirs4all_r_pipeline$label, character(1)),
+    vapply(mixed_catalog, `[[`, character(1), "variant_id"))
+  mixed_rmse <- vapply(names(mixed), function(label) {
+    oof <- numeric(nrow(oracle_X))
+    for (fold in 0:3) {
+      valid <- which((seq_len(nrow(oracle_X)) - 1L) %% 4L == fold)
+      train <- setdiff(seq_len(nrow(oracle_X)), valid)
+      oof[valid] <- predict(nirs4all_fit(mixed[[label]],
+        oracle_X[train, , drop = FALSE], oracle_y[train]),
+        oracle_X[valid, , drop = FALSE])
+    }
+    sqrt(mean((oof - oracle_y)^2))
+  }, numeric(1))
+  mixed_winner <- mixed_labels[[mixed_outcome$bundle$selected_variant_id]]
+  stopifnot(identical(mixed_winner, names(which.min(mixed_rmse))),
+            identical(as.integer(mixed_outcome$refit_result_count), 1L))
+  message("native DAG cross-family selection passed: ", mixed_winner)
 }

@@ -224,6 +224,51 @@ nirs4all_dag_cv_refit_predict <- function(
   outcome
 }
 
+#' Predict new samples with a native DAG-ML refit artifact
+#'
+#' Loads the single winning R model sidecar recorded by a completed native
+#' campaign. The sidecar is checked against the bundle's SHA-256 fingerprint
+#' before loading. This is local R inference from a DAG-ML-selected model;
+#' it does not run a new DAG-ML PREDICT phase or score the new cohort.
+#' Only load outcomes and RDS artifacts from trusted sources.
+#'
+#' @param outcome Result of [nirs4all_dag_cv_refit_predict()]. Its persistent
+#'   `workdir` and refit artifact must still exist.
+#' @param X Finite numeric matrix or a [nirs4all_from_formats()] dataset.
+#' @return Numeric predictions, in input row order.
+#' @export
+nirs4all_dag_predict <- function(outcome, X) {
+  if (!requireNamespace("digest", quietly = TRUE))
+    stop("Native DAG artifact verification requires digest", call. = FALSE)
+  if (!is.list(outcome) || !is.list(outcome$bundle) ||
+      !is.character(outcome$workdir) || length(outcome$workdir) != 1L ||
+      is.na(outcome$workdir) || !dir.exists(outcome$workdir))
+    stop("outcome must be a persisted native nirs4all DAG result", call. = FALSE)
+  records <- outcome$bundle$refit_artifacts
+  if (!is.list(records) || length(records) != 1L ||
+      !is.list(records[[1L]]$artifact))
+    stop("DAG bundle must contain exactly one refit artifact", call. = FALSE)
+  artifact <- records[[1L]]$artifact
+  path <- artifact$uri
+  fingerprint <- artifact$content_fingerprint
+  artifact_root <- normalizePath(file.path(outcome$workdir, "artifacts"),
+                                 mustWork = FALSE)
+  resolved_path <- if (is.character(path) && length(path) == 1L &&
+                       !is.na(path) && file.exists(path))
+    normalizePath(path, mustWork = TRUE) else ""
+  if (!identical(artifact$kind, "nirs4all_r_model") ||
+      !identical(artifact$backend, "rds") ||
+      !identical(artifact$controller_id, "controller:nirs4all-r") ||
+      !startsWith(resolved_path, paste0(artifact_root, .Platform$file.sep)) ||
+      !is.character(fingerprint) ||
+      length(fingerprint) != 1L || is.na(fingerprint) ||
+      !grepl("^[a-f0-9]{64}$", fingerprint) ||
+      !identical(digest::digest(resolved_path, algo = "sha256", file = TRUE),
+                 fingerprint))
+    stop("DAG refit artifact identity or content mismatch", call. = FALSE)
+  nirs4all_predict(nirs4all_load(resolved_path), X)
+}
+
 nirs4all_dag_fingerprints <- function(X, y, sample_ids) {
   fingerprint <- function(value) digest::digest(
     jsonlite::toJSON(value, auto_unbox = TRUE, null = "null", digits = 17),

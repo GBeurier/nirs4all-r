@@ -7,7 +7,8 @@ Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     Composes portable preprocessing and partial least squares operations from
     'n4m' with explicit R learner controllers. This development version offers
     local fit, predict, portable 'n4m' model serialization, and a native
-    'dagml' cross-validation, refit and replay path for single-model pipelines.
+    'dagml' cross-validation, fixed-candidate selection, refit and replay path
+    for single-node pipelines. Persisted refit models can predict new R samples.
     Optional 'nirs4allformats' datasets feed local and native paths while
     preserving sample and spectral-axis identities. Branching DAGs and host
     hyperparameter search remain under development.

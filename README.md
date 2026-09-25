@@ -11,9 +11,10 @@ DAG-ML parity gates. Do **not** publish both sources under the R package name
 The package composes `n4m` numerical preprocessing and PLS with R learner
 controllers on real numeric matrices. Local fit/predict and a first native
 DAG-ML path are separate surfaces. The native path covers fixed candidate
-selection by CV → OOF → one winner refit → replay; branches, adaptive HPO,
-external-test prediction and Python/R host-model conversion are not yet
-exposed by the high-level API.
+selection by CV → OOF → one winner refit → replay. The persisted R refit
+artifact can predict new samples locally; branches, adaptive HPO, native
+external-cohort replay and Python/R host-model conversion are not yet exposed
+by the high-level API.
 
 The optional `nirs4allformats` reader can feed either path without reparsing
 spectra in this package. It accepts homogeneous one-dimensional signals and
@@ -24,7 +25,9 @@ pipeline <- nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(2))
 dataset <- nirs4all_from_formats("spectra.csv", target = "protein")
 fit <- nirs4all_fit(pipeline, dataset)
 predictions <- predict(fit, nirs4all_from_formats("new_spectra.csv"))
-# Or: nirs4all_dag_cv_refit_predict(pipeline, dataset, cli = ".../dag-ml-cli")
+# Or: outcome <- nirs4all_dag_cv_refit_predict(pipeline, dataset,
+#                                              cli = ".../dag-ml-cli")
+#     nirs4all_dag_predict(outcome, nirs4all_from_formats("new_spectra.csv"))
 ```
 
 The Rust `nirs4all-formats` registry owns file decoding. Files with different
@@ -72,6 +75,12 @@ outcome$bundle$selected_variant_id
 outcome$bundle$metadata$variant_catalog
 ```
 
+Use `nirs4all_dag_predict(outcome, new_X)` for independent samples after the
+refit. It verifies the winning artifact's SHA-256 fingerprint before loading
+the R model and enforces its training feature order. Keep `outcome$workdir`
+and load only trusted RDS artifacts. This prediction runs locally, not as a
+new DAG-ML phase, and it does not create a test score.
+
 This is a fixed candidate grid, not nested CV or adaptive hyperparameter
 search. Its selected OOF score is optimistic if reported as an unbiased
 generalization estimate; use independent outer validation for that purpose.
@@ -111,7 +120,9 @@ regressors, including solver-sensitive CPPLS, ridge-PLS and continuum
 regression. A separate strict test checks native DAG-ML execution with
 PLS, `n4m` ridge/CPPLS, `lm`, `ranger`, `glmnet` and `torch` against manual
 fold-local fits. It also checks a five-candidate PLS sweep against manual
-fold-local OOF calculations and the selected refit.
+fold-local OOF calculations and the selected refit, plus cross-family
+selection among `n4m` PLS/ridge and `ranger`. External predictions are checked
+against independent full-data fits.
 Neither test qualifies arbitrary n4m compositions or complex DAG graphs.
 
 Current missing product gates are documented in
