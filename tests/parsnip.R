@@ -18,6 +18,20 @@ if (requireNamespace("parsnip", quietly = TRUE)) {
   stopifnot(max(abs(predict(nirs4all_load(model_file), X[13:18, , drop = FALSE]) -
                     expected)) < 1e-12)
   unlink(model_file)
-  stopifnot(inherits(try(nirs4all_parsnip(parsnip::set_mode(
-    parsnip::rand_forest(), "classification")), silent = TRUE), "try-error"))
+  if (requireNamespace("ranger", quietly = TRUE)) {
+    forest <- parsnip::set_engine(
+      parsnip::rand_forest(trees = 20L, mode = "regression"),
+      "ranger", seed = 5L, num.threads = 1L)
+    forest_fit <- nirs4all_fit(nirs4all_pipeline(
+      learner = nirs4all_parsnip(forest)), X[1:12, , drop = FALSE], y[1:12])
+    forest_reference <- parsnip::fit_xy(forest, x = reference_x, y = y[1:12])
+    forest_expected <- stats::predict(forest_reference, new_data = test_x,
+                                      type = "numeric")$.pred
+    stopifnot(max(abs(predict(forest_fit, X[13:18, , drop = FALSE]) -
+                      forest_expected)) < 1e-12)
+  }
+  classification <- parsnip::set_engine(
+    parsnip::rand_forest(mode = "classification"), "ranger")
+  stopifnot(inherits(try(nirs4all_parsnip(classification), silent = TRUE),
+                     "try-error"))
 }
