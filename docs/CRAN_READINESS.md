@@ -10,10 +10,12 @@ de soumission CRAN. Le produit public R s'appelle `nirs4all` et sa source est
 - `R CMD build .` a produit `nirs4all_0.4.0.9003.tar.gz`.
 - `R CMD check --as-cran --no-manual` sous R 4.6.0 (Linux) a exécuté les tests
   du paquet, y compris les exemples Python/n4m, les formats et le chemin DAG
-  natif. Résultat : une alerte *CRAN incoming* sur les dépendances hors CRAN.
-  `dagmldata` et `nirs4alldatasets` n'étaient pas installés localement ; le
-  contrôle utilisait `_R_CHECK_FORCE_SUGGESTS_=false`. Ce n'est donc pas un
-  contrôle complet de toutes les dépendances facultatives.
+  natif. Après installation des tarballs R-universe `dagmldata` et
+  `nirs4alldatasets`, **tous les `Suggests` étaient disponibles** et le
+  contrôle a été relancé sans `_R_CHECK_FORCE_SUGGESTS_=false` : 0 erreur,
+  1 avertissement *CRAN incoming* sur la nouvelle soumission, la version de
+  développement et les dépendances hors CRAN. Le CLI DAG-ML utilisé par les
+  tests stricts provenait encore du build local, pas du tarball du paquet.
 - Les résultats de Windows/macOS et la portabilité Archive V2/V3 Python↔R du
   pipeline entraîné complet restent à qualifier.
 - Le tarball autonome `n4m_1.0.21.9001.tar.gz` de la branche compatible a
