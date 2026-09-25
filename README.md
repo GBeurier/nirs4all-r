@@ -103,17 +103,23 @@ spectra. A strict test
 fits in R and predicts in a fresh Python process, then fits via Python n4m
 and predicts in R, with numerical equality. Other preprocessor combinations
 still use R-owned fit state and are refused by this raw-N4MM export API.
-For n4m PLS pipelines covered by the portable recipe,
+For n4m PLS regression and sparse PLS-DA classification pipelines covered by
+the portable recipe,
 `nirs4all_export_trained_pipeline()` writes a bounded JSON envelope with the
 recipe, fitted MSC/EMSC references (including feature-merge branches), and an
-exact hash-checked N4MM model. R imports it with
+exact hash-checked N4MM model. The classification envelope additionally carries
+ordered class labels and native affine decision scores. R imports it with
 `nirs4all_import_trained_pipeline()`; full Python `nirs4all` imports it with
 `PortableN4MTrainedPipeline.from_json(...)` and can fit a fresh Methods model
 via `.retrain(X, y)`. Python can also create the same envelope with
 `PortableN4MTrainedPipeline.fit_recipe(recipe, X, y).to_json(...)`, which R
-imports. Held-out predictions from both directions agree for plain, stateless,
-stateful, embedded and branch profiles. This is **not** a DAG-ML Archive V2/V3
-package and does not cover arbitrary native methods or non-n4m controllers.
+imports. Held-out PLS predictions from both directions agree for plain,
+stateless, stateful, embedded and branch profiles. Sparse PLS-DA classification
+has been tested in both directions for plain, SNV and MSC profiles, including
+retraining. This is **not** a DAG-ML Archive V2/V3 package and does not cover
+arbitrary native methods or non-n4m controllers. See
+[`docs/PORTABLE_TRAINED_PIPELINES.md`](docs/PORTABLE_TRAINED_PIPELINES.md) for
+the exact envelope boundary and validation guarantees.
 The RDS bundle remains R-specific.
 
 The former core R upstream accessors are also available here:
@@ -167,8 +173,9 @@ The sparse PLS-DA controller fits through `n4m`, accepts the portable
 `n4m.SparsePLSDA` JSON/YAML model alias, and matches the Python n4m decision
 scores on unseen samples. Its softmax outputs are **not calibrated
 probabilities**; they are only a DAG-compatible normalization of class scores.
-Its trained state is currently an RDS sidecar, not an N4MM or Archive V2/V3
-cross-language artifact.
+Its decision-score predictor is now an N4MM affine payload inside either a
+local RDS bundle or the bounded cross-language trained envelope. Neither is a
+DAG-ML Archive V2/V3 package; its softmax remains uncalibrated.
 The bounded `nirs4all_run_portable_pipeline()` reader can execute such a
 recipe on categorical R data, including a `nirs4all-formats` dataset, and
 select a component variant by accuracy. Numeric Python-style class codes are

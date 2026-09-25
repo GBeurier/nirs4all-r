@@ -2,18 +2,21 @@
 #'
 #' Serializes a portable n4m recipe, fitted MSC/EMSC references and the exact
 #' N4MM model payload in one JSON document. No RDS, Python pickle or executable
-#' code is included. Only the n4m PLS recipe accepted by
-#' [nirs4all_export_pipeline()] is currently supported. The JSON recipe also
-#' permits fitting the pipeline again in either language.
-#' @param object A fitted native n4m PLS pipeline.
+#' code is included. Version 1 covers n4m PLS regression; version 2 adds
+#' sparse PLS-DA with ordered class labels and a native affine N4MM predictor.
+#' The JSON recipe also permits fitting the pipeline again in either language.
+#' @param object A fitted native n4m PLS or sparse PLS-DA pipeline.
 #' @param file Optional output path. If omitted, returns JSON text.
 #' @return JSON text, invisibly when `file` is supplied.
 #' @export
 nirs4all_export_trained_pipeline <- function(object, file = NULL) {
+  classification <- inherits(object, "nirs4all_fitted") &&
+    identical(object$learner$format, "n4mm_sparse_pls_da") &&
+    identical(object$task, "classification")
   if (!inherits(object, "nirs4all_fitted") ||
-      !identical(object$learner$format, "n4mm") ||
-      !identical(object$task, "regression"))
-    stop("trained export requires a native n4m PLS regression pipeline",
+      !(classification || (identical(object$learner$format, "n4mm") &&
+        identical(object$task, "regression"))))
+    stop("trained export requires a native n4m PLS or sparse PLS-DA pipeline",
          call. = FALSE)
   recipe_pipeline <- structure(list(steps = object$steps,
     learner = object$learner), class = "nirs4all_pipeline")
@@ -31,19 +34,33 @@ nirs4all_export_trained_pipeline <- function(object, file = NULL) {
   owner <- object$preprocessing_owner
   if (!(owner %in% c("external_r", "embedded_methods")))
     stop("unsupported preprocessing ownership", call. = FALSE)
+  if (classification && (!identical(owner, "external_r") ||
+      !is.character(object$classes) || length(object$classes) < 2L ||
+      anyNA(object$classes) || any(!nzchar(object$classes)) ||
+      anyDuplicated(object$classes) ||
+      !identical(object$classes, object$state$classes)))
+    stop("invalid sparse PLS-DA class state", call. = FALSE)
   state <- nirs4all_portable_encode_states(object$steps, object$step_states,
                                            width, owner)
-  bytes <- n4m::n4m_model_export(object$state)
+  bytes <- n4m::n4m_model_export(if (classification)
+    object$state$native_model else object$state)
   nirs4all_portable_validate_model(bytes, recipe_pipeline, width,
-                                   state$output_width, owner)
+                                   state$output_width, owner,
+                                   if (classification) object$classes else NULL)
   manifest <- list(recipe = recipe, input_n_features = width,
     feature_names = if (is.null(object$feature_names)) NULL else
       unname(as.list(object$feature_names)),
     preprocessing_owner = if (identical(owner, "external_r")) "external" else owner,
     step_states = state$states)
+  if (classification) {
+    manifest$task <- "classification"
+    manifest$classes <- unname(as.list(object$classes))
+  }
   manifest_json <- as.character(jsonlite::toJSON(manifest,
     auto_unbox = TRUE, null = "null", digits = 17L))
-  document <- list(schema = "nirs4all.n4m.trained_pipeline.v1",
+  document <- list(schema = if (classification)
+    "nirs4all.n4m.trained_pipeline.v2" else
+    "nirs4all.n4m.trained_pipeline.v1",
     manifest_json = manifest_json,
     manifest_sha256 = digest::digest(manifest_json, algo = "sha256",
                                      serialize = FALSE),
@@ -79,8 +96,11 @@ nirs4all_import_trained_pipeline <- function(source) {
   if (!is.list(document) ||
       !setequal(names(document), c("schema", "manifest_json",
         "manifest_sha256", "model")) ||
-      !identical(document$schema, "nirs4all.n4m.trained_pipeline.v1"))
+      !is.character(document$schema) || length(document$schema) != 1L ||
+      !(document$schema %in% c("nirs4all.n4m.trained_pipeline.v1",
+                               "nirs4all.n4m.trained_pipeline.v2")))
     stop("unsupported trained pipeline envelope", call. = FALSE)
+  classification <- identical(document$schema, "nirs4all.n4m.trained_pipeline.v2")
   if (!is.character(document$manifest_json) ||
       length(document$manifest_json) != 1L ||
       !is.character(document$manifest_sha256) ||
@@ -90,10 +110,23 @@ nirs4all_import_trained_pipeline <- function(source) {
                                serialize = FALSE), document$manifest_sha256))
     stop("trained pipeline manifest hash mismatch", call. = FALSE)
   manifest <- jsonlite::fromJSON(document$manifest_json, simplifyVector = FALSE)
-  if (!is.list(manifest) || !setequal(names(manifest),
-      c("recipe", "input_n_features", "feature_names",
-        "preprocessing_owner", "step_states")))
+  required <- c("recipe", "input_n_features", "feature_names",
+                "preprocessing_owner", "step_states")
+  if (classification) required <- c(required, "task", "classes")
+  if (!is.list(manifest) || !setequal(names(manifest), required))
     stop("invalid trained pipeline manifest", call. = FALSE)
+  classes <- NULL
+  if (classification) {
+    values <- manifest$classes
+    if (!identical(manifest$task, "classification") || !is.list(values) ||
+        length(values) < 2L || !all(vapply(values, function(value)
+          is.character(value) && length(value) == 1L && !is.na(value) &&
+            nzchar(value), logical(1))))
+      stop("invalid ordered classification classes", call. = FALSE)
+    classes <- unlist(values, use.names = FALSE)
+    if (anyDuplicated(classes))
+      stop("duplicate classification classes", call. = FALSE)
+  }
   width <- manifest$input_n_features
   if (!is.numeric(width) || length(width) != 1L || is.na(width) ||
       width != as.integer(width) || width < 2L)
@@ -112,11 +145,16 @@ nirs4all_import_trained_pipeline <- function(source) {
       stop("duplicate feature names", call. = FALSE)
   }
   pipeline <- nirs4all_pipeline_from_portable(manifest$recipe)
+  if (classification != identical(pipeline$learner$spec$learner,
+                                  "sparse_pls_da"))
+    stop("trained model task differs from recipe", call. = FALSE)
   wire_owner <- manifest$preprocessing_owner
   if (!(is.character(wire_owner) && length(wire_owner) == 1L &&
         wire_owner %in% c("external", "embedded_methods")))
     stop("unsupported preprocessing ownership", call. = FALSE)
   owner <- if (identical(wire_owner, "external")) "external_r" else wire_owner
+  if (classification && !identical(owner, "external_r"))
+    stop("sparse PLS-DA requires external preprocessing", call. = FALSE)
   state <- nirs4all_portable_decode_states(pipeline$steps,
     manifest$step_states, width, owner)
   model <- document$model
@@ -132,11 +170,14 @@ nirs4all_import_trained_pipeline <- function(source) {
       serialize = FALSE), model$sha256))
     stop("native model payload hash mismatch", call. = FALSE)
   nirs4all_portable_validate_model(bytes, pipeline, width,
-                                   state$output_width, owner)
+                                   state$output_width, owner, classes)
   native <- n4m::n4m_model_import(bytes)
   structure(list(steps = pipeline$steps, learner = pipeline$learner,
-    state = native, step_states = state$states,
-    preprocessing_owner = owner, task = "regression", classes = NULL,
+    state = if (classification) list(native_model = native,
+      classes = classes) else native, step_states = state$states,
+    preprocessing_owner = owner,
+    task = if (classification) "classification" else "regression",
+    classes = classes,
     n_features = width, feature_names = feature_names),
     class = "nirs4all_fitted")
 }
@@ -219,9 +260,28 @@ nirs4all_portable_decode_states <- function(steps, states, width, owner) {
 }
 
 nirs4all_portable_validate_model <- function(bytes, pipeline, input_width,
-                                             model_width, owner) {
+                                             model_width, owner,
+                                             classes = NULL) {
   descriptor <- n4m::n4m_model_descriptor(bytes)
   embedded <- identical(owner, "embedded_methods")
+  if (!is.null(classes)) {
+    if (embedded || !identical(pipeline$learner$spec$learner,
+                               "sparse_pls_da") ||
+        !identical(descriptor$format_version, 1L) ||
+        !identical(descriptor$algorithm, 11L) ||
+        !identical(descriptor$solver, 0L) ||
+        !identical(descriptor$deflation, 0L) ||
+        !identical(descriptor$n_targets, as.integer(length(classes))) ||
+        !identical(descriptor$n_components, 0L) ||
+        !identical(descriptor$n_features, model_width) ||
+        bitwAnd(as.integer(descriptor$capabilities), 5L) != 5L ||
+        isTRUE(n4m::n4m_model_pipeline_info(bytes)$present))
+      stop("N4MM sparse PLS-DA state does not match trained recipe",
+           call. = FALSE)
+    return(invisible(descriptor))
+  }
+  if (!identical(pipeline$learner$spec$learner, "pls"))
+    stop("N4MM PLS state requires a PLS recipe", call. = FALSE)
   required_capabilities <- if (embedded) 9L else 1L
   if (!identical(descriptor$format_version, if (embedded) 2L else 1L) ||
       !identical(descriptor$algorithm, 0L) ||
