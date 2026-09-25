@@ -43,6 +43,10 @@ if (available) {
   if (requireNamespace("glmnet", quietly = TRUE))
     cases$glmnet <- list(pipeline = nirs4all_pipeline(
       learner = nirs4all_glmnet(lambda = 0.01)), X = X, tolerance = 1e-10)
+  if (requireNamespace("parsnip", quietly = TRUE))
+    cases$parsnip <- list(pipeline = nirs4all_pipeline(
+      learner = nirs4all_parsnip(parsnip::set_engine(parsnip::linear_reg(), "lm"))),
+      X = X[, c(2L, 5L), drop = FALSE], tolerance = 1e-10)
   if (requireNamespace("torch", quietly = TRUE) && torch::torch_is_installed())
     cases$torch <- list(pipeline = nirs4all_pipeline(
       learner = nirs4all_torch_mlp(hidden = 8L, epochs = 15L,
@@ -51,8 +55,8 @@ if (available) {
   if (strict && !setequal(names(cases),
                           c("pls", "n4m_ridge", "n4m_cppls",
                             "n4m_preprocessing", "n4m_area", "n4m_msc", "n4m_emsc", "lm",
-                            "ranger", "glmnet", "torch")))
-    stop("strict native DAG parity requires ranger, glmnet and torch CPU")
+                            "ranger", "glmnet", "parsnip", "torch")))
+    stop("strict native DAG parity requires ranger, glmnet, parsnip and torch CPU")
 
   for (name in names(cases)) {
     case <- cases[[name]]

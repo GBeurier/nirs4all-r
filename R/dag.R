@@ -121,8 +121,15 @@ nirs4all_dag_cv_refit_predict <- function(
                    data_content_fingerprint = fingerprints$data_content_fingerprint,
                    target_content_fingerprint = fingerprints$target_content_fingerprint,
                    coordinator_relations = relations)
+  model_specs <- list()
   model_params <- lapply(pipelines, function(value) {
     params <- value$learner$spec
+    if (identical(params$learner, "parsnip")) {
+      spec_bytes <- serialize(value$learner$model_spec, NULL, version = 3L)
+      key <- digest::digest(spec_bytes, algo = "sha256", serialize = FALSE)
+      model_specs[[key]] <<- spec_bytes
+      params$spec_key <- key
+    }
     params$preprocessing <- lapply(value$steps, unclass)
     params
   })
@@ -149,7 +156,8 @@ nirs4all_dag_cv_refit_predict <- function(
   port <- list(name = "oof", kind = "prediction", representation = NULL,
                cardinality = "one", description = "")
   controller <- list(
-    controller_id = "controller:nirs4all-r", controller_version = "0.4.0",
+    controller_id = "controller:nirs4all-r",
+    controller_version = as.character(utils::packageVersion("nirs4all")),
     operator_kind = "model", priority = 0L,
     supported_phases = list("FIT_CV", "REFIT", "PREDICT"),
     input_ports = list(), output_ports = list(port), data_requirements = NULL,
@@ -164,7 +172,8 @@ nirs4all_dag_cv_refit_predict <- function(
     path
   }
   data_path <- file.path(workdir, "data.rds")
-  saveRDS(list(X = X, y = as.numeric(y), sample_ids = sample_ids), data_path)
+  saveRDS(list(X = X, y = as.numeric(y), sample_ids = sample_ids,
+               model_specs = model_specs), data_path)
   dsl_path <- write_json("dsl.json", dsl)
   controllers_path <- write_json("controllers.json", list(controller))
   envelope_path <- write_json("envelope.json", envelope)

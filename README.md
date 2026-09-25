@@ -145,7 +145,9 @@ and MIR-PLS. These use `n4m` for fitting and coefficient-based prediction;
 their R model bundles are not N4MM exports. `nirs4all_lm()` uses base R.
 `nirs4all_ranger()` and
 `nirs4all_glmnet(lambda, alpha)` are optional random-forest and
-regularized-regression controllers. A user-defined controller can be
+regularized-regression controllers. `nirs4all_parsnip(spec)` accepts an
+engine-selected `parsnip` regression model, widening the R backend surface
+without copying engine implementations. A user-defined controller can be
 provided with `nirs4all_controller(fit, predict, name)`; its state is R-only.
 The `n4m` PLS model is saved as portable N4MM bytes inside the RDS bundle.
 The exact default SNV → SG → SIMPLS profile now embeds its preprocessing in
@@ -164,7 +166,7 @@ PLS component sweep) against a vendored Python oracle. This tests the n4m
 numerical path. A second frozen Python `n4m` oracle checks six MethodResult
 regressors, including solver-sensitive CPPLS, ridge-PLS and continuum
 regression. A separate strict test checks native DAG-ML execution with
-PLS, `n4m` ridge/CPPLS, `lm`, `ranger`, `glmnet` and `torch` against manual
+PLS, `n4m` ridge/CPPLS, `lm`, `ranger`, `glmnet`, `parsnip` and `torch` against manual
 fold-local fits. It also checks a five-candidate PLS sweep against manual
 fold-local OOF calculations and the selected refit, plus cross-family
 selection among `n4m` PLS/ridge and `ranger`. External predictions are checked
