@@ -13,6 +13,8 @@ if (available) {
             identical(rownames(dataset$X), raw$sample_ids),
             identical(unname(dataset$y), raw$targets$protein),
             identical(dataset$wavelengths, raw$wavelengths),
+            identical(dataset$axis_kind,
+                      if (is.null(raw$axis_kind)) "unspecified" else raw$axis_kind),
             identical(dataset$signal_type, "absorbance"))
   from_path <- nirs4all_from_formats(path, target = "protein")
   stopifnot(identical(from_path$X, dataset$X),

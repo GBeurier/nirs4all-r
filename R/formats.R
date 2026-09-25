@@ -33,11 +33,13 @@ nirs4all_from_formats <- function(source, target = NULL, signal = NULL) {
     stop("formats spectral axis must contain one finite coordinate per feature",
          call. = FALSE)
   unit <- dataset$axis_unit
+  kind <- if (is.null(dataset$axis_kind)) "unspecified" else dataset$axis_kind
   signal_type <- dataset$signal_type
   if (!is.character(unit) || length(unit) != 1L || is.na(unit) || !nzchar(unit) ||
+      !is.character(kind) || length(kind) != 1L || is.na(kind) || !nzchar(kind) ||
       !is.character(signal_type) || length(signal_type) != 1L ||
       is.na(signal_type) || !nzchar(signal_type))
-    stop("formats axis unit and signal type are required", call. = FALSE)
+    stop("formats axis kind, unit and signal type are required", call. = FALSE)
   if (!is.null(target) && (!is.character(target) || length(target) != 1L ||
                           is.na(target) || !nzchar(target)))
     stop("target must name one numeric column", call. = FALSE)
@@ -53,11 +55,11 @@ nirs4all_from_formats <- function(source, target = NULL, signal = NULL) {
     y <- stats::setNames(as.numeric(y), ids)
   }
   rownames(X) <- ids
-  colnames(X) <- paste0("axis:", signal_type, ":", unit, ":",
+  colnames(X) <- paste0("axis:", signal_type, ":", kind, ":", unit, ":",
                         sprintf("%08d", seq_along(wavelengths)), ":",
                         sprintf("%.17g", wavelengths))
   structure(list(X = X, y = y, sample_ids = ids,
-                 wavelengths = wavelengths, axis_unit = unit,
+                 wavelengths = wavelengths, axis_kind = kind, axis_unit = unit,
                  signal_type = signal_type, target_name = target,
                  metadata = dataset$metadata, formats = dataset$formats,
                  provenance = dataset$provenance),

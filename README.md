@@ -28,9 +28,9 @@ predictions <- predict(fit, nirs4all_from_formats("new_spectra.csv"))
 
 The Rust `nirs4all-formats` registry owns file decoding. Files with different
 axes, multidimensional signals, missing targets or duplicate sample IDs are
-not silently coerced into a training matrix. The flat dataset currently
-preserves format labels and metadata, but not the full per-source provenance
-available through `nirs4allformats_open_records()`.
+not silently coerced into a training matrix. The converter retains per-record
+provenance when the installed `nirs4allformats` version supplies it; older
+releases expose it only through `nirs4allformats_open_records()`.
 
 ```r
 library(nirs4all)
