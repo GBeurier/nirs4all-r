@@ -1,11 +1,14 @@
 Package: nirs4all
 Type: Package
 Title: Composable Near-Infrared Spectroscopy Pipelines for R
-Version: 0.4.0.9000
+Version: 0.4.0.9006
 Authors@R: c(person("Gregory", "Beurier", email = "gregory.beurier@cirad.fr", role = c("aut", "cre")), person("nirs4all", "contributors", role = "ctb"))
 Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
-    Composes portable preprocessing and partial least squares operations from
-    'n4m' with explicit R learner controllers. This development version offers
+    Composes portable preprocessing (including local and robust normalization,
+    area normalization, detrending, train-fitted MSC and Savitzky-Golay filtering) and partial
+    least squares operations from 'n4m' with explicit R learner controllers,
+    including an optional 'parsnip' regression adapter.
+    This development version offers
     local fit, predict, portable 'n4m' model serialization, and a native
     'dagml' cross-validation, fixed-candidate selection, refit and replay path
     for single-node pipelines. Persisted refit models can predict new R samples.
@@ -16,8 +19,8 @@ License: AGPL (>= 3)
 URL: https://github.com/GBeurier/nirs4all-r
 BugReports: https://github.com/GBeurier/nirs4all-r/issues
 Depends: R (>= 4.1)
-Imports: n4m, stats
-Suggests: dagml, digest, glmnet, jsonlite, nirs4allformats, ranger, torch
+Imports: jsonlite, n4m (>= 1.0.21.9002), stats, tools, yaml
+Suggests: dagml, dagmldata, digest, glmnet, nirs4alldatasets, nirs4allformats, nirs4allio, parsnip, ranger, torch
 Additional_repositories: https://gbeurier.r-universe.dev
 Encoding: UTF-8
 NeedsCompilation: no

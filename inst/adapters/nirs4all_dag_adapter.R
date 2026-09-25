@@ -50,6 +50,16 @@ for (key in names(fingerprints)) {
   if (!identical(envelope[[key]], fingerprints[[key]]))
     stop(paste("DAG-ML envelope does not attest R data:", key))
 }
+if (!is.list(data$model_specs) ||
+    (length(data$model_specs) &&
+     (is.null(names(data$model_specs)) || anyDuplicated(names(data$model_specs)))))
+  stop("invalid R model specification store")
+for (key in names(data$model_specs)) {
+  bytes <- data$model_specs[[key]]
+  if (!grepl("^[0-9a-f]{64}$", key) || !is.raw(bytes) ||
+      !identical(digest::digest(bytes, algo = "sha256", serialize = FALSE), key))
+    stop("R model specification fingerprint mismatch")
+}
 if (identical(args, "--verify")) quit(save = "no", status = 0L)
 
 as_ids <- function(value) as.character(unlist(value, use.names = FALSE))
@@ -86,6 +96,20 @@ learner_from_task <- function(task) {
     glmnet = nirs4all_glmnet(lambda = as.numeric(params$lambda),
                             alpha = if (is.null(params$alpha)) 1 else as.numeric(params$alpha),
                             standardize = if (is.null(params$standardize)) TRUE else params$standardize),
+    parsnip = {
+      key <- params$spec_key
+      if (!is.character(key) || length(key) != 1L ||
+          !grepl("^[0-9a-f]{64}$", key))
+        stop("invalid parsnip model specification key")
+      spec_bytes <- data$model_specs[[key]]
+      if (!is.raw(spec_bytes) ||
+          !identical(digest::digest(spec_bytes, algo = "sha256", serialize = FALSE), key))
+        stop("parsnip model specification fingerprint mismatch")
+      spec <- unserialize(spec_bytes)
+      if (!identical(spec$engine, params$engine))
+        stop("parsnip model specification engine mismatch")
+      nirs4all_parsnip(spec)
+    },
     torch_mlp = nirs4all_torch_mlp(
       hidden = if (is.null(params$hidden)) 32L else as.integer(params$hidden),
       epochs = if (is.null(params$epochs)) 100L else as.integer(params$epochs),
@@ -98,7 +122,19 @@ steps_from_task <- function(task) {
   if (is.null(specs)) return(list())
   lapply(specs, function(spec) {
     switch(spec$kind,
-      snv = nirs4all_snv(ddof = as.integer(spec$ddof)),
+      snv = nirs4all_snv(ddof = as.integer(spec$ddof),
+                        with_mean = if (is.null(spec$with_mean)) TRUE else spec$with_mean,
+                        with_std = if (is.null(spec$with_std)) TRUE else spec$with_std),
+      local_snv = nirs4all_local_snv(
+        window = as.integer(spec$window), pad_mode = spec$pad_mode,
+        constant_value = as.numeric(spec$constant_value)),
+      robust_snv = nirs4all_robust_snv(
+        with_center = spec$with_center, with_scale = spec$with_scale,
+        k = as.numeric(spec$k)),
+      area_normalization = nirs4all_area_normalization(method = spec$method),
+      detrend = nirs4all_detrend(polyorder = as.integer(spec$polyorder)),
+      msc = nirs4all_msc(),
+      emsc = nirs4all_emsc(degree = as.integer(spec$degree)),
       savgol = nirs4all_savgol(
         window_length = as.integer(spec$window_length),
         polyorder = as.integer(spec$polyorder), deriv = as.integer(spec$deriv),
@@ -183,7 +219,8 @@ record_result <- function(task, raw_line) {
                        content_fingerprint = digest::digest(artifact_path,
                                                            algo = "sha256", file = TRUE),
                        size_bytes = as.integer(file.info(artifact_path)$size),
-                       plugin = "nirs4all-r", plugin_version = "0.4.0.9000")
+                       plugin = "nirs4all-r",
+                       plugin_version = as.character(utils::packageVersion("nirs4all")))
       artifacts <- list(artifact)
       artifact_handles <- setNames(list(list(
         handle = safe_handle(artifact_id), kind = "model",
