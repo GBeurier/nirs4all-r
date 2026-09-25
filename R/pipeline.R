@@ -128,6 +128,27 @@ nirs4all_savgol <- function(window_length, polyorder = 2L, deriv = 0L,
                  delta = delta, mode = mode, cval = cval), class = "nirs4all_step")
 }
 
+#' Concatenate parallel preprocessing branches
+#'
+#' Each branch starts from the same input matrix. Train-fitted states, such as
+#' MSC references, are learned independently on the training rows of their
+#' branch. Output columns are prefixed by the branch name.
+#'
+#' @param branches Named list of at least two non-empty lists of nirs4all steps.
+#' @return A composable nirs4all preprocessing step.
+#' @export
+nirs4all_concat <- function(branches) {
+  if (!is.list(branches) || length(branches) < 2L ||
+      is.null(names(branches)) || anyNA(names(branches)) ||
+      anyDuplicated(names(branches)) ||
+      !all(grepl("^[A-Za-z][A-Za-z0-9_.-]*$", names(branches))) ||
+      !all(vapply(branches, function(branch)
+        is.list(branch) && length(branch) > 0L &&
+          all(vapply(branch, inherits, logical(1), "nirs4all_step")), logical(1))))
+    stop("branches must be named, non-empty preprocessing step lists", call. = FALSE)
+  structure(list(kind = "concat", branches = branches), class = "nirs4all_step")
+}
+
 #' Define an R pipeline
 #' @param steps List of preprocessing steps, applied in order.
 #' @param learner One controller from [nirs4all_pls()], [nirs4all_lm()],
@@ -149,6 +170,23 @@ nirs4all_matrix <- function(X, n_features = NULL) {
     stop(sprintf("X has %d features; expected %d", ncol(X), n_features), call. = FALSE)
   storage.mode(X) <- "double"
   X
+}
+
+nirs4all_concat_matrices <- function(matrices) {
+  if (!is.list(matrices) || length(matrices) < 2L ||
+      is.null(names(matrices)) || anyDuplicated(names(matrices)))
+    stop("concat requires named branch matrices", call. = FALSE)
+  rows <- vapply(matrices, nrow, integer(1))
+  if (length(unique(rows)) != 1L)
+    stop("concat branch row counts differ", call. = FALSE)
+  labelled <- lapply(names(matrices), function(name) {
+    output <- nirs4all_matrix(matrices[[name]])
+    columns <- colnames(output)
+    if (is.null(columns)) columns <- sprintf("feature:%08d", seq_len(ncol(output)))
+    colnames(output) <- paste(name, columns, sep = "::")
+    output
+  })
+  do.call(cbind, labelled)
 }
 
 nirs4all_transform <- function(X, steps, step_states = NULL) {
@@ -184,6 +222,16 @@ nirs4all_transform <- function(X, steps, step_states = NULL) {
           stop("EMSC requires a fitted training reference", call. = FALSE)
         n4m::emsc_transform(X, reference, step$degree)
       },
+      concat = {
+        branch_states <- step_states[[index]]
+        if (!is.list(branch_states) ||
+            !identical(names(branch_states), names(step$branches)))
+          stop("concat requires fitted state for each branch", call. = FALSE)
+        matrices <- lapply(names(step$branches), function(name)
+          nirs4all_transform(X, step$branches[[name]], branch_states[[name]]))
+        names(matrices) <- names(step$branches)
+        nirs4all_concat_matrices(matrices)
+      },
       savgol = n4m::savgol_transform(X, step$window_length,
         step$polyorder, step$deriv, step$delta, step$mode, step$cval),
       stop("unknown preprocessing step", call. = FALSE))
@@ -200,6 +248,13 @@ nirs4all_fit_transform <- function(X, steps) {
       states[[index]] <- n4m::msc_fit(X)
     if (identical(steps[[index]]$kind, "emsc"))
       states[[index]] <- n4m::emsc_fit(X, steps[[index]]$degree)
+    if (identical(steps[[index]]$kind, "concat")) {
+      branch_fits <- lapply(steps[[index]]$branches, function(branch)
+        nirs4all_fit_transform(X, branch))
+      states[[index]] <- lapply(branch_fits, `[[`, "states")
+      X <- nirs4all_transform(X, list(steps[[index]]), list(states[[index]]))
+      next
+    }
     X <- nirs4all_transform(X, list(steps[[index]]), list(states[[index]]))
   }
   list(X = X, states = states)

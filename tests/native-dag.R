@@ -217,6 +217,53 @@ if (available) {
     silent = TRUE), "try-error"))
   message("native multi-node n4m preprocessing/model selection passed: ",
           graph_winner)
+
+  concat_pipeline <- nirs4all_pipeline(list(nirs4all_concat(list(
+    derivative = list(nirs4all_snv(), nirs4all_savgol(5L)),
+    scatter = list(nirs4all_msc(), nirs4all_detrend(1L))))),
+    nirs4all_pls(2L))
+  concat_graph <- nirs4all_dag_cv_refit_predict(
+    concat_pipeline, X, y, folds = 3L, cli = cli,
+    split_steps = TRUE, process_workers = 2L)
+  stopifnot(identical(as.integer(concat_graph$fit_cv_result_count), 18L),
+            identical(as.integer(concat_graph$refit_result_count), 6L),
+            length(concat_graph$bundle$refit_artifacts) == 6L)
+  concat_fit <- nirs4all_fit(concat_pipeline, X, y)
+  concat_replay <- concat_graph$replay_prediction_blocks[[1L]]
+  concat_ids <- as.character(unlist(concat_replay$sample_ids))
+  concat_values <- vapply(concat_replay$values,
+    function(value) as.numeric(value[[1L]]), numeric(1))
+  stopifnot(max(abs(concat_values -
+    predict(concat_fit, X)[match(concat_ids, ids)])) < 1e-10)
+  concat_oof <- numeric(nrow(X))
+  for (fold in 0:2) {
+    validation <- seq_len(nrow(X))[(seq_len(nrow(X)) - 1L) %% 3L == fold]
+    training <- setdiff(seq_len(nrow(X)), validation)
+    concat_oof[validation] <- predict(nirs4all_fit(concat_pipeline,
+      X[training, , drop = FALSE], y[training]),
+      X[validation, , drop = FALSE])
+  }
+  for (average in concat_graph$oof_average_results) {
+    block <- average$aggregated_predictions[[1L]]
+    block_ids <- vapply(block$unit_ids, `[[`, "", "id")
+    values <- vapply(block$values,
+      function(value) as.numeric(value[[1L]]), numeric(1))
+    stopifnot(max(abs(values - concat_oof[match(block_ids, ids)])) < 1e-10)
+  }
+  concat_external <- X[1:4, , drop = FALSE] + 0.01
+  stopifnot(max(abs(nirs4all_dag_predict(concat_graph, concat_external) -
+    predict(concat_fit, concat_external))) < 1e-10)
+  branch_artifact <- Filter(function(record)
+    identical(record$node_id, "transform:nirs4all-r:001:scatter:001"),
+    concat_graph$bundle$refit_artifacts)[[1L]]$artifact$uri
+  branch_state <- readRDS(branch_artifact)
+  branch_state$n_features <- branch_state$n_features + 1L
+  saveRDS(branch_state, branch_artifact)
+  rejected <- tryCatch(nirs4all_dag_predict(concat_graph, concat_external),
+                       error = function(error) conditionMessage(error))
+  stopifnot(is.character(rejected),
+            grepl("artifact identity or content mismatch", rejected))
+  message("native parallel n4m branches → concat → PLS CV/OOF/refit passed")
   verify_tamper_rejected <- function(workdir) {
     data_path <- file.path(workdir, "data.rds")
     tampered <- readRDS(data_path)

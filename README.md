@@ -14,7 +14,9 @@ The package composes `n4m` numerical preprocessing and PLS with R learner
 controllers on real numeric matrices. Local fit/predict and a first native
 DAG-ML path are separate surfaces. The native path covers fixed candidate
 selection by CV → OOF → one winner refit → replay. The persisted R refit
-artifact can predict new samples locally; branches, adaptive HPO, native
+artifact can predict new samples locally; bounded parallel preprocessing
+branches can be concatenated before a model. General prediction stacking,
+adaptive HPO, native
 external-cohort replay and Python/R host-model conversion are not yet exposed
 by the high-level API.
 
@@ -148,6 +150,24 @@ outcome <- nirs4all_dag_cv_refit_predict(candidates, X, y,
 
 The R process adapters exchange fold-scoped matrices locally; this is not a
 cross-language model format or a general branch/merge graph API.
+
+To combine two feature views, `nirs4all_concat()` fits each named branch on
+the same training rows, then concatenates its output columns before the
+learner. With `split_steps = TRUE`, DAG-ML runs each branch step and the join
+as separate nodes (currently for a single pipeline whose sole preprocessing
+step is the concat):
+
+```r
+pipeline <- nirs4all_pipeline(
+  list(nirs4all_concat(list(
+    derivative = list(nirs4all_snv(), nirs4all_savgol(5)),
+    scatter = list(nirs4all_msc(), nirs4all_detrend(1))
+  ))),
+  nirs4all_pls(2)
+)
+outcome <- nirs4all_dag_cv_refit_predict(pipeline, X, y,
+  split_steps = TRUE, cli = "/path/to/dag-ml-cli")
+```
 
 Use `nirs4all_dag_predict(outcome, new_X)` for independent samples after the
 refit. It verifies the winning model and transform artifacts' SHA-256
