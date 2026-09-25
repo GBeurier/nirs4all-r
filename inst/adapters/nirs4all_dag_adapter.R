@@ -158,7 +158,7 @@ learner_from_task <- function(task) {
 steps_from_task <- function(task) {
   specs <- task$node_plan$params$preprocessing
   if (is.null(specs)) return(list())
-  lapply(specs, function(spec) {
+  step_from_spec <- function(spec) {
     switch(spec$kind,
       snv = nirs4all_snv(ddof = as.integer(spec$ddof),
                         with_mean = if (is.null(spec$with_mean)) TRUE else spec$with_mean,
@@ -178,8 +178,11 @@ steps_from_task <- function(task) {
         polyorder = as.integer(spec$polyorder), deriv = as.integer(spec$deriv),
         delta = as.numeric(spec$delta), mode = spec$mode,
         cval = as.numeric(spec$cval)),
+      concat = nirs4all_concat(lapply(spec$branches, function(branch)
+        lapply(branch, step_from_spec))),
       stop(paste("unsupported preprocessing step:", spec$kind)))
-  })
+  }
+  lapply(specs, step_from_spec)
 }
 fold_ids <- function(fold_id) {
   matches <- Filter(function(fold) identical(fold$fold_id, fold_id),
@@ -202,12 +205,13 @@ transform_data_location <- function(handle) {
   file.path(normalizePath(artifact_dir, mustWork = TRUE),
             paste0("data-", handle, ".rds"))
 }
-input_matrices <- function(task, train_ids, prediction_ids) {
+input_matrices <- function(task, train_ids, prediction_ids, input_name = "x") {
   raw <- function(ids) if (is.null(ids)) NULL else
     data$X[sample_rows(ids), , drop = FALSE]
-  upstream <- task$input_handles[["data:x"]]
+  upstream <- task$input_handles[[paste0("data:", input_name)]]
   if (is.null(upstream) ||
-      !identical(upstream$owner_controller, "controller:nirs4all-r-transform"))
+      !(upstream$owner_controller %in% c("controller:nirs4all-r-transform",
+                                        "controller:nirs4all-r-concat")))
     return(list(train = raw(train_ids), prediction = raw(prediction_ids)))
   if (!identical(upstream$kind, "data") ||
       !is.numeric(upstream$handle) || length(upstream$handle) != 1L)
@@ -215,12 +219,9 @@ input_matrices <- function(task, train_ids, prediction_ids) {
   path <- transform_data_location(as.integer(upstream$handle))
   if (!file.exists(path)) stop("missing upstream transform matrix sidecar")
   payload <- readRDS(path)
-  producer_keys <- names(task$input_handles)
-  producer_keys <- producer_keys[endsWith(producer_keys, ".x_out")]
   expected_key <- paste0(payload$node_id, ".x_out")
   if (!identical(payload$handle, as.integer(upstream$handle)) ||
-      length(producer_keys) != 1L ||
-      !identical(producer_keys[[1L]], expected_key) ||
+      !identical(task$input_handles[[expected_key]]$handle, upstream$handle) ||
       !identical(payload$phase, task$phase) ||
       !identical(payload$fold_id, task$fold_id) ||
       !identical(payload$variant_id, task$variant_id) ||
@@ -232,6 +233,32 @@ input_matrices <- function(task, train_ids, prediction_ids) {
       nrow(payload$prediction) != length(prediction_ids))
     stop("upstream transform sidecar does not match DAG task identity")
   list(train = payload$train, prediction = payload$prediction)
+}
+concat_dsl_step <- function(node) {
+  matches <- Filter(function(step) identical(step$id, node) &&
+    identical(step$kind, "concat_transform"), dsl$steps)
+  if (length(matches) != 1L) stop("unknown DAG concat node")
+  matches[[1L]]
+}
+concat_step_state <- function(spec) {
+  branches <- lapply(spec$branches, function(branch)
+    lapply(branch$steps, function(child) {
+      task <- list(node_plan = list(params = child$params))
+      steps_from_task(task)[[1L]]
+    }))
+  names(branches) <- vapply(spec$branches, `[[`, "", "id")
+  step <- nirs4all_concat(branches)
+  states <- lapply(spec$branches, function(branch)
+    lapply(branch$steps, function(child) {
+      artifact <- readRDS(artifact_location(child$id))
+      expected <- steps_from_task(list(node_plan = list(params = child$params)))
+      if (!identical(artifact$steps, expected) ||
+          length(artifact$states) != 1L)
+        stop("concat branch fitted state does not match its DAG step")
+      artifact$states[[1L]]
+    }))
+  names(states) <- names(branches)
+  list(step = step, states = states)
 }
 prediction_block <- function(node, partition, fold_id, ids, values) {
   list(producer_node = node, partition = partition, fold_id = fold_id,
@@ -276,19 +303,52 @@ record_result <- function(task, raw_line) {
     partition <- "final"
   }
   sample_rows(prediction_ids)
-  matrices <- input_matrices(task, train_ids, prediction_ids)
-  if (identical(controller, "controller:nirs4all-r-transform")) {
-    steps <- steps_from_task(task)
-    if (length(steps) != 1L) stop("transform node needs one n4m step")
-    if (!identical(phase, "PREDICT")) {
-      transformed <- nirs4all:::nirs4all_fit_transform(matrices$train, steps)
-      prediction_matrix <- nirs4all:::nirs4all_transform(
-        matrices$prediction, steps, transformed$states)
-      if (identical(phase, "REFIT"))
-        saveRDS(list(steps = steps, states = transformed$states,
-                     n_features = ncol(matrices$train)), artifact_path)
-      train_matrix <- transformed$X
+  is_concat <- identical(controller, "controller:nirs4all-r-concat")
+  if (is_concat) {
+    spec <- concat_dsl_step(node)
+    branch_names <- vapply(spec$branches, `[[`, "", "id")
+    branch_pairs <- lapply(branch_names, function(name) {
+      upstream <- task$input_handles[[paste0("data:", name, "_x")]]
+      if (is.null(upstream) ||
+          !identical(upstream$owner_controller,
+                     "controller:nirs4all-r-transform"))
+        stop("concat branch lacks an upstream data handle")
+      input_matrices(task, train_ids, prediction_ids, paste0(name, "_x"))
+    })
+    names(branch_pairs) <- branch_names
+    matrices <- list(
+      train = if (is.null(train_ids)) NULL else
+        nirs4all:::nirs4all_concat_matrices(lapply(branch_pairs, `[[`, "train")),
+      prediction = nirs4all:::nirs4all_concat_matrices(
+        lapply(branch_pairs, `[[`, "prediction")))
+  } else matrices <- input_matrices(task, train_ids, prediction_ids)
+  if (controller %in% c("controller:nirs4all-r-transform",
+                        "controller:nirs4all-r-concat")) {
+    if (is_concat) {
+      train_matrix <- matrices$train
+      prediction_matrix <- matrices$prediction
+      if (identical(phase, "REFIT")) {
+        state <- concat_step_state(spec)
+        saveRDS(list(steps = list(state$step), states = list(state$states),
+                     n_features = ncol(data$X)), artifact_path)
+      }
     } else {
+      steps <- steps_from_task(task)
+      if (length(steps) != 1L) stop("transform node needs one n4m step")
+      if (!identical(phase, "PREDICT")) {
+        transformed <- nirs4all:::nirs4all_fit_transform(matrices$train, steps)
+        prediction_matrix <- nirs4all:::nirs4all_transform(
+          matrices$prediction, steps, transformed$states)
+        if (identical(phase, "REFIT"))
+          saveRDS(list(steps = steps, states = transformed$states,
+                       n_features = ncol(matrices$train)), artifact_path)
+        train_matrix <- transformed$X
+      } else {
+        train_matrix <- NULL
+        prediction_matrix <- NULL
+      }
+    }
+    if (identical(phase, "PREDICT")) {
       inputs <- task$artifact_inputs
       expected <- Filter(function(input) identical(input$artifact$id, artifact_id), inputs)
       if (length(expected) != 1L ||
@@ -296,13 +356,14 @@ record_result <- function(task, raw_line) {
           !identical(expected[[1L]]$artifact$content_fingerprint,
                      digest::digest(artifact_path, algo = "sha256", file = TRUE)))
         stop("PREDICT transform artifact identity or content mismatch")
-      state <- readRDS(artifact_path)
-      if (!identical(state$steps, steps) ||
-          !identical(state$n_features, ncol(matrices$prediction)))
-        stop("PREDICT transform state does not match its node")
-      train_matrix <- NULL
-      prediction_matrix <- nirs4all:::nirs4all_transform(
-        matrices$prediction, steps, state$states)
+      if (!is_concat) {
+        state <- readRDS(artifact_path)
+        if (!identical(state$steps, steps) ||
+            !identical(state$n_features, ncol(matrices$prediction)))
+          stop("PREDICT transform state does not match its node")
+        prediction_matrix <- nirs4all:::nirs4all_transform(
+          matrices$prediction, steps, state$states)
+      }
     }
     handle <- safe_handle(paste(node, phase, task$variant_id,
                                 task$fold_id, sep = ":"))
@@ -313,7 +374,8 @@ record_result <- function(task, raw_line) {
     artifacts <- list()
     artifact_handles <- empty_object
     if (identical(phase, "REFIT")) {
-      artifacts <- list(list(id = artifact_id, kind = "nirs4all_r_transform",
+      artifacts <- list(list(id = artifact_id,
+        kind = if (is_concat) "nirs4all_r_concat" else "nirs4all_r_transform",
         controller_id = controller, backend = "rds", uri = artifact_path,
         content_fingerprint = digest::digest(artifact_path,
           algo = "sha256", file = TRUE),

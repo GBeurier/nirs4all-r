@@ -1,3 +1,11 @@
+nirs4all_dag_step_spec <- function(step) {
+  spec <- unclass(step)
+  if (identical(spec$kind, "concat"))
+    spec$branches <- lapply(spec$branches, function(branch)
+      lapply(branch, nirs4all_dag_step_spec))
+  spec
+}
+
 #' Run native DAG-ML CV, refit and prediction from an R matrix
 #'
 #' Builds a DAG-ML campaign with explicit sample IDs and folds.
@@ -26,7 +34,9 @@
 #'   whole groups, not individual samples, are assigned to validation folds.
 #' @param split_steps If `TRUE`, run each n4m preprocessing step as a separate
 #'   DAG transform node. Named variants must have the same number of steps;
-#'   their step methods and parameters may differ.
+#'   their step methods and parameters may differ. A single
+#'   [nirs4all_concat()] step is lowered to parallel branch transforms and a
+#'   feature-join node; it cannot yet be combined with variants or other steps.
 #' @return Native DAG-ML outcome with an additional `workdir` path.
 #' @export
 nirs4all_dag_cv_refit_predict <- function(
@@ -61,6 +71,18 @@ nirs4all_dag_cv_refit_predict <- function(
       length(unique(vapply(pipelines, function(value) length(value$steps),
                            integer(1)))) != 1L)
     stop("split_steps variants must have the same number of preprocessing steps",
+         call. = FALSE)
+  has_concat <- any(vapply(pipelines, function(value)
+    any(vapply(value$steps, function(step) identical(step$kind, "concat"), logical(1))),
+    logical(1)))
+  if (split_steps && has_concat &&
+      (!is.null(variants) || length(pipelines[[1L]]$steps) != 1L))
+    stop("split_steps concat currently requires one pipeline with concat as its sole step",
+         call. = FALSE)
+  if (split_steps && has_concat &&
+      !all(grepl("^[A-Za-z][A-Za-z0-9_]*$",
+                 names(pipelines[[1L]]$steps[[1L]]$branches))))
+    stop("split_steps concat branch names must use letters, numbers and underscores",
          call. = FALSE)
   if (inherits(X, "nirs4all_dataset")) {
     if (!is.null(y)) stop("y must come from the nirs4all_dataset", call. = FALSE)
@@ -176,14 +198,28 @@ nirs4all_dag_cv_refit_predict <- function(
       model_specs[[key]] <<- spec_bytes
       params$spec_key <- key
     }
-    params$preprocessing <- if (split_steps) list() else lapply(value$steps, unclass)
+    params$preprocessing <- if (split_steps) list() else
+      lapply(value$steps, nirs4all_dag_step_spec)
     params
   })
   transform_steps <- if (split_steps) lapply(seq_along(pipelines[[1L]]$steps),
-    function(index) list(kind = "transform",
-      id = sprintf("transform:nirs4all-r:%03d", index),
-      operator = list(type = "Nirs4allRPreprocess"),
-      params = list(preprocessing = list(unclass(pipelines[[1L]]$steps[[index]])))))
+    function(index) {
+      step <- pipelines[[1L]]$steps[[index]]
+      node_id <- sprintf("transform:nirs4all-r:%03d", index)
+      if (identical(step$kind, "concat"))
+        return(list(kind = "concat_transform", id = node_id,
+          branches = lapply(names(step$branches), function(name) list(
+            id = name,
+            steps = lapply(seq_along(step$branches[[name]]), function(position)
+              list(id = sprintf("%s:%s:%03d", node_id, name, position),
+                   operator = list(type = "Nirs4allRPreprocess"),
+                   params = list(preprocessing = list(nirs4all_dag_step_spec(
+                     step$branches[[name]][[position]]))))))),
+          metadata = list(merge_mode = "concat")))
+      list(kind = "transform", id = node_id,
+        operator = list(type = "Nirs4allRPreprocess"),
+        params = list(preprocessing = list(nirs4all_dag_step_spec(step))))
+    })
     else list()
   dsl <- list(id = "dsl:nirs4all-r", campaign_id = "campaign:nirs4all-r",
               root_seed = as.integer(root_seed), leakage_policy = leakage,
@@ -205,7 +241,8 @@ nirs4all_dag_cv_refit_predict <- function(
           function(step_index) list(
             node_id = sprintf("transform:nirs4all-r:%03d", step_index),
             params = list(preprocessing = list(
-              unclass(pipelines[[index]]$steps[[step_index]]))))) else list()
+              nirs4all_dag_step_spec(
+                pipelines[[index]]$steps[[step_index]]))))) else list()
         overrides[[length(overrides) + 1L]] <- list(
           node_id = "model:nirs4all-r", params = model_params[[index]])
         list(label = variants[[index]], param_overrides = overrides)
@@ -238,6 +275,16 @@ nirs4all_dag_cv_refit_predict <- function(
       fit_scope = "fold_train", rng_policy = "externally_deterministic",
       artifact_policy = "serializable")
     controllers[[1L]]$input_ports <- list(data_port("x"))
+    if (has_concat) controllers[[3L]] <- list(
+      controller_id = "controller:nirs4all-r-concat",
+      controller_version = as.character(utils::packageVersion("nirs4all")),
+      operator_kind = "feature_join", priority = 0L,
+      supported_phases = list("FIT_CV", "REFIT", "PREDICT"),
+      input_ports = list(), output_ports = list(data_port("x_out")),
+      data_requirements = NULL,
+      capabilities = list("deterministic", "process_safe", "emits_artifacts", "stateful"),
+      fit_scope = "fold_train", rng_policy = "externally_deterministic",
+      artifact_policy = "serializable")
   }
   write_json <- function(filename, value) {
     path <- file.path(workdir, filename)
@@ -359,6 +406,50 @@ nirs4all_dag_predict <- function(outcome, X) {
     stop("DAG bundle must contain exactly one model refit artifact", call. = FALSE)
   model_path <- checked_path(model_records[[1L]], "nirs4all_r_model",
                              "controller:nirs4all-r")
+  concat_records <- Filter(function(record)
+    identical(record$node_id, "transform:nirs4all-r:001") &&
+      identical(record$controller_id, "controller:nirs4all-r-concat"), records)
+  if (length(concat_records)) {
+    if (length(concat_records) != 1L)
+      stop("DAG bundle has duplicate concat artifacts", call. = FALSE)
+    path <- checked_path(concat_records[[1L]], "nirs4all_r_concat",
+                         "controller:nirs4all-r-concat")
+    state <- readRDS(path)
+    if (!is.list(state) || length(state$steps) != 1L ||
+        !identical(state$steps[[1L]]$kind, "concat") ||
+        length(state$states) != 1L ||
+        !identical(names(state$states[[1L]]),
+                   names(state$steps[[1L]]$branches)))
+      stop("DAG concat artifact state is invalid", call. = FALSE)
+    child_ids <- unlist(lapply(names(state$steps[[1L]]$branches), function(name)
+      sprintf("transform:nirs4all-r:001:%s:%03d", name,
+              seq_along(state$steps[[1L]]$branches[[name]]))),
+      use.names = FALSE)
+    record_ids <- vapply(records, `[[`, "", "node_id")
+    if (anyDuplicated(record_ids) ||
+        !setequal(record_ids, c("model:nirs4all-r",
+                                "transform:nirs4all-r:001", child_ids)))
+      stop("DAG concat branch artifacts are incomplete", call. = FALSE)
+    for (name in names(state$steps[[1L]]$branches)) {
+      for (position in seq_along(state$steps[[1L]]$branches[[name]])) {
+        child_id <- sprintf("transform:nirs4all-r:001:%s:%03d", name, position)
+        record <- records[[match(child_id, record_ids)]]
+        child_path <- checked_path(record, "nirs4all_r_transform",
+                                   "controller:nirs4all-r-transform")
+        child <- readRDS(child_path)
+        if (!identical(child$steps,
+                       list(state$steps[[1L]]$branches[[name]][[position]])) ||
+            !identical(child$states[[1L]],
+                       state$states[[1L]][[name]][[position]]))
+          stop("DAG concat branch state differs from its refit artifact",
+               call. = FALSE)
+      }
+    }
+    if (inherits(X, "nirs4all_dataset")) X <- X$X
+    X <- nirs4all_matrix(X, state$n_features)
+    transformed <- nirs4all_transform(X, state$steps, state$states)
+    return(nirs4all_predict(nirs4all_load(model_path), transformed))
+  }
   transform_records <- Filter(function(record)
     startsWith(record$node_id, "transform:nirs4all-r:"), records)
   if (length(records) != length(transform_records) + 1L ||
