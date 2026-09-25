@@ -43,7 +43,10 @@ and the [submission checklist](https://cran.r-project.org/web/packages/submissio
 
 On 2026-09-25, `nirs4all_0.4.0.9021.tar.gz` passed Linux/R 4.6.0 checks with
 0 errors but 1 CRAN-incoming warning: `n4m` is still outside CRAN/Bioconductor,
-and this run did not force all optional `Suggests` to be installed. The R-universe
+and the first run did not force all optional `Suggests` to be installed. A
+second check of the same tarball with all `Suggests`, strict DAG parity,
+Python n4m oracle and CPU torch passed with the same 0-error/1-warning result.
+The R-universe
 `dagml` source package was installed and exercised with a locally built DAG CLI.
 `n4m_1.0.21.9002.tar.gz` passed Linux checks with 0 errors, 0 warnings and
 2 notes after an autonomous vendored-source build. Both are development

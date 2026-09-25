@@ -70,10 +70,21 @@ des champs de preuve à compléter avant toute soumission.
   avec vérification par folds indépendants. `R CMD check --as-cran --no-manual`
   sous Linux/R 4.6.0 a terminé avec 0 erreur et 1 avertissement *CRAN incoming*
   en désactivant le contrôle obligatoire des `Suggests` absents de la machine.
-  Le mode strict ciblé de ce classifieur a passé ; le mode strict global
-  échoue seulement parce que `ranger`, `glmnet`, `parsnip`, `mlr3` et `rpart`
-  ne sont pas installés ici. Les pseudo-probabilités softmax ne sont pas
+  Le mode strict ciblé de ce classifieur a passé ; le premier contrôle strict
+  global échouait faute de `ranger`, `glmnet`, `parsnip`, `mlr3` et `rpart`
+  dans sa bibliothèque R. Les pseudo-probabilités softmax ne sont pas
   calibrées ; l'état appris de ce classifieur n'est pas portable entre langages.
+- **Contrôle strict complémentaire** : la bibliothèque de test contenant tous
+  les `Suggests` a été retrouvée. L'archive 0.4.0.9021 issue du commit
+  `aa41e6a`, SHA-256
+  `51cdffa7c5da68b4743c8f6fd33afbdfb69f0b41dc2869d2fc15c808347d65ff`,
+  a passé `R CMD check --as-cran --no-manual` sur Linux/R 4.6.0 avec
+  `NIRS4ALL_REQUIRE_DAG_PARITY=1`, l'oracle Python n4m, le runtime `torch` CPU
+  et **tous les `Suggests` installés** : 0 erreur, 1 avertissement CRAN-incoming.
+  Ce contrôle exerce les contrôleurs optionnels en DAG strict ; il n'efface
+  pas le blocage CRAN de `n4m` ni l'absence de check Windows/macOS du même
+  tarball. Le présent ajout documentaire est postérieur à ce tarball ; une
+  archive de soumission finale devra être reconstruite et recontrôlée.
 - Les résultats de Windows/macOS et la portabilité Archive V2/V3 Python↔R du
   pipeline entraîné complet restent à qualifier pour **ce tarball 0.4.0.9021**.
   R-universe publie déjà `nirs4all` 0.4.0.9018 depuis `nirs4all-r` : son
