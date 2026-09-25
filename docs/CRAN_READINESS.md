@@ -10,7 +10,7 @@ des champs de preuve à compléter avant toute soumission.
 
 ## Vérification actuellement réalisée
 
-- `R CMD build .` a produit `nirs4all_0.4.0.9019.tar.gz`.
+- `R CMD build .` a produit `nirs4all_0.4.0.9020.tar.gz`.
 - `R CMD check --as-cran --no-manual` sous R 4.6.0 (Linux) a exécuté les tests
   du paquet, y compris les exemples Python/n4m, les aller-retour N4MM
   formats 1 (PLS seul) et 2 (SNV→SG→PLS) R↔Python en processus Python distinct,
@@ -47,20 +47,31 @@ des champs de preuve à compléter avant toute soumission.
   utilisent un codage de classes attesté et sont recoupés avec des fits
   indépendants. Un CSV réel décodé par `nirs4all-formats` fournit des labels
   catégoriels demandés explicitement depuis `targets` ou les métadonnées.
+  Les contrôleurs CPU `torch` de classification MLP et module personnalisé
+  produisent des facteurs et probabilités `N×K`. Leur apprentissage local,
+  leur répétabilité, la sérialisation/relecture dans un processus R neuf,
+  et la CV/OOF/refit/inférence DAG-ML sont recoupés avec des fits R
+  indépendants par fold. La perte `torch` R emploie les indices de classes
+  `1..K`; le codage `0..K-1` du contrat DAG-ML reste confiné à l'adaptateur.
   Après installation des tarballs R-universe `dagmldata` et
   `nirs4alldatasets`, **tous les `Suggests` étaient disponibles** et le
-  contrôle a été relancé sans `_R_CHECK_FORCE_SUGGESTS_=false` : 0 erreur,
-  1 avertissement *CRAN incoming* sur la nouvelle soumission, la version de
-  développement et les dépendances hors CRAN. Le CLI DAG-ML utilisé par les
-  tests stricts provenait encore du build local, pas du tarball du paquet.
+  contrôle de 0.4.0.9016 avait été relancé sans
+  `_R_CHECK_FORCE_SUGGESTS_=false` : 0 erreur, 1 avertissement *CRAN incoming*.
+  Pour le tarball 0.4.0.9020, le contrôle Linux/R 4.6.0 avec `torch` CPU et
+  `dagml` publics installés, CLI DAG local et `Suggests` manquants non forcés
+  donne 0 erreur et 1 avertissement *CRAN incoming* sur la nouvelle
+  soumission, la version de développement et `n4m` hors CRAN. Le test ciblé
+  de classification `torch` a passé séparément avec le mode DAG strict.
+  Ce résultat ne remplace pas un contrôle 0.4.0.9020 avec **tous** les
+  `Suggests` installés. Le CLI DAG-ML provenait encore du build local.
 - Les résultats de Windows/macOS et la portabilité Archive V2/V3 Python↔R du
-  pipeline entraîné complet restent à qualifier pour **ce tarball 0.4.0.9019**.
+  pipeline entraîné complet restent à qualifier pour **ce tarball 0.4.0.9020**.
   R-universe publie déjà `nirs4all` 0.4.0.9018 depuis `nirs4all-r` : son
   rebuild a réussi sur Linux, Windows, macOS et WASM. Ses sources publiques
   et celles de `n4m` 1.0.21.9002 ont été installées dans une bibliothèque R
   vierge sous Linux/R 4.6.0 avec GCC système ; un pipeline
   SNV→Savitzky-Golay→PLS a ajusté et prédit sans checkout local. Cette preuve
-  de distribution ne remplace ni le check du tarball 0.4.0.9019 ni la
+  de distribution ne remplace ni le check multi-OS du tarball 0.4.0.9020 ni la
   publication de `dagml`, encore en attente de synchronisation.
 - Le tarball autonome `n4m_1.0.21.9002.tar.gz`, avec 238 unités natives
   vendorizées, a passé `R CMD check --as-cran --no-manual` sous Linux/R 4.6.0 :
@@ -96,4 +107,4 @@ Avant une soumission `nirs4all` :
 La [politique CRAN de soumission](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande un `R CMD check --as-cran` du tarball à envoyer et, en principe, aucun
 avertissement ni note significative. Aucun formulaire de soumission ne doit
-présenter la version `0.4.0.9019` comme prête tant que ces gates restent ouverts.
+présenter la version `0.4.0.9020` comme prête tant que ces gates restent ouverts.
