@@ -4,6 +4,9 @@
 le tarball R vérifié localement de la publication R-universe et d'une archive
 de soumission CRAN. Le produit public R s'appelle `nirs4all` et sa source est
 `GBeurier/nirs4all-r`.
+Les textes préparatoires des formulaires pour `n4m` puis `nirs4all` figurent
+dans [CRAN_FORM_DRAFT.md](CRAN_FORM_DRAFT.md) ; ils contiennent volontairement
+des champs de preuve à compléter avant toute soumission.
 
 ## Vérification actuellement réalisée
 
