@@ -3,8 +3,9 @@
 \alias{nirs4all_pls}
 \alias{nirs4all_lm}
 \alias{nirs4all_ranger}
+\alias{nirs4all_glmnet}
 \title{Define learner controllers}
-\description{Provides an n4m PLS controller, a base-R linear-model controller, an optional ranger regression controller, and a custom-controller constructor. Only the n4m fitted model has a cross-language N4MM representation.}
+\description{Provides an n4m PLS controller, a base-R linear-model controller, optional ranger and glmnet regression controllers, and a custom-controller constructor. Only the n4m fitted model has a cross-language N4MM representation.}
 \usage{
 nirs4all_controller(fit, predict, name)
 nirs4all_pls(n_components = 2L, algo = "pls_simpls",
@@ -12,6 +13,7 @@ nirs4all_pls(n_components = 2L, algo = "pls_simpls",
              center_y = TRUE, scale_y = TRUE)
 nirs4all_lm()
 nirs4all_ranger(num.trees = 500L, seed = 1L, ...)
+nirs4all_glmnet(lambda, alpha = 1, standardize = TRUE)
 }
 \arguments{
 \item{fit}{Function of transformed X and y returning fitted state.}
@@ -23,5 +25,8 @@ nirs4all_ranger(num.trees = 500L, seed = 1L, ...)
 \item{num.trees}{Positive forest size.}
 \item{seed}{Non-negative ranger seed.}
 \item{...}{Additional ranger arguments, excluding reserved fit arguments.}
+\item{lambda}{Positive glmnet regularization strength.}
+\item{alpha}{Elastic-net mixing value from zero (ridge) to one (lasso).}
+\item{standardize}{Whether glmnet standardizes features internally.}
 }
 \value{A learner controller accepted by \code{nirs4all_pipeline}.}

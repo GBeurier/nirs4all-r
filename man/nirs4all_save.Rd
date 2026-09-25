@@ -2,7 +2,7 @@
 \alias{nirs4all_save}
 \alias{nirs4all_load}
 \title{Save and load a fitted R pipeline}
-\description{Writes an RDS bundle. An n4m PLS model is converted to portable N4MM bytes before saving and imported again on loading. The surrounding R object is not a cross-language pipeline bundle. Do not load untrusted RDS files.}
+\description{Writes an RDS bundle. An n4m PLS model is converted to portable N4MM bytes; an R torch module is converted with torch's own serializer. The surrounding R object is not a cross-language pipeline bundle. Do not load untrusted RDS files.}
 \usage{
 nirs4all_save(object, file)
 nirs4all_load(file)

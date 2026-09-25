@@ -13,7 +13,7 @@ URL: https://github.com/GBeurier/nirs4all-r
 BugReports: https://github.com/GBeurier/nirs4all-r/issues
 Depends: R (>= 4.1)
 Imports: n4m, stats
-Suggests: jsonlite, ranger
+Suggests: glmnet, jsonlite, ranger, torch
 Additional_repositories: https://gbeurier.r-universe.dev
 Encoding: UTF-8
 NeedsCompilation: no

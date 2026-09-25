@@ -61,3 +61,40 @@ if (requireNamespace("ranger", quietly = TRUE)) {
   stopifnot(identical(predict(nirs4all_load(forest_path), X), pa))
   unlink(forest_path)
 }
+
+if (requireNamespace("glmnet", quietly = TRUE)) {
+  elastic <- nirs4all_pipeline(learner = nirs4all_glmnet(lambda = 0.01,
+                                                        alpha = 0.5))
+  elastic_fit <- nirs4all_fit(elastic, X, y)
+  actual <- predict(elastic_fit, X)
+  reference <- as.numeric(stats::predict(elastic_fit$state$model, newx = X,
+                                          s = 0.01))
+  stopifnot(isTRUE(all.equal(actual, reference, tolerance = 1e-12)),
+            isTRUE(any(abs(elastic_fit$state$model$lambda - 0.01) < 1e-12)))
+  elastic_path <- tempfile(fileext = ".rds")
+  nirs4all_save(elastic_fit, elastic_path)
+  stopifnot(isTRUE(all.equal(predict(nirs4all_load(elastic_path), X), actual,
+                             tolerance = 1e-12)))
+  unlink(elastic_path)
+  bad <- tryCatch(nirs4all_glmnet(lambda = 0), error = identity)
+  stopifnot(inherits(bad, "error"), grepl("lambda", conditionMessage(bad)))
+}
+
+if (requireNamespace("torch", quietly = TRUE) && torch::torch_is_installed()) {
+  mlp <- nirs4all_pipeline(learner = nirs4all_torch_mlp(hidden = 8L,
+                                                      epochs = 40L,
+                                                      learning_rate = 0.01,
+                                                      seed = 42L))
+  mlp_a <- nirs4all_fit(mlp, X, y)
+  mlp_b <- nirs4all_fit(mlp, X, y)
+  pa <- predict(mlp_a, X)
+  pb <- predict(mlp_b, X)
+  stopifnot(length(pa) == nrow(X), all(is.finite(pa)),
+            isTRUE(all.equal(pa, pb, tolerance = 1e-6)),
+            sqrt(mean((pa - y)^2)) < 0.5 * stats::sd(y))
+  mlp_path <- tempfile(fileext = ".rds")
+  nirs4all_save(mlp_a, mlp_path)
+  stopifnot(isTRUE(all.equal(predict(nirs4all_load(mlp_path), X), pa,
+                             tolerance = 1e-6)))
+  unlink(mlp_path)
+}

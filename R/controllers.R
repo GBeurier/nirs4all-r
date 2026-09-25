@@ -98,3 +98,38 @@ nirs4all_ranger <- function(num.trees = 500L, seed = 1L, ...) {
       as.numeric(stats::predict(state, data = frame)$predictions)
     }, name = "ranger:regression")
 }
+
+#' Optional glmnet regularized-regression controller
+#' @param lambda Strictly positive selected regularization strength. This
+#'   controller fits an explicit decreasing path ending at `lambda`, avoiding
+#'   interpolation when predicting at that value.
+#' @param alpha Elastic-net mixing parameter: zero for ridge, one for lasso.
+#' @param standardize Whether glmnet standardizes features internally.
+#' @export
+nirs4all_glmnet <- function(lambda, alpha = 1, standardize = TRUE) {
+  if (!requireNamespace("glmnet", quietly = TRUE))
+    stop("Install the optional 'glmnet' package first", call. = FALSE)
+  if (!is.numeric(lambda) || length(lambda) != 1L ||
+      !is.finite(lambda) || lambda <= 0)
+    stop("lambda must be a strictly positive finite number", call. = FALSE)
+  if (!is.numeric(alpha) || length(alpha) != 1L || !is.finite(alpha) ||
+      alpha < 0 || alpha > 1)
+    stop("alpha must be between zero and one", call. = FALSE)
+  if (!is.logical(standardize) || length(standardize) != 1L || is.na(standardize))
+    stop("standardize must be TRUE or FALSE", call. = FALSE)
+  path <- unique(lambda * exp(seq(log(1000), 0, length.out = 32L)))
+  nirs4all_controller(
+    fit = function(X, y) {
+      if (ncol(X) < 2L)
+        stop("glmnet requires at least two features", call. = FALSE)
+      model <- glmnet::glmnet(X, y, family = "gaussian", alpha = alpha,
+                             lambda = path, standardize = standardize)
+      if (!any(abs(model$lambda - lambda) <= .Machine$double.eps * max(1, lambda)))
+        stop("glmnet did not fit the requested lambda", call. = FALSE)
+      list(model = model, lambda = lambda)
+    },
+    predict = function(state, X) as.numeric(stats::predict(state$model,
+                                                          newx = X,
+                                                          s = state$lambda)),
+    name = "glmnet:gaussian")
+}

@@ -26,18 +26,24 @@ predictions <- predict(fit, X)
 nirs4all_save(fit, "model.rds")
 ```
 
-`nirs4all_lm()` uses base R. `nirs4all_ranger()` is an optional regression
-forest controller when `ranger` is installed. A user-defined controller can be
+`nirs4all_lm()` uses base R. `nirs4all_ranger()` and
+`nirs4all_glmnet(lambda, alpha)` are optional random-forest and
+regularized-regression controllers. A user-defined controller can be
 provided with `nirs4all_controller(fit, predict, name)`; its state is R-only.
 The `n4m` PLS model is saved as portable N4MM bytes inside the RDS bundle.
 This makes the native model portable, not the surrounding R preprocessing or
 custom-controller code.
+`nirs4all_torch_mlp()` provides an optional CPU neural-network regressor
+through the R `torch` runtime. Torch modules are saved with `torch`'s own
+serializer inside the RDS bundle; they are R-specific and not ONNX exports.
 Custom controllers may capture non-serializable R state; their bundles are
 only reliable when the controller author has tested a fresh-process load.
 When feature names exist, prediction requires their exact training order; when
 both row names and target names exist, fitting requires exact sample alignment.
 Unnamed data are treated positionally. The package test suite always compares
-SNV and Savitzky-Golay PLS predictions against a compact vendored Python oracle.
+all four portable Python examples (SNV, Savitzky-Golay, Kennard-Stone, and a
+PLS component sweep) against a vendored Python oracle. This tests the n4m
+numerical path, not native DAG-ML orchestration or arbitrary n4m compositions.
 
 Current missing product gates are documented in
 [`dag-ml/docs/R_BINDING_PARITY_AND_INTEROP.md`](https://github.com/GBeurier/dag-ml/blob/main/docs/R_BINDING_PARITY_AND_INTEROP.md).
