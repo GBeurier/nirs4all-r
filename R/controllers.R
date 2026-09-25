@@ -250,6 +250,51 @@ nirs4all_parsnip <- function(spec) {
   controller
 }
 
+#' Optional parsnip classification controller
+#'
+#' Fits an explicitly selected parsnip classification engine independently in
+#' each training scope. Probability columns must retain the training class
+#' labels; unsupported engine output fails rather than being silently reordered.
+#' @param spec A parsnip classification `model_spec` with an engine selected.
+#' @export
+nirs4all_parsnip_classifier <- function(spec) {
+  if (!requireNamespace("parsnip", quietly = TRUE))
+    stop("Install the optional 'parsnip' package first", call. = FALSE)
+  if (!inherits(spec, "model_spec") || !identical(spec$mode, "classification") ||
+      !is.character(spec$engine) || length(spec$engine) != 1L ||
+      is.na(spec$engine) || !nzchar(spec$engine))
+    stop("spec must be a parsnip classification model with a selected engine",
+         call. = FALSE)
+  probabilities <- function(state, X) {
+    predictors <- as.data.frame(X)
+    names(predictors) <- paste0("x", seq_len(ncol(X)))
+    result <- stats::predict(state$model, new_data = predictors, type = "prob")
+    expected <- paste0(".pred_", state$classes)
+    if (!is.data.frame(result) || !identical(names(result), expected) ||
+        !all(vapply(result, is.numeric, logical(1))))
+      stop("parsnip returned unsupported class probability columns", call. = FALSE)
+    values <- as.matrix(result)
+    colnames(values) <- state$classes
+    values
+  }
+  controller <- nirs4all_controller(
+    fit = function(X, y) {
+      predictors <- as.data.frame(X)
+      names(predictors) <- paste0("x", seq_len(ncol(X)))
+      list(model = parsnip::fit_xy(spec, x = predictors, y = y),
+           classes = levels(y))
+    },
+    predict = function(state, X) {
+      values <- probabilities(state, X)
+      factor(state$classes[max.col(values, ties.method = "first")],
+             levels = state$classes)
+    }, predict_proba = probabilities, task = "classification",
+    name = paste0("parsnip:", spec$engine, ":classification"))
+  controller$spec <- list(learner = "parsnip_classifier", engine = spec$engine)
+  controller$model_spec <- spec
+  controller
+}
+
 #' Optional mlr3 regression learner controller
 #'
 #' Clones the supplied learner before each fit so every fold owns independent
@@ -288,6 +333,54 @@ nirs4all_mlr3 <- function(learner) {
       as.numeric(response)
     }, name = paste0("mlr3:", template$id))
   controller$spec <- list(learner = "mlr3", engine = template$id)
+  controller$model_spec <- template
+  controller
+}
+
+#' Optional mlr3 classification learner controller
+#'
+#' Clones the supplied untrained learner for each fit and asks it for class
+#' probabilities. DAG-ML, not mlr3, owns folds, scoring and refit.
+#' @param learner An untrained `mlr3` `LearnerClassif` with probability support.
+#' @export
+nirs4all_mlr3_classifier <- function(learner) {
+  if (!requireNamespace("mlr3", quietly = TRUE))
+    stop("Install the optional 'mlr3' package first", call. = FALSE)
+  if (!inherits(learner, "LearnerClassif") ||
+      !is.character(learner$id) || length(learner$id) != 1L ||
+      is.na(learner$id) || !nzchar(learner$id) ||
+      !is.null(learner$model) || !("prob" %in% learner$predict_types))
+    stop("learner must be an untrained mlr3 LearnerClassif with probability support",
+         call. = FALSE)
+  template <- learner$clone(deep = TRUE)
+  probabilities <- function(state, X) {
+    frame <- as.data.frame(X)
+    names(frame) <- paste0("x", seq_len(ncol(X)))
+    values <- state$model$predict_newdata(frame)$prob
+    if (!is.matrix(values) || !is.numeric(values) ||
+        !setequal(colnames(values), state$classes))
+      stop("mlr3 returned unsupported class probabilities", call. = FALSE)
+    values[, state$classes, drop = FALSE]
+  }
+  controller <- nirs4all_controller(
+    fit = function(X, y) {
+      model <- template$clone(deep = TRUE)
+      model$predict_type <- "prob"
+      frame <- as.data.frame(X)
+      names(frame) <- paste0("x", seq_len(ncol(X)))
+      frame$y <- y
+      task <- mlr3::TaskClassif$new(id = "nirs4all_fit", backend = frame,
+                                    target = "y")
+      model$train(task)
+      list(model = model, classes = levels(y))
+    },
+    predict = function(state, X) {
+      values <- probabilities(state, X)
+      factor(state$classes[max.col(values, ties.method = "first")],
+             levels = state$classes)
+    }, predict_proba = probabilities, task = "classification",
+    name = paste0("mlr3:", template$id, ":classification"))
+  controller$spec <- list(learner = "mlr3_classifier", engine = template$id)
   controller$model_spec <- template
   controller
 }
