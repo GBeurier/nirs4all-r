@@ -12,7 +12,9 @@ nirs4all_dag_step_spec <- function(step) {
 #' DAG-ML owns the FIT_CV, OOF, REFIT and PREDICT schedule; the R process
 #' adapter fits the selected nirs4all learner on the requested rows. The
 #' returned replay predictions are on the refit cohort, not an independent
-#' external test set. A named list of pipelines activates native parameter
+#' external test set. Eligible native-only n4m refits carry portable N4MM
+#' bytes in the DAG-ML bundle; other fitted states remain RDS sidecars. A named
+#' list of pipelines activates native parameter
 #' variant generation and OOF-based selection before one full-data refit. This
 #' bridge does not yet expose arbitrary DAG branches, nested CV, or adaptive
 #' host HPO from the high-level R API.
@@ -379,19 +381,22 @@ nirs4all_dag_cv_refit_predict <- function(
     root_seed = as.integer(root_seed),
     selection_metric = if (classification) "accuracy" else "rmse")
   outcome$workdir <- workdir
+  outcome$feature_names <- colnames(X)
   outcome
 }
 
 #' Predict new samples with a native DAG-ML refit artifact
 #'
-#' Loads the winning R model and any preceding transform sidecars recorded by
-#' a completed native campaign. Each sidecar is checked against its SHA-256 fingerprint
-#' before loading. This is local R inference from a DAG-ML-selected model;
+#' Loads the winning native N4MM payload or R model sidecar and any preceding
+#' transform sidecars recorded by a completed native campaign. Every payload
+#' is checked against its SHA-256 fingerprint before use. A native-only raw
+#' bundle can predict without its original workdir; RDS sidecars still need it.
+#' This is local R inference from a DAG-ML-selected model;
 #' it does not run a new DAG-ML PREDICT phase or score the new cohort.
 #' Only load outcomes and RDS artifacts from trusted sources.
 #'
-#' @param outcome Result of [nirs4all_dag_cv_refit_predict()]. Its persistent
-#'   `workdir` and refit artifact must still exist.
+#' @param outcome Result of [nirs4all_dag_cv_refit_predict()]. RDS-backed
+#'   outcomes require their persistent `workdir`; native raw bundles do not.
 #' @param X Finite numeric matrix or a [nirs4all_from_formats()] dataset.
 #' @return Numeric regression predictions or factor class predictions,
 #'   in input row order.
@@ -399,16 +404,12 @@ nirs4all_dag_cv_refit_predict <- function(
 nirs4all_dag_predict <- function(outcome, X) {
   if (!requireNamespace("digest", quietly = TRUE))
     stop("Native DAG artifact verification requires digest", call. = FALSE)
-  if (!is.list(outcome) || !is.list(outcome$bundle) ||
-      !is.character(outcome$workdir) || length(outcome$workdir) != 1L ||
-      is.na(outcome$workdir) || !dir.exists(outcome$workdir))
+  if (!is.list(outcome) || !is.list(outcome$bundle))
     stop("outcome must be a persisted native nirs4all DAG result", call. = FALSE)
   records <- outcome$bundle$refit_artifacts
   if (!is.list(records) || !length(records) ||
       !all(vapply(records, function(record) is.list(record$artifact), logical(1))))
     stop("DAG bundle has no valid refit artifacts", call. = FALSE)
-  artifact_root <- normalizePath(file.path(outcome$workdir, "artifacts"),
-                                 mustWork = FALSE)
   checked_path <- function(record, kind, controller) {
     artifact <- record$artifact
     path <- artifact$uri
@@ -432,6 +433,44 @@ nirs4all_dag_predict <- function(outcome, X) {
     identical(record$node_id, "model:nirs4all-r"), records)
   if (length(model_records) != 1L)
     stop("DAG bundle must contain exactly one model refit artifact", call. = FALSE)
+  native_artifact <- model_records[[1L]]$artifact
+  if (identical(native_artifact$backend, "raw")) {
+    if (length(records) != 1L ||
+        !identical(native_artifact$kind, "n4m_model") ||
+        !identical(native_artifact$controller_id, "controller:nirs4all-r") ||
+        !identical(model_records[[1L]]$controller_id,
+                   "controller:nirs4all-r") ||
+        !identical(native_artifact$uri, "methods/model_nirs4all-r.n4mm"))
+      stop("DAG native refit artifact identity mismatch", call. = FALSE)
+    payload <- outcome$bundle$raw_artifact_payloads[[native_artifact$id]]
+    values <- as.numeric(unlist(payload, use.names = FALSE))
+    if (!length(values) || anyNA(values) || any(!is.finite(values)) ||
+        any(values < 0 | values > 255) || any(values != floor(values)))
+      stop("DAG native refit payload is missing or malformed", call. = FALSE)
+    bytes <- as.raw(as.integer(values))
+    if (!identical(native_artifact$content_fingerprint,
+                   digest::digest(bytes, algo = "sha256", serialize = FALSE)) ||
+        !identical(as.numeric(native_artifact$size_bytes),
+                   as.numeric(length(bytes))))
+      stop("DAG native refit artifact content mismatch", call. = FALSE)
+    descriptor <- n4m::n4m_model_descriptor(bytes)
+    if (!(descriptor$algorithm %in% c(0L, 11L)) ||
+        !identical(descriptor$n_targets, 1L) ||
+        descriptor$n_features < 1L ||
+        bitwAnd(as.integer(descriptor$capabilities), 1L) != 1L)
+      stop("DAG native refit artifact is not a supported predictor", call. = FALSE)
+    if (inherits(X, "nirs4all_dataset")) X <- X$X
+    X <- nirs4all_matrix(X, descriptor$n_features)
+    if (!is.null(outcome$feature_names) &&
+        !identical(colnames(X), outcome$feature_names))
+      stop("X feature names or order differ from training", call. = FALSE)
+    return(as.numeric(n4m::n4m_predict(n4m::n4m_model_import(bytes), X)))
+  }
+  if (!is.character(outcome$workdir) || length(outcome$workdir) != 1L ||
+      is.na(outcome$workdir) || !dir.exists(outcome$workdir))
+    stop("RDS DAG replay requires its persistent workdir", call. = FALSE)
+  artifact_root <- normalizePath(file.path(outcome$workdir, "artifacts"),
+                                 mustWork = FALSE)
   model_path <- checked_path(model_records[[1L]], "nirs4all_r_model",
                              "controller:nirs4all-r")
   concat_records <- Filter(function(record)

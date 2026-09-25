@@ -216,8 +216,13 @@ outcome <- nirs4all_dag_cv_refit_predict(candidates, X, y,
   split_steps = TRUE, cli = "/path/to/dag-ml-cli")
 ```
 
-The R process adapters exchange fold-scoped matrices locally; this is not a
-cross-language model format or a general branch/merge graph API.
+The R process adapters exchange fold-scoped matrices locally. Eligible
+native-only n4m refits (plain PLS, embedded SNV→SG→PLS, or an affine
+MethodResult without external preprocessing) now carry N4MM bytes in the
+DAG-ML bundle rather than an RDS model sidecar. Python can consume those
+same model bytes. This is still not a full interlanguage training archive:
+the DAG plan, recipe, data identities, and retraining contract need a portable
+Archive V2/V3 package. Other controllers remain RDS-backed.
 
 To combine two feature views, `nirs4all_concat()` fits each named branch on
 the same training rows, then concatenates its output columns before the
@@ -240,8 +245,9 @@ outcome <- nirs4all_dag_cv_refit_predict(pipeline, X, y,
 Use `nirs4all_dag_predict(outcome, new_X)` for independent samples after the
 refit. It verifies the winning model and transform artifacts' SHA-256
 fingerprints before loading them and enforces the model's training feature
-order. Keep `outcome$workdir`
-and load only trusted RDS artifacts. This prediction runs locally, not as a
+order. A native-only raw bundle predicts after transfer to a fresh R process
+without its original `workdir`; RDS-backed pipelines still require that
+directory and trusted sidecars. This prediction runs locally, not as a
 new DAG-ML phase, and it does not create a test score.
 
 This is a fixed candidate grid, not nested CV or adaptive hyperparameter
@@ -251,8 +257,9 @@ generalization estimate; use independent outer validation for that purpose.
 The CLI and `dagml` are still external development dependencies; the package
 does not install either automatically. The replay in this path uses the
 training cohort, so its predictions are **not** an independent test score.
-The returned `workdir` contains the native contracts and refit artifact; pass
-an explicit persistent `workdir` if these must survive the current R session.
+The returned `workdir` contains the native contracts and any host sidecars;
+pass an explicit persistent `workdir` when an RDS-backed pipeline must
+survive the current R session. Native-only N4MM bytes are inside the bundle.
 The adapter reads a trusted RDS data sidecar; do not run it on untrusted files.
 Set `NIRS4ALL_REQUIRE_DAG_PARITY=1` and `NIRS4ALL_DAGML_CLI=/absolute/path`
 when running the package tests to require native CV/OOF/refit/replay checks.
