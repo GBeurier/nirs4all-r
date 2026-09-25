@@ -53,15 +53,27 @@ if (available) {
       learner = nirs4all_mlr3(mlr3::lrn("regr.rpart", minsplit = 3L,
                                               cp = 0))),
       X = X[, c(2L, 5L), drop = FALSE], tolerance = 1e-10)
-  if (requireNamespace("torch", quietly = TRUE) && torch::torch_is_installed())
+  if (requireNamespace("torch", quietly = TRUE) && torch::torch_is_installed()) {
     cases$torch <- list(pipeline = nirs4all_pipeline(
       learner = nirs4all_torch_mlp(hidden = 8L, epochs = 15L,
                                   learning_rate = 0.01, seed = 10L)),
       X = X, tolerance = 1e-5)
+    builder <- local({
+      width <- 7L
+      function(n_features) torch::nn_sequential(
+        torch::nn_linear(n_features, width), torch::nn_tanh(),
+        torch::nn_linear(width, 1L))
+    })
+    cases$torch_module <- list(pipeline = nirs4all_pipeline(
+      learner = nirs4all_torch_module(builder, name = "custom",
+        epochs = 15L, learning_rate = 0.01, seed = 10L)),
+      X = X, tolerance = 1e-5)
+  }
   if (strict && !setequal(names(cases),
                           c("pls", "n4m_ridge", "n4m_cppls",
                             "n4m_preprocessing", "n4m_area", "n4m_msc", "n4m_emsc", "lm",
-                            "ranger", "glmnet", "parsnip", "mlr3", "torch")))
+                            "ranger", "glmnet", "parsnip", "mlr3", "torch",
+                            "torch_module")))
     stop("strict native DAG parity requires ranger, glmnet, parsnip, mlr3 and torch CPU")
 
   for (name in names(cases)) {
