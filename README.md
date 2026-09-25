@@ -139,6 +139,13 @@ scores on unseen samples. Its softmax outputs are **not calibrated
 probabilities**; they are only a DAG-compatible normalization of class scores.
 Its trained state is currently an RDS sidecar, not an N4MM or Archive V2/V3
 cross-language artifact.
+The bounded `nirs4all_run_portable_pipeline()` reader can execute such a
+recipe on categorical R data, including a `nirs4all-formats` dataset, and
+select a component variant by accuracy. Numeric Python-style class codes are
+accepted by this recipe runner and returned unchanged in type. This alias has
+not yet been qualified
+in the Python/Core/WASM pipeline readers, so the recipe is not currently a
+proven level-1 cross-language classifier.
 
 ```r
 X <- as.matrix(iris[, 1:4])

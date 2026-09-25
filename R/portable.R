@@ -584,9 +584,9 @@ nirs4all_expand_portable_pipelines <- function(source) {
   pipelines
 }
 
-nirs4all_portable_dataset <- function(dataset) {
+nirs4all_portable_dataset <- function(dataset, classification = FALSE) {
   if (inherits(dataset, "nirs4all_dataset"))
-    return(list(X = dataset$X, y = dataset$y))
+    dataset <- list(X = dataset$X, y = dataset$y)
   if (!is.list(dataset) || is.null(dataset$X) || is.null(dataset$y))
     stop("dataset must contain X and y", call. = FALSE)
   X <- dataset$X
@@ -602,30 +602,48 @@ nirs4all_portable_dataset <- function(dataset) {
     X <- matrix(values, as.integer(rows), as.integer(cols), byrow = TRUE)
   }
   X <- nirs4all_matrix(X)
-  y <- as.numeric(unlist(dataset$y, use.names = FALSE))
-  if (length(y) != nrow(X) || anyNA(y) || any(!is.finite(y)))
-    stop("dataset y must be finite and row-aligned", call. = FALSE)
-  list(X = X, y = y)
+  class_values <- NULL
+  if (classification) {
+    y <- dataset$y
+    if (is.list(y)) y <- unlist(y, use.names = FALSE)
+    if (is.numeric(y) && !is.factor(y) && !is.matrix(y) &&
+        length(y) == nrow(X) && !anyNA(y) && all(is.finite(y))) {
+      class_values <- sort(unique(y))
+      y <- factor(y, levels = class_values)
+    }
+    if (is.character(y)) y <- factor(y)
+    if (!is.factor(y) || is.ordered(y) || length(y) != nrow(X) ||
+        anyNA(y) || nlevels(y) < 2L ||
+        any(tabulate(as.integer(y), nbins = nlevels(y)) == 0L))
+      stop("classification dataset y must contain at least two observed classes and align with X",
+           call. = FALSE)
+    if (is.null(class_values)) class_values <- levels(y)
+  } else {
+    y <- as.numeric(unlist(dataset$y, use.names = FALSE))
+    if (length(y) != nrow(X) || anyNA(y) || any(!is.finite(y)))
+      stop("dataset y must be finite and row-aligned", call. = FALSE)
+  }
+  list(X = X, y = y, class_values = class_values)
 }
 
 #' Run a portable Python-style JSON/YAML pipeline on R data
 #'
 #' This bounded compatibility path supports optional Kennard-Stone holdout,
-#' native n4m preprocessing steps and PLS component sweeps. It delegates splitting and
-#' numerical work to `n4m`; selection on the holdout is *not* an independent
+#' native n4m preprocessing steps and PLS component sweeps. Regression PLS
+#' variants use RMSE; native sparse PLS-DA variants use classification accuracy.
+#' It delegates splitting and numerical work to `n4m`; selection on the holdout is *not* an independent
 #' test estimate. For general CV/OOF/refit use [nirs4all_dag_cv_refit_predict()].
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
 #' @param dataset List with `X`, `y` and optional `rows`/`cols`, or a
 #'   `nirs4all_dataset` from [nirs4all_from_formats()].
-#' @return Split indices, per-variant predictions/RMSE and selected variant.
+#' @return Split indices, per-variant predictions and task-specific score,
+#'   plus the selected variant.
 #' @export
 nirs4all_run_portable_pipeline <- function(source, dataset) {
   definition <- nirs4all_load_pipeline(source)
   plan <- nirs4all_parse_execution_plan(definition)
-  if (!identical(plan$learner$learner, "pls"))
-    stop("portable selection runner currently supports regression PLS only",
-         call. = FALSE)
-  data <- nirs4all_portable_dataset(dataset)
+  classification <- identical(plan$learner$learner, "sparse_pls_da")
+  data <- nirs4all_portable_dataset(dataset, classification)
   if (is.null(plan$splitter)) {
     indices <- seq.int(0L, nrow(data$X) - 1L)
     split <- list(kind = "all", trainIndices = indices, testIndices = indices)
@@ -639,23 +657,34 @@ nirs4all_run_portable_pipeline <- function(source, dataset) {
   validation <- split$testIndices + 1L
   steps <- nirs4all_portable_steps(plan$preprocessing)
   targets <- data$y[validation]
+  render_labels <- function(values) {
+    if (!classification) return(as.numeric(values))
+    unname(data$class_values[as.integer(values)])
+  }
   variants <- lapply(plan$n_components, function(n) {
     learner <- plan$learner
     learner$n_components <- n
-    pipeline <- nirs4all_pipeline(steps, do.call(nirs4all_pls,
+    constructor <- if (classification) nirs4all_sparse_pls_da else nirs4all_pls
+    pipeline <- nirs4all_pipeline(steps, do.call(constructor,
       learner[setdiff(names(learner), "learner")] ))
     fitted <- nirs4all_fit(pipeline, data$X[train, , drop = FALSE], data$y[train])
-    predictions <- as.numeric(nirs4all_predict(fitted,
-      data$X[validation, , drop = FALSE]))
-    list(n_components = as.integer(n),
-         rmse = sqrt(mean((predictions - targets)^2)),
+    predictions <- nirs4all_predict(fitted, data$X[validation, , drop = FALSE])
+    if (classification)
+      return(list(n_components = as.integer(n),
+                  accuracy = mean(predictions == targets),
+                  predictions = render_labels(predictions)))
+    predictions <- as.numeric(predictions)
+    list(n_components = as.integer(n), rmse = sqrt(mean((predictions - targets)^2)),
          predictions = predictions)
   })
-  scores <- vapply(variants, `[[`, numeric(1), "rmse")
+  score_name <- if (classification) "accuracy" else "rmse"
+  scores <- vapply(variants, `[[`, numeric(1), score_name)
+  selected <- if (classification) which.max(scores) else which.min(scores)
   list(name = definition$name, rows = as.integer(nrow(data$X)),
        cols = as.integer(ncol(data$X)), split = split,
        preprocessing = plan$preprocessing, variants = variants,
-       selected = variants[[which.min(scores)]], targets = as.numeric(targets),
+       selected = variants[[selected]],
+       targets = render_labels(targets),
        evaluation = list(scope = if (identical(split$kind, "all"))
          "training" else "selection_validation", independent_test = FALSE))
 }

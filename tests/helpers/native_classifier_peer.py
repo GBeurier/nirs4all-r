@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from n4m.transform.scatter import SNV
 from pls4all.sklearn import SparsePLSDAClassifier
 
 
@@ -15,6 +16,12 @@ def main() -> None:
     train = np.asarray(request["train"], dtype=np.float64)
     target = np.asarray(request["target"], dtype=np.int64)
     test = np.asarray(request["test"], dtype=np.float64)
+    for operator in request.get("preprocessing", []):
+        if operator != "n4m.SNV":
+            raise ValueError("unsupported classifier oracle preprocessing")
+        native = SNV()
+        train = native.fit_transform(train)
+        test = native.transform(test)
     model = SparsePLSDAClassifier(
         n_components=int(request["n_components"]),
         sparsity_lambda=float(request["sparsity_lambda"]),
