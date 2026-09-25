@@ -55,3 +55,10 @@ Linux/Windows/macOS/WASM matrix and installed with public `n4m` sources in a
 fresh Linux R library, but that is not a multi-OS check of the exact 0.4.0.9021
 tarball. Complete trained-pipeline interoperability is also not yet qualified. The
 form text above is a template, not a claim that these gates have passed.
+
+The subsequent 0.4.0.9022 development tarball, built from source commit
+`f199749`, also passed a Linux/R 4.6.0 strict check with all optional
+dependencies: 0 errors and the same CRAN-incoming warning. Its SHA-256 is
+`10a94ad79899e28a4e8ae1cfeaee10441fc21b68f717d91c34c57ea8c9f6be5a`.
+The new portable sparse PLS-DA recipe runner does not remove the dependency
+policy or trained-archive interoperability blockers.
