@@ -98,7 +98,17 @@ steps_from_task <- function(task) {
   if (is.null(specs)) return(list())
   lapply(specs, function(spec) {
     switch(spec$kind,
-      snv = nirs4all_snv(ddof = as.integer(spec$ddof)),
+      snv = nirs4all_snv(ddof = as.integer(spec$ddof),
+                        with_mean = if (is.null(spec$with_mean)) TRUE else spec$with_mean,
+                        with_std = if (is.null(spec$with_std)) TRUE else spec$with_std),
+      local_snv = nirs4all_local_snv(
+        window = as.integer(spec$window), pad_mode = spec$pad_mode,
+        constant_value = as.numeric(spec$constant_value)),
+      robust_snv = nirs4all_robust_snv(
+        with_center = spec$with_center, with_scale = spec$with_scale,
+        k = as.numeric(spec$k)),
+      area_normalization = nirs4all_area_normalization(method = spec$method),
+      detrend = nirs4all_detrend(polyorder = as.integer(spec$polyorder)),
       savgol = nirs4all_savgol(
         window_length = as.integer(spec$window_length),
         polyorder = as.integer(spec$polyorder), deriv = as.integer(spec$deriv),

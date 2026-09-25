@@ -1,12 +1,80 @@
 #' Define a row-wise standard normal variate step
 #' @param ddof Degrees-of-freedom correction, normally zero.
+#' @param with_mean Center each spectrum before scaling.
+#' @param with_std Scale each spectrum by its standard deviation.
 #' @export
-nirs4all_snv <- function(ddof = 0L) {
+nirs4all_snv <- function(ddof = 0L, with_mean = TRUE, with_std = TRUE) {
   if (length(ddof) != 1L || !is.numeric(ddof) || is.na(ddof) ||
       !is.finite(ddof) || ddof < 0L || ddof > .Machine$integer.max ||
       ddof != floor(ddof))
     stop("ddof must be a non-negative integer", call. = FALSE)
-  structure(list(kind = "snv", ddof = as.integer(ddof)), class = "nirs4all_step")
+  if (!is.logical(with_mean) || length(with_mean) != 1L || is.na(with_mean) ||
+      !is.logical(with_std) || length(with_std) != 1L || is.na(with_std))
+    stop("with_mean and with_std must be single logical values", call. = FALSE)
+  structure(list(kind = "snv", ddof = as.integer(ddof),
+                 with_mean = with_mean, with_std = with_std),
+            class = "nirs4all_step")
+}
+
+#' Define a local standard normal variate step
+#' @param window Odd sliding-window length.
+#' @param pad_mode One of `"reflect"`, `"edge"`, or `"constant"`.
+#' @param constant_value Padding value in constant mode.
+#' @export
+nirs4all_local_snv <- function(window = 11L, pad_mode = "reflect",
+                               constant_value = 0) {
+  if (!is.numeric(window) || length(window) != 1L || !is.finite(window) ||
+      window < 3L || window > .Machine$integer.max ||
+      window != floor(window) || window %% 2L != 1L)
+    stop("window must be an odd integer >= 3", call. = FALSE)
+  if (!is.character(pad_mode) || length(pad_mode) != 1L || is.na(pad_mode) ||
+      !(pad_mode %in% c("reflect", "edge", "constant")))
+    stop("unsupported local SNV pad_mode", call. = FALSE)
+  if (!is.numeric(constant_value) || length(constant_value) != 1L ||
+      !is.finite(constant_value))
+    stop("constant_value must be finite", call. = FALSE)
+  structure(list(kind = "local_snv", window = as.integer(window),
+                 pad_mode = pad_mode, constant_value = constant_value),
+            class = "nirs4all_step")
+}
+
+#' Define a robust standard normal variate step
+#' @param with_center Center by the row median.
+#' @param with_scale Scale by robust dispersion.
+#' @param k Positive robust scale factor.
+#' @export
+nirs4all_robust_snv <- function(with_center = TRUE, with_scale = TRUE,
+                                k = 1.4826) {
+  if (!is.logical(with_center) || length(with_center) != 1L || is.na(with_center) ||
+      !is.logical(with_scale) || length(with_scale) != 1L || is.na(with_scale))
+    stop("with_center and with_scale must be single logical values", call. = FALSE)
+  if (!is.numeric(k) || length(k) != 1L || !is.finite(k) || k <= 0)
+    stop("k must be positive and finite", call. = FALSE)
+  structure(list(kind = "robust_snv", with_center = with_center,
+                 with_scale = with_scale, k = k), class = "nirs4all_step")
+}
+
+#' Define an area normalization step
+#' @param method One of `"sum"`, `"abs_sum"`, or `"trapz"`.
+#' @export
+nirs4all_area_normalization <- function(method = "sum") {
+  if (!is.character(method) || length(method) != 1L || is.na(method) ||
+      !(method %in% c("sum", "abs_sum", "trapz")))
+    stop("unsupported area normalization method", call. = FALSE)
+  structure(list(kind = "area_normalization", method = method),
+            class = "nirs4all_step")
+}
+
+#' Define a polynomial detrend step
+#' @param polyorder Non-negative baseline polynomial order.
+#' @export
+nirs4all_detrend <- function(polyorder = 1L) {
+  if (!is.numeric(polyorder) || length(polyorder) != 1L ||
+      !is.finite(polyorder) || polyorder < 0L ||
+      polyorder > .Machine$integer.max || polyorder != floor(polyorder))
+    stop("polyorder must be a non-negative integer", call. = FALSE)
+  structure(list(kind = "detrend", polyorder = as.integer(polyorder)),
+            class = "nirs4all_step")
 }
 
 #' Define a Savitzky-Golay step
@@ -67,7 +135,18 @@ nirs4all_transform <- function(X, steps) {
     if (identical(step$kind, "snv") && step$ddof >= ncol(X))
       stop("SNV ddof must be smaller than the feature count", call. = FALSE)
     X <- switch(step$kind,
-      snv = n4m::snv_transform(X, ddof = step$ddof),
+      snv = n4m::snv_transform(
+        X, with_mean = if (is.null(step$with_mean)) TRUE else step$with_mean,
+        with_std = if (is.null(step$with_std)) TRUE else step$with_std,
+        ddof = step$ddof),
+      local_snv = n4m::local_snv_transform(
+        X, window = step$window, pad_mode = step$pad_mode,
+        constant_value = step$constant_value),
+      robust_snv = n4m::robust_snv_transform(
+        X, with_center = step$with_center, with_scale = step$with_scale,
+        k = step$k),
+      area_normalization = n4m::area_normalization_transform(X, step$method),
+      detrend = n4m::detrend_transform(X, step$polyorder),
       savgol = n4m::savgol_transform(X, step$window_length,
         step$polyorder, step$deriv, step$delta, step$mode, step$cval),
       stop("unknown preprocessing step", call. = FALSE))

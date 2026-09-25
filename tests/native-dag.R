@@ -21,6 +21,13 @@ if (available) {
     n4m_cppls = list(pipeline = nirs4all_pipeline(
       learner = nirs4all_n4m_method("cppls", n_components = 2L)),
       X = X, tolerance = 1e-10),
+    n4m_preprocessing = list(pipeline = nirs4all_pipeline(
+      list(nirs4all_local_snv(5L), nirs4all_robust_snv(),
+           nirs4all_detrend(1L)), nirs4all_pls(2L)),
+      X = X, tolerance = 1e-10),
+    n4m_area = list(pipeline = nirs4all_pipeline(
+      list(nirs4all_area_normalization("trapz")), nirs4all_pls(2L)),
+      X = X, tolerance = 1e-10),
     lm = list(pipeline = nirs4all_pipeline(learner = nirs4all_lm()),
               X = X[, c(2L, 5L), drop = FALSE], tolerance = 1e-10))
   if (requireNamespace("ranger", quietly = TRUE))
@@ -36,7 +43,8 @@ if (available) {
                                   learning_rate = 0.01, seed = 10L)),
       X = X, tolerance = 1e-5)
   if (strict && !setequal(names(cases),
-                          c("pls", "n4m_ridge", "n4m_cppls", "lm",
+                          c("pls", "n4m_ridge", "n4m_cppls",
+                            "n4m_preprocessing", "n4m_area", "lm",
                             "ranger", "glmnet", "torch")))
     stop("strict native DAG parity requires ranger, glmnet and torch CPU")
 

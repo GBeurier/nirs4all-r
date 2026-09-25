@@ -18,6 +18,30 @@ stopifnot(isTRUE(all.equal(predict(reloaded, X), predict(fitted, X),
                            tolerance = 1e-12)))
 unlink(path)
 
+preprocess_cases <- list(
+  snv_flags = list(step = nirs4all_snv(with_mean = FALSE),
+                   reference = n4m::snv_transform(X, with_mean = FALSE)),
+  local_snv = list(step = nirs4all_local_snv(window = 5L),
+                   reference = n4m::local_snv_transform(X, window = 5L)),
+  robust_snv = list(step = nirs4all_robust_snv(),
+                    reference = n4m::robust_snv_transform(X)),
+  area = list(step = nirs4all_area_normalization("trapz"),
+              reference = n4m::area_normalization_transform(X, "trapz")),
+  detrend = list(step = nirs4all_detrend(2L),
+                 reference = n4m::detrend_transform(X, 2L)))
+for (case in preprocess_cases) {
+  candidate <- nirs4all_pipeline(list(case$step), nirs4all_pls(2L))
+  fit <- nirs4all_fit(candidate, X, y)
+  direct <- n4m::n4m_fit(case$reference, y, algo = "pls_simpls",
+                         n_components = 2L)
+  stopifnot(max(abs(predict(fit, X) -
+                    as.numeric(n4m::n4m_predict(direct, case$reference)))) < 1e-10)
+  saved <- tempfile(fileext = ".rds")
+  nirs4all_save(fit, saved)
+  stopifnot(max(abs(predict(nirs4all_load(saved), X) - predict(fit, X))) < 1e-10)
+  unlink(saved)
+}
+
 lm_pipeline <- nirs4all_pipeline(learner = nirs4all_lm())
 lm_fit <- nirs4all_fit(lm_pipeline, X[, c(2L, 7L), drop = FALSE], y)
 stopifnot(max(abs(nirs4all_predict(lm_fit, X[, c(2L, 7L), drop = FALSE]) - y)) < 1e-10)
@@ -61,6 +85,10 @@ bad <- tryCatch(nirs4all_snv("1"), error = identity)
 stopifnot(inherits(bad, "error"), grepl("ddof", conditionMessage(bad)))
 bad <- tryCatch(nirs4all_snv(2147483648), error = identity)
 stopifnot(inherits(bad, "error"), grepl("ddof", conditionMessage(bad)))
+stopifnot(inherits(try(nirs4all_local_snv(4L), silent = TRUE), "try-error"),
+          inherits(try(nirs4all_robust_snv(k = 0), silent = TRUE), "try-error"),
+          inherits(try(nirs4all_area_normalization("bad"), silent = TRUE), "try-error"),
+          inherits(try(nirs4all_detrend(-1L), silent = TRUE), "try-error"))
 bad <- tryCatch(nirs4all_pls(2147483648), error = identity)
 stopifnot(inherits(bad, "error"), grepl("n_components", conditionMessage(bad)))
 bad <- tryCatch(nirs4all_fit(nirs4all_pipeline(learner = nirs4all_lm()),

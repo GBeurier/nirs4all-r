@@ -16,6 +16,16 @@ artifact can predict new samples locally; branches, adaptive HPO, native
 external-cohort replay and Python/R host-model conversion are not yet exposed
 by the high-level API.
 
+The built-in `n4m` preprocessing steps now include SNV (with centering/scaling
+flags), local SNV, robust SNV, area normalization, polynomial detrend and
+Savitzky–Golay. They use the upstream C ABI through the R `n4m` binding;
+their numerical kernels are not reimplemented here. Four new operators have
+frozen matrix parity tests against Python `n4m` and are exercised in local
+and native DAG pipelines. Train-fitted preprocessing such as MSC/EMSC still
+needs a portable or explicitly serialized fit state before inclusion.
+Until the upstream `n4m` R release lands, this development branch requires
+`n4m >= 1.0.21.9000` from its `feat/r-preprocessing-parity` branch.
+
 The optional `nirs4allformats` reader can feed either path without reparsing
 spectra in this package. It accepts homogeneous one-dimensional signals and
 keeps sample IDs plus spectral-axis/unit/type identities explicit:
