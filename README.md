@@ -43,6 +43,20 @@ predictions <- predict(fit, nirs4all_from_formats("new_spectra.csv"))
 #     nirs4all_dag_predict(outcome, nirs4all_from_formats("new_spectra.csv"))
 ```
 
+The former `nirs4all-core` R JSON/YAML PipelineConfigs reader has moved here.
+`nirs4all_load_pipeline()` and `nirs4all_run_portable_pipeline()` preserve its
+bounded Kennard-Stone/SNV/Savitzky-Golay/PLS subset, including component
+sweeps, and are checked against the four frozen Python examples. Unsupported
+operators fail explicitly. Holdout selection RMSE is not an independent test
+score; use the native DAG path for CV/OOF/refit.
+
+For this subset, Python-style, `n4m.*` and language-neutral method names
+resolve to the same R `n4m` operations. This is recipe portability, not yet
+full binary portability: the existing fitted-pipeline RDS contains portable
+N4MM model bytes but wraps them in an R-specific object. Cross-language
+Archive V2/V3 pipeline replay and retraining still need a validated native
+archive reader and explicit preprocessing-state/lineage contracts.
+
 The Rust `nirs4all-formats` registry owns file decoding. Files with different
 axes, multidimensional signals, missing targets or duplicate sample IDs are
 not silently coerced into a training matrix. The converter retains per-record
