@@ -197,6 +197,8 @@ nirs4all_portable_components <- function(step) {
     values <- vapply(step$`_range_`, nirs4all_portable_number, integer(1),
                      fallback = NULL, name = "n_components range",
                      integer = TRUE, minimum = 1L)
+    if (values[[3L]] < 1L)
+      stop("n_components range step must be positive", call. = FALSE)
     if (values[[1L]] > values[[2L]])
       stop("n_components range start exceeds stop", call. = FALSE)
     count <- floor((as.double(values[[2L]]) - values[[1L]]) /
@@ -327,6 +329,84 @@ nirs4all_pipeline_from_portable <- function(source) {
     center_x = spec$center_x, scale_x = spec$scale_x,
     center_y = spec$center_y, scale_y = spec$scale_y)
   nirs4all_pipeline(steps, learner)
+}
+
+nirs4all_portable_generator_options <- function(node) {
+  if (!nirs4all_portable_named(node))
+    stop("portable generator stages must be mappings", call. = FALSE)
+  if ("_or_" %in% names(node)) {
+    if (!identical(names(node), "_or_") || !is.list(node$`_or_`) ||
+        nirs4all_portable_named(node$`_or_`) || !length(node$`_or_`))
+      stop("portable _or_ must contain a non-empty list of steps", call. = FALSE)
+    if (!all(vapply(node$`_or_`, function(option)
+        nirs4all_portable_named(option) &&
+        !any(names(option) %in% c("_or_", "_cartesian_")), logical(1))))
+      stop("nested portable generators are unsupported", call. = FALSE)
+    return(lapply(node$`_or_`, list))
+  }
+  if ("_cartesian_" %in% names(node)) {
+    if (!identical(names(node), "_cartesian_") ||
+        !is.list(node$`_cartesian_`) ||
+        nirs4all_portable_named(node$`_cartesian_`) ||
+        !length(node$`_cartesian_`))
+      stop("portable _cartesian_ needs non-empty stages without modifiers",
+           call. = FALSE)
+    variants <- list(list())
+    for (stage in node$`_cartesian_`) {
+      if (nirs4all_portable_named(stage) && "_cartesian_" %in% names(stage))
+        stop("nested portable cartesian generators are unsupported", call. = FALSE)
+      options <- nirs4all_portable_generator_options(stage)
+      if (length(variants) > floor(10000 / length(options)))
+        stop("portable generator exceeds 10000 variants", call. = FALSE)
+      variants <- unlist(lapply(variants, function(prefix)
+        lapply(options, function(option) c(prefix, option))), recursive = FALSE)
+    }
+    return(variants)
+  }
+  list(list(node))
+}
+
+#' Expand a bounded Python-style generator recipe into R pipelines
+#'
+#' Supports ordinary n4m SNV/Savitzky-Golay/PLS recipes, a component `_range_`,
+#' and preprocessing `_or_` or `_cartesian_` stages without selection modifiers.
+#' Variant order matches Python's left-to-right Cartesian product. Unsupported
+#' generators and splitters are rejected. Pass the resulting named list to
+#' [nirs4all_dag_cv_refit_predict()] for native CV/OOF selection and refit.
+#' @param source Definition accepted by [nirs4all_load_pipeline()].
+#' @return Named list of unfitted [nirs4all_pipeline()] variants.
+#' @export
+nirs4all_expand_portable_pipelines <- function(source) {
+  definition <- nirs4all_load_pipeline(source)
+  variants <- list(list())
+  for (node in definition$pipeline) {
+    options <- nirs4all_portable_generator_options(node)
+    if (length(variants) > floor(10000 / length(options)))
+      stop("portable generator exceeds 10000 variants", call. = FALSE)
+    variants <- unlist(lapply(variants, function(prefix)
+      lapply(options, function(option) c(prefix, option))), recursive = FALSE)
+  }
+  pipelines <- list()
+  for (steps in variants) {
+    plan <- nirs4all_parse_execution_plan(list(pipeline = steps))
+    if (!is.null(plan$splitter))
+      stop("portable pipeline variants do not include splitters", call. = FALSE)
+    if (length(pipelines) > 10000L - length(plan$n_components))
+      stop("portable generator exceeds 10000 variants", call. = FALSE)
+    for (components in plan$n_components) {
+      recipe <- steps
+      model_index <- length(recipe)
+      recipe[[model_index]]$`_range_` <- NULL
+      recipe[[model_index]]$param <- NULL
+      if (is.null(recipe[[model_index]]$model$params))
+        recipe[[model_index]]$model$params <- list()
+      recipe[[model_index]]$model$params$n_components <- components
+      pipelines[[length(pipelines) + 1L]] <-
+        nirs4all_pipeline_from_portable(list(pipeline = recipe))
+    }
+  }
+  names(pipelines) <- sprintf("variant_%04d", seq_along(pipelines))
+  pipelines
 }
 
 nirs4all_portable_dataset <- function(dataset) {
