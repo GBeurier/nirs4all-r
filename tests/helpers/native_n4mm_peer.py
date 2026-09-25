@@ -8,7 +8,7 @@ import ctypes
 from pathlib import Path
 
 import numpy as np
-from pls4all import Context, Model, inspect_n4mm
+from pls4all import Context, Model, inspect_n4mm, export_linear_predictor_n4mm
 from n4m._ffi import lib
 from n4m._types import MatrixView
 
@@ -76,16 +76,25 @@ def main() -> None:
     predict_x = np.asarray(request.get("predict_X", request["X"]), dtype=np.float64)
     if predict_x.ndim != 2 or predict_x.shape[1] != x.shape[1]:
         raise ValueError("predict_X must be a matrix with the training feature width")
-    if mode in ("fit", "fit_plain"):
+    if mode == "fit_affine":
+        payload = export_linear_predictor_n4mm(
+            request["coefficients"], request["intercept"],
+            source_training_samples=x.shape[0],
+        )
+        model_path.write_bytes(payload)
+    elif mode in ("fit", "fit_plain"):
         payload = train_native(x, np.asarray(request["y"], dtype=np.float64),
                                embedded=mode == "fit")
         model_path.write_bytes(payload)
-    elif mode in ("predict", "predict_plain"):
+    elif mode in ("predict", "predict_plain", "predict_affine"):
         payload = model_path.read_bytes()
     else:
         raise ValueError("unsupported native peer mode")
     info = inspect_n4mm(payload)
-    if mode.endswith("_plain"):
+    if mode.endswith("_affine"):
+        if info.pipeline is not None or info.algorithm != 11:
+            raise ValueError("expected native affine predictor")
+    elif mode.endswith("_plain"):
         if info.pipeline is not None:
             raise ValueError("expected plain native PLS model")
     elif info.pipeline is None or info.pipeline.semantic_profile != 1:
