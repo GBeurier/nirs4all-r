@@ -60,6 +60,12 @@ PLS). Its output is checked by the R, Python and WASM readers. It rejects
 unsupported native options rather than dropping them. This is a recipe export,
 not an export of a trained model.
 
+The R reader also imports Python-style `branch` → `merge: features` recipes
+with n4m-only preprocessing branches. For branches containing only default
+SNV/SG, the R exporter emits the named Python feature-merge syntax; Python's
+topology analyzer recognizes it. This branch export has **not** yet been
+qualified by the Core/WASM portable readers, unlike the flat profile above.
+
 For the exact default SNV → Savitzky-Golay smoothing → SIMPLS profile,
 `nirs4all_fit()` now embeds preprocessing in the native N4MM format-2 model.
 `nirs4all_export_native_model()` returns that fitted state as raw bytes;
@@ -213,7 +219,8 @@ For portable n4m recipes, `nirs4all_expand_portable_pipelines()` expands the
 bounded Python `_or_`/`_cartesian_` preprocessing generators and PLS component
 ranges into named R pipelines. These can be passed to
 `nirs4all_dag_cv_refit_predict()` for native OOF selection; generator modifiers,
-other operators, and arbitrary DAG branches still fail explicitly.
+other operators, and general DAG branch/stacking constructs still fail
+explicitly; the feature-only branch/merge form above is the bounded exception.
 The R JSON/YAML reader also resolves `n4m.LSNV`, `n4m.RNV`,
 `n4m.AreaNormalization`, `n4m.Detrend`, `n4m.MSC` and `n4m.EMSC` through the
 native Methods binding. Their transformed train/validation matrices are checked

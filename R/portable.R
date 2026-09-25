@@ -40,6 +40,53 @@ nirs4all_portable_allowed_params <- function(params, allowed, label) {
   params
 }
 
+nirs4all_portable_branch_plan <- function(branch_value) {
+  if (!is.list(branch_value) || length(branch_value) < 2L)
+    stop("portable feature branch needs at least two branches", call. = FALSE)
+  if (nirs4all_portable_named(branch_value)) {
+    branch_names <- names(branch_value)
+  } else {
+    branch_names <- character(length(branch_value))
+    branch_value <- lapply(seq_along(branch_value), function(index) {
+      branch <- branch_value[[index]]
+      default_name <- sprintf("branch_%d", index - 1L)
+      if (nirs4all_portable_named(branch) && "steps" %in% names(branch)) {
+        if (any(!names(branch) %in% c("name", "steps")) ||
+            !is.character(branch$name) || length(branch$name) != 1L)
+          stop("unsupported named portable feature branch", call. = FALSE)
+        branch_names[[index]] <<- branch$name
+        return(branch$steps)
+      }
+      branch_names[[index]] <<- default_name
+      if (nirs4all_portable_named(branch) && "class" %in% names(branch))
+        return(list(branch))
+      branch
+    })
+  }
+  if (anyNA(branch_names) || anyDuplicated(branch_names) ||
+      !all(grepl("^[A-Za-z][A-Za-z0-9_.-]*$", branch_names)) ||
+      any(branch_names %in% c("parallel", "n_jobs")))
+    stop("unsupported portable feature branch name", call. = FALSE)
+  branches <- lapply(branch_value, function(branch) {
+    if (!is.list(branch) || !length(branch) || nirs4all_portable_named(branch) ||
+        !all(vapply(branch, function(step)
+          nirs4all_portable_named(step) &&
+            is.character(step$class) && length(step$class) == 1L &&
+            all(names(step) %in% c("class", "params", "name")), logical(1))))
+      stop("portable feature branches require preprocessing-only step lists",
+           call. = FALSE)
+    fake <- list(pipeline = c(branch, list(list(model = list(
+      class = "n4m.PLS", params = list(n_components = 2L))))))
+    plan <- nirs4all_parse_execution_plan(fake)
+    if (!is.null(plan$splitter) || length(plan$preprocessing) != length(branch))
+      stop("portable feature branches cannot contain splitters or models",
+           call. = FALSE)
+    plan$preprocessing
+  })
+  names(branches) <- branch_names
+  list(type = "FeatureConcat", params = list(branches = branches))
+}
+
 nirs4all_portable_parse_text <- function(value, extension = "") {
   if (identical(extension, "json"))
     return(jsonlite::fromJSON(value, simplifyVector = FALSE))
@@ -108,10 +155,11 @@ nirs4all_load_pipeline <- function(source) {
 
 #' Export a qualified R pipeline as a cross-language recipe
 #'
-#' Writes only the currently shared Core portable subset: default SNV,
-#' Savitzky-Golay with unit spacing, and default native PLS settings. Other
-#' n4m steps or settings fail explicitly until the Python/Rust/WASM contract
-#' supports them. This exports a recipe for fitting, not a trained model.
+#' Writes the shared flat Core portable subset (default SNV, unit-spacing
+#' Savitzky-Golay, default native PLS) and Python's named feature-branch plus
+#' `merge: features` syntax for those same operators. Branch recipes are
+#' checked against Python but are not yet qualified in Core/WASM. Other n4m
+#' steps or settings fail explicitly. This exports a fit recipe, not a model.
 #' @param pipeline An unfitted [nirs4all_pipeline()].
 #' @param format `"json"` or `"yaml"`.
 #' @param file Optional output path. If omitted, returns serialized text.
@@ -128,7 +176,7 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
   if (!is.null(file) && (!is.character(file) || length(file) != 1L ||
                         is.na(file) || !nzchar(file)))
     stop("file must be a non-empty path", call. = FALSE)
-  steps <- lapply(pipeline$steps, function(step) {
+  encode_step <- function(step) {
     if (identical(step$kind, "snv")) {
       if (!identical(step$ddof, 0L) || !identical(step$with_mean, TRUE) ||
           !identical(step$with_std, TRUE))
@@ -147,7 +195,19 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
     }
     stop(sprintf("cross-language recipe export does not support step '%s'",
                  step$kind), call. = FALSE)
-  })
+  }
+  steps <- list()
+  for (step in pipeline$steps) {
+    if (identical(step$kind, "concat")) {
+      if (any(names(step$branches) %in% c("parallel", "n_jobs")))
+        stop("portable feature branch uses a reserved name", call. = FALSE)
+      branches <- lapply(step$branches, function(branch)
+        lapply(branch, encode_step))
+      steps <- c(steps, list(list(branch = branches), list(merge = "features")))
+    } else {
+      steps[[length(steps) + 1L]] <- encode_step(step)
+    }
+  }
   spec <- pipeline$learner$spec
   if (!is.list(spec) || !identical(spec$learner, "pls") ||
       !identical(spec$algo, "pls_simpls") ||
@@ -226,9 +286,27 @@ nirs4all_parse_execution_plan <- function(source) {
   splitter <- NULL
   preprocessing <- list()
   model <- NULL
+  pending_branch <- NULL
   for (step in definition$pipeline) {
     if (!nirs4all_portable_named(step) || !is.null(model))
       stop("portable steps must be mappings and the model must be final", call. = FALSE)
+    if ("branch" %in% names(step)) {
+      if (!identical(names(step), "branch") || !is.null(pending_branch))
+        stop("unsupported portable feature branch structure", call. = FALSE)
+      pending_branch <- nirs4all_portable_branch_plan(step$branch)
+      next
+    }
+    if ("merge" %in% names(step)) {
+      if (is.null(pending_branch) || !identical(names(step), "merge") ||
+          !identical(step$merge, "features"))
+        stop("portable feature branch requires merge: features", call. = FALSE)
+      preprocessing[[length(preprocessing) + 1L]] <- pending_branch
+      pending_branch <- NULL
+      next
+    }
+    if (!is.null(pending_branch))
+      stop("portable feature branch must be followed by merge: features",
+           call. = FALSE)
     if (any(!names(step) %in% c("class", "params", "model", "_range_",
                                  "param", "name")))
       stop("unsupported portable step field", call. = FALSE)
@@ -341,6 +419,8 @@ nirs4all_parse_execution_plan <- function(source) {
       stop("portable execution requires a PLSRegression model", call. = FALSE)
     }
   }
+  if (!is.null(pending_branch))
+    stop("portable feature branch is missing merge: features", call. = FALSE)
   if (is.null(model)) stop("portable execution requires PLSRegression", call. = FALSE)
   learner <- do.call(nirs4all_pls, c(list(n_components = 2L),
     model$params[intersect(names(model$params),
@@ -353,7 +433,8 @@ nirs4all_parse_execution_plan <- function(source) {
 #' Convert a portable JSON/YAML recipe into an R pipeline
 #'
 #' The bounded reader accepts native SNV, Savitzky-Golay, LSNV, RNV, area
-#' normalization, detrend, train-fitted MSC/EMSC, and PLS components.
+#' normalization, detrend, train-fitted MSC/EMSC, feature-only branches merged
+#' by concatenation, and PLS components.
 #' Splitters and component sweeps are refused because a single fitted pipeline
 #' cannot represent an entire selection experiment.
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
@@ -361,6 +442,9 @@ nirs4all_parse_execution_plan <- function(source) {
 #' @export
 nirs4all_portable_steps <- function(preprocessing) {
   lapply(preprocessing, function(step) {
+    if (identical(step$type, "FeatureConcat"))
+      return(nirs4all_concat(lapply(step$params$branches,
+        nirs4all_portable_steps)))
     if (identical(step$type, "StandardNormalVariate")) {
       params <- step$params
       return(nirs4all_snv(params$ddof, params$with_mean, params$with_std))
