@@ -156,11 +156,13 @@ nirs4all_load_pipeline <- function(source) {
 
 #' Export a qualified R pipeline as a cross-language recipe
 #'
-#' Writes the shared flat Core portable subset (default SNV, unit-spacing
-#' Savitzky-Golay, default native PLS) and Python's named feature-branch plus
-#' `merge: features` syntax for those same operators. Branch recipes are
-#' checked against Python but are not yet qualified in Core/WASM. Other n4m
-#' steps or settings fail explicitly. This exports a fit recipe, not a model.
+#' Writes n4m-backed preprocessing and the qualified native PLS recipe using
+#' Python's named feature-branch plus `merge: features` syntax when needed.
+#' LSNV, RNV, area normalization, detrend, MSC and EMSC recipes are checked
+#' against the independent Python n4m binding but are not yet qualified in
+#' Core/WASM. Non-default SNV is refused because Core/WASM currently ignores
+#' its parameters. Unsupported learner settings still fail explicitly. This exports
+#' a fit recipe, not a model or fitted preprocessing state.
 #' @param pipeline An unfitted [nirs4all_pipeline()].
 #' @param format `"json"` or `"yaml"`.
 #' @param file Optional output path. If omitted, returns serialized text.
@@ -181,7 +183,7 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
     if (identical(step$kind, "snv")) {
       if (!identical(step$ddof, 0L) || !identical(step$with_mean, TRUE) ||
           !identical(step$with_std, TRUE))
-        stop("cross-language recipe export supports default SNV only", call. = FALSE)
+        stop("cross-language recipe export supports default SNV only; Core/WASM currently ignores SNV parameters", call. = FALSE)
       return(list(class = "n4m.SNV"))
     }
     if (identical(step$kind, "savgol")) {
@@ -194,6 +196,24 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
                                 delta = step$delta, mode = step$mode,
                                 cval = step$cval)))
     }
+    if (identical(step$kind, "local_snv"))
+      return(list(class = "n4m.LSNV", params = list(
+        window = step$window, pad_mode = step$pad_mode,
+        constant_value = step$constant_value)))
+    if (identical(step$kind, "robust_snv"))
+      return(list(class = "n4m.RNV", params = list(
+        with_center = step$with_center, with_scale = step$with_scale,
+        k = step$k)))
+    if (identical(step$kind, "area_normalization"))
+      return(list(class = "n4m.AreaNormalization",
+                  params = list(method = step$method)))
+    if (identical(step$kind, "detrend"))
+      return(list(class = "n4m.Detrend",
+                  params = list(polyorder = step$polyorder)))
+    if (identical(step$kind, "msc")) return(list(class = "n4m.MSC"))
+    if (identical(step$kind, "emsc"))
+      return(list(class = "n4m.EMSC",
+                  params = list(degree = step$degree)))
     stop(sprintf("cross-language recipe export does not support step '%s'",
                  step$kind), call. = FALSE)
   }

@@ -159,7 +159,6 @@ reject_export <- function(pipeline) {
                      "try-error"))
 }
 reject_export(nirs4all_pipeline(list(nirs4all_snv(ddof = 1L)), nirs4all_pls()))
-reject_export(nirs4all_pipeline(list(nirs4all_msc()), nirs4all_pls()))
 reject_export(nirs4all_pipeline(list(nirs4all_savgol(5L, delta = 2)),
                                    nirs4all_pls()))
 reject_export(nirs4all_pipeline(list(), nirs4all_pls(algo = "pls_nipals")))
