@@ -171,8 +171,6 @@ nirs4all_parse_execution_plan <- function(source) {
       if (class_name %in% .nirs4all_portable_classes$kennard_stone) {
         params <- nirs4all_portable_allowed_params(params, "test_size", "Kennard-Stone")
         if (!is.null(splitter)) stop("splitter may appear only once", call. = FALSE)
-        if (length(preprocessing))
-          stop("Kennard-Stone splitter must precede preprocessing", call. = FALSE)
         size <- nirs4all_portable_number(params$test_size, 0.25, "test_size")
         if (size <= 0 || size >= 1) stop("test_size must be between zero and one", call. = FALSE)
         splitter <- list(type = "KennardStone", params = list(test_size = size))

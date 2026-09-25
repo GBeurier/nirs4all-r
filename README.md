@@ -57,6 +57,11 @@ N4MM model bytes but wraps them in an R-specific object. Cross-language
 Archive V2/V3 pipeline replay and retraining still need a validated native
 archive reader and explicit preprocessing-state/lineage contracts.
 
+The former core R upstream accessors are also available here:
+`nirs4all_upstreams()`, `nirs4all_require()`, `formats()`, `methods()`,
+`dag_ml()` and the DAG-ML local implementation registry delegate to their
+owning packages. Missing optional domains fail explicitly.
+
 The Rust `nirs4all-formats` registry owns file decoding. Files with different
 axes, multidimensional signals, missing targets or duplicate sample IDs are
 not silently coerced into a training matrix. The converter retains per-record

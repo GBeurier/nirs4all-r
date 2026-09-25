@@ -2,6 +2,7 @@ library(nirs4all)
 # Exact copies of nirs4all-core/tests/parity/fixtures at transfer time.
 # Pinning their bytes makes later upstream fixture changes an explicit review.
 fixture_md5 <- c(
+  execution_contract_cases.json = "00529a1e435aebed79ca228335640812",
   portable_kennard_stone_snv_pls.json = "2fd94920f19bb5c6834676bbabc5836e",
   portable_methods_pipeline.json = "3b3960e41c925c17fb3dbf9470ee8789",
   portable_savgol_pls.json = "aa12b986359c3a05cfa057880292797b",
@@ -13,6 +14,15 @@ fixture_md5 <- c(
 fixture_paths <- vapply(names(fixture_md5), function(name)
   system.file("extdata", name, package = "nirs4all", mustWork = TRUE), character(1))
 stopifnot(identical(unname(tools::md5sum(fixture_paths)), unname(fixture_md5)))
+contract <- jsonlite::fromJSON(system.file(
+  "extdata", "execution_contract_cases.json", package = "nirs4all",
+  mustWork = TRUE), simplifyVector = FALSE)
+for (case in contract$invalid)
+  stopifnot(inherits(try(nirs4all_parse_execution_plan(case), silent = TRUE),
+                     "try-error"))
+for (case in contract$valid)
+  stopifnot(identical(nirs4all_parse_execution_plan(case)$n_components,
+                      as.integer(unlist(case$components))))
 oracle <- jsonlite::fromJSON(system.file(
   "extdata", "python_oracle_n4m_examples.json", package = "nirs4all",
   mustWork = TRUE), simplifyVector = FALSE)
@@ -119,9 +129,4 @@ for (definition in list(native_alias, semantic_alias)) {
 bad_params <- native_alias
 bad_params$pipeline[[1L]]$params$unknown <- 1L
 stopifnot(inherits(try(nirs4all_parse_execution_plan(bad_params), silent = TRUE),
-                   "try-error"))
-wrong_order <- list(pipeline = list(
-  list(class = "n4m.SNV"), list(class = "n4m.KennardStone"),
-  list(model = list(class = "n4m.PLS"))))
-stopifnot(inherits(try(nirs4all_parse_execution_plan(wrong_order), silent = TRUE),
                    "try-error"))
