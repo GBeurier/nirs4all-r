@@ -18,9 +18,10 @@ nirs4all_dag_step_spec <- function(step) {
 #' host HPO from the high-level R API.
 #'
 #' @param pipeline A [nirs4all_pipeline()] using a built-in learner, or a named
-#'   list of at least two such pipelines to compare by native OOF RMSE.
+#'   list of at least two such pipelines to compare by native OOF RMSE for
+#'   regression or accuracy for classification.
 #' @param X Finite numeric samples-by-features matrix.
-#' @param y Finite numeric target vector.
+#' @param y Finite numeric regression target, or factor/character class labels.
 #' @param folds Number of deterministic, non-shuffled CV folds.
 #' @param sample_ids Optional unique sample IDs. Defaults to matrix row names
 #'   when present, otherwise zero-padded IDs in matrix row order.
@@ -65,6 +66,13 @@ nirs4all_dag_cv_refit_predict <- function(
       logical(1))))
     stop("native DAG execution requires built-in learners in every pipeline",
          call. = FALSE)
+  tasks <- vapply(pipelines, function(value) {
+    task <- value$learner$task
+    if (is.null(task)) "regression" else task
+  }, character(1))
+  if (length(unique(tasks)) != 1L)
+    stop("all native DAG variants must have the same task", call. = FALSE)
+  classification <- identical(tasks[[1L]], "classification")
   if (!is.logical(split_steps) || length(split_steps) != 1L || is.na(split_steps))
     stop("split_steps must be TRUE or FALSE", call. = FALSE)
   if (split_steps && !is.null(variants) &&
@@ -93,9 +101,20 @@ nirs4all_dag_cv_refit_predict <- function(
     X <- X$X
   }
   X <- nirs4all_matrix(X)
-  if (!is.numeric(y) || is.matrix(y) || length(y) != nrow(X) ||
-      anyNA(y) || any(!is.finite(y)))
+  y_names <- names(y)
+  class_levels <- NULL
+  if (classification) {
+    if (is.character(y)) y <- factor(y)
+    if (!is.factor(y) || is.ordered(y) || is.matrix(y) ||
+        length(y) != nrow(X) || anyNA(y) || nlevels(y) < 2L ||
+        any(tabulate(as.integer(y), nbins = nlevels(y)) == 0L))
+      stop("classification y must have at least two observed classes", call. = FALSE)
+    class_levels <- levels(y)
+    y <- as.numeric(y) - 1
+  } else if (!is.numeric(y) || is.matrix(y) || length(y) != nrow(X) ||
+             anyNA(y) || any(!is.finite(y))) {
     stop("y must be one finite numeric value per row of X", call. = FALSE)
+  }
   if (!is.numeric(folds) || length(folds) != 1L || !is.finite(folds) ||
       folds < 2L || folds > nrow(X) || folds != floor(folds))
     stop("folds must be an integer from two to the sample count", call. = FALSE)
@@ -115,7 +134,7 @@ nirs4all_dag_cv_refit_predict <- function(
     stop("sample_ids must be unique, non-empty strings aligned to X", call. = FALSE)
   if (!is.null(rownames(X)) && !identical(rownames(X), sample_ids))
     stop("sample_ids and X row names differ", call. = FALSE)
-  if (!is.null(names(y)) && !identical(names(y), sample_ids))
+  if (!is.null(y_names) && !identical(y_names, sample_ids))
     stop("sample_ids and y names differ", call. = FALSE)
   if (is.factor(group_ids)) group_ids <- as.character(group_ids)
   if (!is.null(group_ids)) {
@@ -161,6 +180,9 @@ nirs4all_dag_cv_refit_predict <- function(
     }
     unname(as.integer(assigned[group_ids]))
   }
+  if (classification && any(vapply(seq_len(as.integer(folds)), function(index)
+      length(unique(y[fold_number != index])) != length(class_levels), logical(1))))
+    stop("each classification training fold must contain every class", call. = FALSE)
   fold_set <- list(
     id = "folds:nirs4all-r", sample_ids = as.list(sort(sample_ids)),
     sample_groups = if (is.null(group_ids)) empty else
@@ -173,7 +195,8 @@ nirs4all_dag_cv_refit_predict <- function(
            validation_sample_ids = as.list(sort(sample_ids[validation_rows])),
            metadata = empty)
     }))
-  fingerprints <- nirs4all_dag_fingerprints(X, y, sample_ids, group_ids)
+  fingerprints <- nirs4all_dag_fingerprints(X, y, sample_ids, group_ids,
+                                            class_levels)
   data_content_fingerprint <- fingerprints$data_content_fingerprint
   relations <- list(records = lapply(seq_along(sample_ids), function(index) {
     record <- list(observation_id = paste0("observation:", index),
@@ -293,7 +316,8 @@ nirs4all_dag_cv_refit_predict <- function(
     path
   }
   data_path <- file.path(workdir, "data.rds")
-  saveRDS(list(X = X, y = as.numeric(y), sample_ids = sample_ids,
+  saveRDS(list(X = X, y = as.numeric(y), class_levels = class_levels,
+               sample_ids = sample_ids,
                group_ids = group_ids,
                model_specs = model_specs), data_path)
   dsl_path <- write_json("dsl.json", dsl)
@@ -350,7 +374,8 @@ nirs4all_dag_cv_refit_predict <- function(
     bundle_id = paste0("bundle:nirs4all-r:", run_key),
     plan_id = paste0("plan:nirs4all-r:", run_key),
     run_id = paste0("run:nirs4all-r:", run_key),
-    root_seed = as.integer(root_seed))
+    root_seed = as.integer(root_seed),
+    selection_metric = if (classification) "accuracy" else "rmse")
   outcome$workdir <- workdir
   outcome
 }
@@ -366,7 +391,8 @@ nirs4all_dag_cv_refit_predict <- function(
 #' @param outcome Result of [nirs4all_dag_cv_refit_predict()]. Its persistent
 #'   `workdir` and refit artifact must still exist.
 #' @param X Finite numeric matrix or a [nirs4all_from_formats()] dataset.
-#' @return Numeric predictions, in input row order.
+#' @return Numeric regression predictions or factor class predictions,
+#'   in input row order.
 #' @export
 nirs4all_dag_predict <- function(outcome, X) {
   if (!requireNamespace("digest", quietly = TRUE))
@@ -477,7 +503,8 @@ nirs4all_dag_predict <- function(outcome, X) {
   nirs4all_predict(nirs4all_load(model_path), X)
 }
 
-nirs4all_dag_fingerprints <- function(X, y, sample_ids, group_ids = NULL) {
+nirs4all_dag_fingerprints <- function(X, y, sample_ids, group_ids = NULL,
+                                     class_levels = NULL) {
   fingerprint <- function(value) digest::digest(
     jsonlite::toJSON(value, auto_unbox = TRUE, null = "null", digits = 17),
     algo = "sha256", serialize = FALSE)
@@ -486,10 +513,12 @@ nirs4all_dag_fingerprints <- function(X, y, sample_ids, group_ids = NULL) {
   data_fields <- list(sample_ids = as.list(sample_ids), rows = nrow(X),
                       cols = ncol(X), values_row_major = as.list(as.numeric(t(X))))
   if (!is.null(group_ids)) data_fields$group_ids <- as.list(group_ids)
-  list(
-    schema_fingerprint = fingerprint(list(
+  schema_fields <- list(
       schema = "nirs4all-r.matrix-schema.v1", representation = "tabular_numeric",
-      features = as.list(feature_names), target = "y")),
+      features = as.list(feature_names), target = "y")
+  if (!is.null(class_levels)) schema_fields$class_levels <- as.list(class_levels)
+  list(
+    schema_fingerprint = fingerprint(schema_fields),
     plan_fingerprint = fingerprint(list(
       plan = "nirs4all-r.direct-matrix.v1", source = "r_matrix",
       output = "tabular_numeric")),

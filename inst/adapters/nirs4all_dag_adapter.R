@@ -34,6 +34,12 @@ if (!is.list(data) || !is.matrix(data$X) || !is.numeric(data$X) ||
     any(!is.finite(data$y)) || anyNA(data$sample_ids) ||
     anyDuplicated(data$sample_ids))
   stop("invalid R matrix dataset for DAG-ML adapter")
+if (!is.null(data$class_levels) &&
+    (!is.character(data$class_levels) || length(data$class_levels) < 2L ||
+     anyNA(data$class_levels) || anyDuplicated(data$class_levels) ||
+     any(!nzchar(data$class_levels)) ||
+     any(!(data$y %in% (seq_along(data$class_levels) - 1L)))))
+  stop("invalid encoded classification labels for DAG-ML adapter")
 if (!is.list(dsl$split_invocation$fold_set$folds))
   stop("DAG-ML DSL has no explicit fold set")
 fold_universe <- as.character(unlist(dsl$split_invocation$fold_set$sample_ids,
@@ -64,7 +70,7 @@ if (!is.null(data$group_ids)) {
     stop("DAG-ML fold, relation and matrix group IDs disagree")
 }
 fingerprints <- nirs4all:::nirs4all_dag_fingerprints(
-  data$X, data$y, data$sample_ids, data$group_ids)
+  data$X, data$y, data$sample_ids, data$group_ids, data$class_levels)
 for (key in names(fingerprints)) {
   if (!identical(envelope[[key]], fingerprints[[key]]))
     stop(paste("DAG-ML envelope does not attest R data:", key))
@@ -120,6 +126,10 @@ learner_from_task <- function(task) {
       params = if (is.null(params$params)) list() else params$params),
     lm = nirs4all_lm(),
     ranger = do.call(nirs4all_ranger, c(
+      list(num.trees = as.integer(params$num_trees),
+           seed = if (is.null(params$seed)) 1L else as.integer(params$seed)),
+      if (is.null(params$extra)) list() else params$extra)),
+    ranger_classifier = do.call(nirs4all_ranger_classifier, c(
       list(num.trees = as.integer(params$num_trees),
            seed = if (is.null(params$seed)) 1L else as.integer(params$seed)),
       if (is.null(params$extra)) list() else params$extra)),
@@ -265,6 +275,13 @@ prediction_block <- function(node, partition, fold_id, ids, values) {
        sample_ids = as.list(ids),
        values = lapply(values, function(value) list(as.numeric(value))),
        target_names = list("y"))
+}
+probability_block <- function(node, fold_id, ids, values) {
+  list(producer_node = node, partition = "validation", fold_id = fold_id,
+       sample_ids = as.list(ids),
+       class_labels = as.list(as.numeric(seq_along(data$class_levels) - 1L)),
+       values = lapply(seq_len(nrow(values)), function(index)
+         as.list(as.numeric(values[index, ]))))
 }
 target_block <- function(ids) {
   rows <- sample_rows(ids)
@@ -415,9 +432,16 @@ record_result <- function(task, raw_line) {
   if (!identical(phase, "PREDICT")) {
     train_rows <- sample_rows(train_ids)
     learner <- learner_from_task(task)
+    if (!identical(identical(learner$task, "classification"),
+                   !is.null(data$class_levels)))
+      stop("DAG learner task differs from attested target kind")
     fitted <- nirs4all_fit(nirs4all_pipeline(steps = steps_from_task(task),
                                             learner = learner),
-                          matrices$train, data$y[train_rows])
+                          matrices$train,
+                          if (identical(learner$task, "classification"))
+                            factor(data$class_levels[data$y[train_rows] + 1L],
+                                   levels = data$class_levels)
+                          else data$y[train_rows])
     if (identical(phase, "REFIT")) {
       nirs4all_save(fitted, artifact_path)
       artifact <- list(id = artifact_id, kind = "nirs4all_r_model",
@@ -444,6 +468,14 @@ record_result <- function(task, raw_line) {
     fitted <- nirs4all_load(artifact_path)
   }
   predictions <- nirs4all_predict(fitted, matrices$prediction)
+  classification <- identical(fitted$task, "classification")
+  if (classification) {
+    if (!identical(fitted$classes, data$class_levels))
+      stop("fitted class levels differ from attested DAG data")
+    probabilities <- if (identical(phase, "FIT_CV"))
+      nirs4all_predict_proba(fitted, matrices$prediction) else NULL
+    predictions <- as.numeric(predictions) - 1L
+  }
   result <- list(
     node_id = node,
     outputs = list(oof = list(handle = safe_handle(paste(node, phase, sep = ":")),
@@ -469,6 +501,9 @@ record_result <- function(task, raw_line) {
       loss_attestations = list(), early_stopping_records = list()))
   if (!identical(phase, "PREDICT"))
     result$regression_targets <- list(target_block(prediction_ids))
+  if (classification && identical(phase, "FIT_CV"))
+    result$classification_probabilities <- list(probability_block(
+      node, task$fold_id, prediction_ids, probabilities))
   encoded <- jsonlite::toJSON(result, auto_unbox = TRUE, null = "null", digits = 17)
   sub('"seed":"__DAGML_U64_SEED__"', paste0('"seed":', seed_decimal),
       encoded, fixed = TRUE)
