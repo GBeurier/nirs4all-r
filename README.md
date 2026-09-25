@@ -115,8 +115,10 @@ outcome$replay_prediction_blocks
 ```
 
 For classification, use factor or character labels with the optional
-`ranger` probability forest. The local API returns factors and a probability
-matrix whose columns follow the training class order. DAG-ML encodes those
+`ranger` probability forest, a `parsnip` classification specification with
+an explicit engine, or an untrained `mlr3` `LearnerClassif` supporting
+probabilities. The local API returns factors and a probability matrix whose
+columns follow the training class order. DAG-ML encodes those
 classes as stable numeric labels, validates probabilities in each CV fold,
 selects variants by OOF accuracy, and restores factor labels for local
 external inference. Every training fold must contain every class; the R
@@ -137,9 +139,19 @@ outcome <- nirs4all_dag_cv_refit_predict(classifier, X, y,
 new_labels <- nirs4all_dag_predict(outcome, X[1:3, , drop = FALSE])
 ```
 
-This ranger model is an RDS sidecar, not a cross-language trained-model
-format. Its JSON/YAML alias and trained artifact are not yet portable to
-Python or WASM.
+The `ranger`, `parsnip` and `mlr3` models are RDS sidecars, not
+cross-language trained-model formats. Their JSON/YAML aliases and trained
+artifacts are not yet portable to Python or WASM. For example, the two
+framework controllers can replace the `ranger` learner above:
+
+```r
+tidymodels_learner <- nirs4all_parsnip_classifier(
+  parsnip::set_engine(parsnip::decision_tree(mode = "classification"), "rpart")
+)
+mlr3_learner <- nirs4all_mlr3_classifier(
+  mlr3::lrn("classif.rpart", cp = 0)
+)
+```
 
 For repeated samples, batches or sites, pass aligned `group_ids`. The R
 frontend assigns whole groups to folds deterministically; DAG-ML validates

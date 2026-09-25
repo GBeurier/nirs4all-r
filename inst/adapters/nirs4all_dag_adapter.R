@@ -142,12 +142,25 @@ learner_from_task <- function(task) {
         stop("parsnip model specification engine mismatch")
       nirs4all_parsnip(spec)
     },
+    parsnip_classifier = {
+      spec <- model_spec_from_task(params)
+      if (!identical(spec$engine, params$engine))
+        stop("parsnip classification engine mismatch")
+      nirs4all_parsnip_classifier(spec)
+    },
     mlr3 = {
       learner <- model_spec_from_task(params)
       if (!inherits(learner, "LearnerRegr") ||
           !identical(learner$id, params$engine))
         stop("mlr3 learner specification identity mismatch")
       nirs4all_mlr3(learner)
+    },
+    mlr3_classifier = {
+      learner <- model_spec_from_task(params)
+      if (!inherits(learner, "LearnerClassif") ||
+          !identical(learner$id, params$engine))
+        stop("mlr3 classification learner identity mismatch")
+      nirs4all_mlr3_classifier(learner)
     },
     torch_mlp = nirs4all_torch_mlp(
       hidden = if (is.null(params$hidden)) 32L else as.integer(params$hidden),
