@@ -6,14 +6,15 @@ Authors@R: c(person("Gregory", "Beurier", email = "gregory.beurier@cirad.fr", ro
 Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     Composes portable preprocessing and partial least squares operations from
     'n4m' with explicit R learner controllers. This development version offers
-    local fit, predict, and portable 'n4m' model serialization; native 'dagml'
-    campaign execution is not yet integrated into the high-level API.
+    local fit, predict, portable 'n4m' model serialization, and a native
+    'dagml' cross-validation, refit and replay path for single-model pipelines.
+    Branching DAGs and host hyperparameter search remain under development.
 License: AGPL (>= 3)
 URL: https://github.com/GBeurier/nirs4all-r
 BugReports: https://github.com/GBeurier/nirs4all-r/issues
 Depends: R (>= 4.1)
 Imports: n4m, stats
-Suggests: glmnet, jsonlite, ranger, torch
+Suggests: dagml, digest, glmnet, jsonlite, ranger, torch
 Additional_repositories: https://gbeurier.r-universe.dev
 Encoding: UTF-8
 NeedsCompilation: no

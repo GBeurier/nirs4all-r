@@ -67,5 +67,8 @@ nirs4all_torch_mlp <- function(hidden = 32L, epochs = 100L,
       normalized_predictions * state$y_scale + state$y_center
     }, name = "torch:mlp.regression")
   controller$format <- "torch-r"
+  controller$spec <- list(learner = "torch_mlp", hidden = as.integer(hidden),
+                          epochs = as.integer(epochs), learning_rate = learning_rate,
+                          seed = as.integer(seed))
   controller
 }

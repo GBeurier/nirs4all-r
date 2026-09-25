@@ -41,13 +41,16 @@ nirs4all_pls <- function(n_components = 2L, algo = "pls_simpls",
     name = paste0("n4m:", algo))
   controller$portable <- TRUE
   controller$format <- "n4mm"
+  controller$spec <- list(learner = "pls", n_components = as.integer(n_components),
+                          algo = algo, center_x = center_x, scale_x = scale_x,
+                          center_y = center_y, scale_y = scale_y)
   controller
 }
 
 #' Base R linear-model controller
 #' @export
 nirs4all_lm <- function() {
-  nirs4all_controller(
+  controller <- nirs4all_controller(
     fit = function(X, y) {
       frame <- as.data.frame(X)
       names(frame) <- paste0("x", seq_len(ncol(X)))
@@ -63,6 +66,8 @@ nirs4all_lm <- function() {
       names(frame) <- paste0("x", seq_len(ncol(X)))
       as.numeric(stats::predict(state, newdata = frame))
     }, name = "stats:lm")
+  controller$spec <- list(learner = "lm")
+  controller
 }
 
 #' Optional ranger random-forest controller
@@ -84,7 +89,7 @@ nirs4all_ranger <- function(num.trees = 500L, seed = 1L, ...) {
   extra <- list(...)
   if (any(names(extra) %in% c("formula", "data", "num.trees", "seed", "dependent.variable.name")))
     stop("reserved ranger parameters cannot be overridden", call. = FALSE)
-  nirs4all_controller(
+  controller <- nirs4all_controller(
     fit = function(X, y) {
       frame <- as.data.frame(X)
       names(frame) <- paste0("x", seq_len(ncol(X)))
@@ -97,6 +102,9 @@ nirs4all_ranger <- function(num.trees = 500L, seed = 1L, ...) {
       names(frame) <- paste0("x", seq_len(ncol(X)))
       as.numeric(stats::predict(state, data = frame)$predictions)
     }, name = "ranger:regression")
+  controller$spec <- list(learner = "ranger", num_trees = as.integer(num.trees),
+                          seed = as.integer(seed), extra = extra)
+  controller
 }
 
 #' Optional glmnet regularized-regression controller
@@ -118,7 +126,7 @@ nirs4all_glmnet <- function(lambda, alpha = 1, standardize = TRUE) {
   if (!is.logical(standardize) || length(standardize) != 1L || is.na(standardize))
     stop("standardize must be TRUE or FALSE", call. = FALSE)
   path <- unique(lambda * exp(seq(log(1000), 0, length.out = 32L)))
-  nirs4all_controller(
+  controller <- nirs4all_controller(
     fit = function(X, y) {
       if (ncol(X) < 2L)
         stop("glmnet requires at least two features", call. = FALSE)
@@ -132,4 +140,7 @@ nirs4all_glmnet <- function(lambda, alpha = 1, standardize = TRUE) {
                                                           newx = X,
                                                           s = state$lambda)),
     name = "glmnet:gaussian")
+  controller$spec <- list(learner = "glmnet", lambda = lambda, alpha = alpha,
+                          standardize = standardize)
+  controller
 }
