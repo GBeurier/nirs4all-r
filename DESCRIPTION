@@ -5,7 +5,7 @@ Version: 0.4.0.9000
 Authors@R: c(person("Gregory", "Beurier", email = "gregory.beurier@cirad.fr", role = c("aut", "cre")), person("nirs4all", "contributors", role = "ctb"))
 Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     Composes portable preprocessing (including local and robust normalization,
-    area normalization, detrending and Savitzky-Golay filtering) and partial
+    area normalization, detrending, train-fitted MSC and Savitzky-Golay filtering) and partial
     least squares operations from 'n4m' with explicit R learner controllers.
     This development version offers
     local fit, predict, portable 'n4m' model serialization, and a native

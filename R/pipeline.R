@@ -77,6 +77,15 @@ nirs4all_detrend <- function(polyorder = 1L) {
             class = "nirs4all_step")
 }
 
+#' Define a train-fitted Multiplicative Scatter Correction step
+#'
+#' The reference spectrum is learned from the training rows only and saved
+#' with the fitted pipeline. Validation and prediction reuse that reference.
+#' @export
+nirs4all_msc <- function() {
+  structure(list(kind = "msc"), class = "nirs4all_step")
+}
+
 #' Define a Savitzky-Golay step
 #' @param window_length Odd window length.
 #' @param polyorder Polynomial order below the window length.
@@ -130,8 +139,12 @@ nirs4all_matrix <- function(X, n_features = NULL) {
   X
 }
 
-nirs4all_transform <- function(X, steps) {
-  for (step in steps) {
+nirs4all_transform <- function(X, steps, step_states = NULL) {
+  if (is.null(step_states)) step_states <- rep(list(NULL), length(steps))
+  if (!is.list(step_states) || length(step_states) != length(steps))
+    stop("fitted preprocessing state does not match pipeline steps", call. = FALSE)
+  for (index in seq_along(steps)) {
+    step <- steps[[index]]
     if (identical(step$kind, "snv") && step$ddof >= ncol(X))
       stop("SNV ddof must be smaller than the feature count", call. = FALSE)
     X <- switch(step$kind,
@@ -147,6 +160,12 @@ nirs4all_transform <- function(X, steps) {
         k = step$k),
       area_normalization = n4m::area_normalization_transform(X, step$method),
       detrend = n4m::detrend_transform(X, step$polyorder),
+      msc = {
+        reference <- step_states[[index]]
+        if (is.null(reference))
+          stop("MSC requires a fitted training reference", call. = FALSE)
+        n4m::msc_transform(X, reference)
+      },
       savgol = n4m::savgol_transform(X, step$window_length,
         step$polyorder, step$deriv, step$delta, step$mode, step$cval),
       stop("unknown preprocessing step", call. = FALSE))
@@ -154,6 +173,16 @@ nirs4all_transform <- function(X, steps) {
       stop("preprocessing produced non-finite or invalid data", call. = FALSE)
   }
   X
+}
+
+nirs4all_fit_transform <- function(X, steps) {
+  states <- rep(list(NULL), length(steps))
+  for (index in seq_along(steps)) {
+    if (identical(steps[[index]]$kind, "msc"))
+      states[[index]] <- n4m::msc_fit(X)
+    X <- nirs4all_transform(X, list(steps[[index]]), list(states[[index]]))
+  }
+  list(X = X, states = states)
 }
 
 #' Fit a pipeline on R matrices
@@ -177,10 +206,11 @@ nirs4all_fit <- function(pipeline, X, y = NULL) {
   if (!is.null(rownames(X)) && !is.null(names(y)) &&
       !identical(rownames(X), names(y)))
     stop("X row names and y sample names differ", call. = FALSE)
-  transformed <- nirs4all_transform(X, pipeline$steps)
-  state <- pipeline$learner$fit(transformed, as.numeric(y))
+  transformed <- nirs4all_fit_transform(X, pipeline$steps)
+  state <- pipeline$learner$fit(transformed$X, as.numeric(y))
   structure(list(steps = pipeline$steps, learner = pipeline$learner,
-                 state = state, n_features = ncol(X),
+                 state = state, step_states = transformed$states,
+                 n_features = ncol(X),
                  feature_names = colnames(X)), class = "nirs4all_fitted")
 }
 
@@ -195,7 +225,8 @@ nirs4all_predict <- function(object, X) {
   X <- nirs4all_matrix(X, object$n_features)
   if (!is.null(object$feature_names) && !identical(colnames(X), object$feature_names))
     stop("X feature names or order differ from training", call. = FALSE)
-  out <- object$learner$predict(object$state, nirs4all_transform(X, object$steps))
+  out <- object$learner$predict(object$state,
+    nirs4all_transform(X, object$steps, object$step_states))
   if (!is.numeric(out) || length(out) != nrow(X) || anyNA(out) || any(!is.finite(out)))
     stop("controller returned invalid predictions", call. = FALSE)
   as.numeric(out)

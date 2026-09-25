@@ -109,6 +109,7 @@ steps_from_task <- function(task) {
         k = as.numeric(spec$k)),
       area_normalization = nirs4all_area_normalization(method = spec$method),
       detrend = nirs4all_detrend(polyorder = as.integer(spec$polyorder)),
+      msc = nirs4all_msc(),
       savgol = nirs4all_savgol(
         window_length = as.integer(spec$window_length),
         polyorder = as.integer(spec$polyorder), deriv = as.integer(spec$deriv),

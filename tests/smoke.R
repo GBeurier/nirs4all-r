@@ -42,6 +42,24 @@ for (case in preprocess_cases) {
   unlink(saved)
 }
 
+msc_train <- X[1:8, , drop = FALSE]
+msc_test <- X[9:12, , drop = FALSE]
+msc_pipeline <- nirs4all_pipeline(list(nirs4all_msc()), nirs4all_pls(2L))
+msc_fitted <- nirs4all_fit(msc_pipeline, msc_train, y[1:8])
+msc_reference <- n4m::msc_fit(msc_train)
+stopifnot(length(msc_fitted$step_states[[1L]]) == ncol(X),
+          isTRUE(all.equal(msc_fitted$step_states[[1L]], msc_reference,
+                           tolerance = 1e-12)))
+msc_direct <- n4m::n4m_fit(n4m::msc_transform(msc_train, msc_reference), y[1:8],
+                           algo = "pls_simpls", n_components = 2L)
+msc_expected <- as.numeric(n4m::n4m_predict(
+  msc_direct, n4m::msc_transform(msc_test, msc_reference)))
+stopifnot(max(abs(predict(msc_fitted, msc_test) - msc_expected)) < 1e-10)
+msc_path <- tempfile(fileext = ".rds")
+nirs4all_save(msc_fitted, msc_path)
+stopifnot(max(abs(predict(nirs4all_load(msc_path), msc_test) - msc_expected)) < 1e-10)
+unlink(msc_path)
+
 lm_pipeline <- nirs4all_pipeline(learner = nirs4all_lm())
 lm_fit <- nirs4all_fit(lm_pipeline, X[, c(2L, 7L), drop = FALSE], y)
 stopifnot(max(abs(nirs4all_predict(lm_fit, X[, c(2L, 7L), drop = FALSE]) - y)) < 1e-10)

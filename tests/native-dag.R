@@ -28,6 +28,9 @@ if (available) {
     n4m_area = list(pipeline = nirs4all_pipeline(
       list(nirs4all_area_normalization("trapz")), nirs4all_pls(2L)),
       X = X, tolerance = 1e-10),
+    n4m_msc = list(pipeline = nirs4all_pipeline(
+      list(nirs4all_msc()), nirs4all_pls(2L)),
+      X = X, tolerance = 1e-10),
     lm = list(pipeline = nirs4all_pipeline(learner = nirs4all_lm()),
               X = X[, c(2L, 5L), drop = FALSE], tolerance = 1e-10))
   if (requireNamespace("ranger", quietly = TRUE))
@@ -44,7 +47,7 @@ if (available) {
       X = X, tolerance = 1e-5)
   if (strict && !setequal(names(cases),
                           c("pls", "n4m_ridge", "n4m_cppls",
-                            "n4m_preprocessing", "n4m_area", "lm",
+                            "n4m_preprocessing", "n4m_area", "n4m_msc", "lm",
                             "ranger", "glmnet", "torch")))
     stop("strict native DAG parity requires ranger, glmnet and torch CPU")
 
@@ -119,16 +122,18 @@ if (available) {
     path <- system.file("extdata", "formats_integration.csv",
                         package = "nirs4all", mustWork = TRUE)
     dataset <- nirs4all_from_formats(path, target = "protein")
-    pipeline <- nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(2L))
-    outcome <- nirs4all_dag_cv_refit_predict(pipeline, dataset,
-                                              folds = 3L, cli = cli)
-    block <- outcome$replay_prediction_blocks[[1L]]
-    ids <- as.character(unlist(block$sample_ids, use.names = FALSE))
-    values <- vapply(block$values, function(value) as.numeric(value[[1L]]),
-                     numeric(1))
-    expected <- predict(nirs4all_fit(pipeline, dataset), dataset)
-    stopifnot(max(abs(values - expected[match(ids, dataset$sample_ids)])) < 1e-10)
-    stopifnot(max(abs(nirs4all_dag_predict(outcome, dataset) - expected)) < 1e-10)
+    for (step in list(nirs4all_snv(), nirs4all_msc())) {
+      pipeline <- nirs4all_pipeline(list(step), nirs4all_pls(2L))
+      outcome <- nirs4all_dag_cv_refit_predict(pipeline, dataset,
+                                                folds = 3L, cli = cli)
+      block <- outcome$replay_prediction_blocks[[1L]]
+      ids <- as.character(unlist(block$sample_ids, use.names = FALSE))
+      values <- vapply(block$values, function(value) as.numeric(value[[1L]]),
+                       numeric(1))
+      expected <- predict(nirs4all_fit(pipeline, dataset), dataset)
+      stopifnot(max(abs(values - expected[match(ids, dataset$sample_ids)])) < 1e-10)
+      stopifnot(max(abs(nirs4all_dag_predict(outcome, dataset) - expected)) < 1e-10)
+    }
     message("formats file → native DAG CV/refit/replay passed")
   }
 
