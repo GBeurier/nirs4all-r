@@ -177,6 +177,12 @@ bounded Python `_or_`/`_cartesian_` preprocessing generators and PLS component
 ranges into named R pipelines. These can be passed to
 `nirs4all_dag_cv_refit_predict()` for native OOF selection; generator modifiers,
 other operators, and arbitrary DAG branches still fail explicitly.
+The R JSON/YAML reader also resolves `n4m.LSNV`, `n4m.RNV`,
+`n4m.AreaNormalization`, `n4m.Detrend`, `n4m.MSC` and `n4m.EMSC` through the
+native Methods binding. Their transformed train/validation matrices are checked
+against independent Python n4m fits. The cross-language recipe *export* remains
+restricted to the earlier default SNV/Savitzky-Golay/PLS subset until these
+additional identifiers are qualified by the other language readers.
 `nirs4all_torch_mlp()` provides an optional CPU neural-network regressor
 through the R `torch` runtime. Torch modules are saved with `torch`'s own
 serializer inside the RDS bundle; they are R-specific and not ONNX exports.

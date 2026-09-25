@@ -41,7 +41,7 @@ and the [submission checklist](https://cran.r-project.org/web/packages/submissio
 
 ## Do not use the local result as final evidence
 
-On 2026-09-25, `nirs4all_0.4.0.9010.tar.gz` passed Linux/R 4.6.0 checks with
+On 2026-09-25, `nirs4all_0.4.0.9011.tar.gz` passed Linux/R 4.6.0 checks with
 0 errors but 1 CRAN-incoming warning: `n4m` is still outside CRAN/Bioconductor,
 and optional `dagml` was unavailable from the declared additional repository.
 `n4m_1.0.21.9002.tar.gz` passed Linux checks with 0 errors, 0 warnings and
