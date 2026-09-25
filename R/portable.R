@@ -154,26 +154,32 @@ nirs4all_load_pipeline <- function(source) {
             class = "nirs4all_pipeline_definition")
 }
 
-#' Export a qualified R pipeline as a cross-language recipe
+#' Export a qualified R pipeline recipe
 #'
-#' Writes n4m-backed preprocessing and the qualified native PLS recipe using
-#' Python's named feature-branch plus `merge: features` syntax when needed.
-#' LSNV, RNV, area normalization, detrend, MSC and EMSC recipes are checked
-#' against the independent Python n4m binding but are not yet qualified in
-#' Core/WASM. Non-default SNV is refused because Core/WASM currently ignores
-#' its parameters. Unsupported learner settings still fail explicitly. This exports
-#' a fit recipe, not a model or fitted preprocessing state.
+#' Writes n4m-backed preprocessing with named feature branches and
+#' `merge: features` syntax when needed. The default `cross_language` scope
+#' qualifies native PLS or sparse PLS-DA recipes; LSNV, RNV, area
+#' normalization, detrend, MSC and EMSC are tested against Python n4m but not
+#' yet Core/WASM. Non-default SNV is refused in that scope because Core/WASM
+#' ignores its parameters. The `r_native` scope permits selected ranger,
+#' glmnet and torch MLP learners under explicit R-only aliases. It does not
+#' transfer their trained binaries or assert Python/WASM equivalence.
 #' @param pipeline An unfitted [nirs4all_pipeline()].
 #' @param format `"json"` or `"yaml"`.
 #' @param file Optional output path. If omitted, returns serialized text.
 #' @param name Pipeline name in the exported definition.
+#' @param scope `"cross_language"` for the qualified n4m-only recipe (the
+#'   default), or `"r_native"` for an R-specific learner recipe. The latter
+#'   is not a Python/WASM model alias and permits non-default SNV parameters.
 #' @return Serialized text, invisibly if `file` is provided.
 #' @export
 nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
-                                    file = NULL, name = "pipeline") {
+                                    file = NULL, name = "pipeline",
+                                    scope = c("cross_language", "r_native")) {
   if (!inherits(pipeline, "nirs4all_pipeline"))
     stop("pipeline must be an unfitted nirs4all_pipeline", call. = FALSE)
   format <- match.arg(format)
+  scope <- match.arg(scope)
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name))
     stop("name must be a non-empty string", call. = FALSE)
   if (!is.null(file) && (!is.character(file) || length(file) != 1L ||
@@ -182,8 +188,12 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
   encode_step <- function(step) {
     if (identical(step$kind, "snv")) {
       if (!identical(step$ddof, 0L) || !identical(step$with_mean, TRUE) ||
-          !identical(step$with_std, TRUE))
-        stop("cross-language recipe export supports default SNV only; Core/WASM currently ignores SNV parameters", call. = FALSE)
+          !identical(step$with_std, TRUE)) {
+        if (identical(scope, "cross_language"))
+          stop("cross-language recipe export supports default SNV only; Core/WASM currently ignores SNV parameters", call. = FALSE)
+        return(list(class = "n4m.SNV", params = list(ddof = step$ddof,
+          with_mean = step$with_mean, with_std = step$with_std)))
+      }
       return(list(class = "n4m.SNV"))
     }
     if (identical(step$kind, "savgol")) {
@@ -235,6 +245,12 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
       class = "n4m.SparsePLSDA",
       params = list(n_components = spec$n_components,
                     sparsity_lambda = spec$sparsity_lambda)))
+  } else if (identical(scope, "r_native") && is.list(spec) &&
+             is.character(spec$learner) && length(spec$learner) == 1L &&
+             spec$learner %in% c("ranger", "ranger_classifier", "glmnet",
+               "torch_mlp", "torch_mlp_classifier")) {
+    steps[[length(steps) + 1L]] <- list(model =
+      nirs4all_r_recipe_model(spec))
   } else {
     if (!is.list(spec) || !identical(spec$learner, "pls") ||
         !identical(spec$algo, "pls_simpls") ||
