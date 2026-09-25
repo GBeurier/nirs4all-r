@@ -53,14 +53,16 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
           any(!is.finite(coefficients)) || any(!is.finite(x_mean)) ||
           any(!is.finite(y_mean)))
         stop("n4m method returned an unsupported regression model", call. = FALSE)
+      intercept <- as.numeric(y_mean - drop(x_mean %*% coefficients))
+      native_model <- n4m::n4m_model_import_linear_predictor(
+        coefficients, intercept, nrow(X))
       list(coefficients = coefficients, x_mean = x_mean, y_mean = y_mean,
-           source_training_samples = nrow(X))
+           source_training_samples = nrow(X), native_model = native_model)
     },
     predict = function(state, X) {
-      if (!is.null(state$native_model))
-        return(as.numeric(n4m::n4m_predict(state$native_model, X)))
-      as.numeric(sweep(X, 2L, state$x_mean, "-") %*%
-                   state$coefficients + state$y_mean)
+      if (is.null(state$native_model))
+        stop("n4m affine predictor is missing its native model", call. = FALSE)
+      as.numeric(n4m::n4m_predict(state$native_model, X))
     },
     name = paste0("n4m:", method))
   controller$format <- "n4mm_affine"
