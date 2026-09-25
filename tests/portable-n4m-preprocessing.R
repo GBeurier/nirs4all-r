@@ -25,6 +25,7 @@ constructors <- list(local_snv = nirs4all_local_snv,
                      msc = nirs4all_msc,
                      emsc = nirs4all_emsc)
 python <- Sys.getenv("NIRS4ALL_METHODS_PYTHON")
+full_python <- Sys.getenv("NIRS4ALL_PYTHON_FULL_ROOT")
 for (name in names(cases)) {
   operation <- cases[[name]]
   recipe <- list(pipeline = list(operation,
@@ -33,6 +34,11 @@ for (name in names(cases)) {
   step <- do.call(constructors[[name]],
                   if (is.null(operation$params)) list() else operation$params)
   manual <- nirs4all_pipeline(list(step), nirs4all_pls(2L))
+  exported <- nirs4all_load_pipeline(nirs4all_export_pipeline(manual, "json"))
+  exported_yaml <- nirs4all_load_pipeline(nirs4all_export_pipeline(manual, "yaml"))
+  stopifnot(identical(exported$pipeline[[1L]]$class, operation$class),
+            identical(nirs4all_pipeline_from_portable(exported)$steps[[1L]], step),
+            identical(nirs4all_pipeline_from_portable(exported_yaml)$steps[[1L]], step))
   for (source in list(recipe,
                       as.character(jsonlite::toJSON(recipe, auto_unbox = TRUE)),
                       yaml::as.yaml(recipe))) {
@@ -67,7 +73,8 @@ for (name in names(cases)) {
     writeLines(as.character(jsonlite::toJSON(list(
       train = rows(X[train, , drop = FALSE]),
       validation = rows(X[validation, , drop = FALSE]),
-      steps = list(operation)), auto_unbox = TRUE, digits = 17)), request)
+      steps = list(exported$pipeline[[1L]])),
+      auto_unbox = TRUE, digits = 17)), request)
     output <- suppressWarnings(system2(python,
       c(shQuote(helper), shQuote(request), shQuote(response)),
       stdout = TRUE, stderr = TRUE))
@@ -84,6 +91,39 @@ for (name in names(cases)) {
                            fitted$states)
     stopifnot(max(abs(fitted$X - oracle$train)) < 1e-10,
               max(abs(predicted - oracle$validation)) < 1e-10)
+    unlink(c(request, response))
+  }
+  if (nzchar(python) && nzchar(full_python)) {
+    helper <- if (file.exists("helpers/portable_n4m_pipeline_peer.py"))
+      "helpers/portable_n4m_pipeline_peer.py" else
+      "tests/helpers/portable_n4m_pipeline_peer.py"
+    request <- tempfile(fileext = ".json")
+    response <- tempfile(fileext = ".json")
+    rows <- function(values) lapply(seq_len(nrow(values)), function(index)
+      unname(as.numeric(values[index, ])))
+    writeLines(as.character(jsonlite::toJSON(list(
+      recipe = list(pipeline = exported$pipeline),
+      train = rows(X[train, , drop = FALSE]),
+      validation = rows(X[validation, , drop = FALSE]),
+      y = unname(as.numeric(y[train]))), auto_unbox = TRUE, digits = 17)), request)
+    prior_path <- Sys.getenv("PYTHONPATH", unset = "")
+    Sys.setenv(PYTHONPATH = paste(c(full_python, prior_path), collapse =
+      .Platform$path.sep))
+    output <- tryCatch(suppressWarnings(system2(python,
+      c(shQuote(helper), shQuote(request), shQuote(response)),
+      stdout = TRUE, stderr = TRUE)), finally = {
+        if (nzchar(prior_path)) Sys.setenv(PYTHONPATH = prior_path)
+        else Sys.unsetenv("PYTHONPATH")
+      })
+    status <- attr(output, "status")
+    if (!is.null(status) && status != 0L)
+      stop("Python full nirs4all recipe execution failed: ",
+           paste(output, collapse = "\n"))
+    actual <- as.numeric(jsonlite::fromJSON(response)$predictions)
+    expected <- predict(nirs4all_fit(manual, X[train, , drop = FALSE], y[train]),
+                        X[validation, , drop = FALSE])
+    stopifnot(length(actual) == length(expected),
+              max(abs(actual - expected)) < 1e-8)
     unlink(c(request, response))
   }
 }

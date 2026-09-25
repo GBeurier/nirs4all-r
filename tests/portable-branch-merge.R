@@ -69,8 +69,13 @@ for (format in c("json", "yaml")) {
     max(abs(predict(nirs4all_fit(restored, X, y), X) -
             predict(nirs4all_fit(exportable, X, y), X))) < 1e-12)
 }
-stopifnot(inherits(try(nirs4all_export_pipeline(manual),
-                     silent = TRUE), "try-error"))
+for (format in c("json", "yaml")) {
+  restored <- nirs4all_pipeline_from_portable(
+    nirs4all_export_pipeline(manual, format = format))
+  stopifnot(isTRUE(all.equal(restored, manual)),
+    max(abs(predict(nirs4all_fit(restored, X, y), X) -
+            predict(nirs4all_fit(manual, X, y), X))) < 1e-12)
+}
 
 python <- Sys.getenv("NIRS4ALL_METHODS_PYTHON")
 python_repo <- Sys.getenv("NIRS4ALL_PYTHON_NIRS4ALL_REPO")

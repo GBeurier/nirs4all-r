@@ -77,3 +77,10 @@ archive and retraining provenance remain open. An initial 0.4.0.9024 source
 tarball passed the strict Linux/R 4.6.0 check with zero errors and one
 expected CRAN-incoming warning. The eventual submission tarball must be
 checked independently before citing it in a submission form.
+
+The subsequent 0.4.0.9025 development line widens JSON/YAML recipe export
+for n4m-native preprocessing and qualifies those recipes against the full
+Python nirs4all step parser and Methods runtime. A first Linux/R 4.6.0
+`--as-cran --no-manual` check passed with zero errors and the expected
+CRAN-incoming warning; documentation changed afterward, so do not cite that
+result for the final tarball before its separate check completes.
