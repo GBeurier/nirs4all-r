@@ -63,6 +63,9 @@ for (name in names(recipes)) {
       max(abs(result$python_predictions - expected)) < 1e-8)
     python_fitted <- nirs4all_import_trained_pipeline(python_bundle)
     stopifnot(max(abs(predict(python_fitted, validation) - expected)) < 1e-8)
+    r_retrained <- nirs4all_retrain(python_fitted, train, y[1:17])
+    stopifnot(max(abs(predict(r_retrained, validation) - expected)) < 1e-8,
+      !identical(r_retrained$state, python_fitted$state))
     unlink(c(request, response, python_bundle))
   }
   unlink(bundle)
@@ -103,6 +106,8 @@ named_restore <- nirs4all_import_trained_pipeline(
   nirs4all_export_trained_pipeline(named_fit))
 stopifnot(max(abs(predict(named_restore, named_validation) -
                   predict(named_fit, named_validation))) < 1e-12,
+  inherits(try(nirs4all_retrain(named_restore, train, y[1:17]),
+    silent = TRUE), "try-error"),
   inherits(try(predict(named_restore, validation), silent = TRUE), "try-error"),
   inherits(try(predict(named_restore,
     named_validation[, rev(seq_len(ncol(X))), drop = FALSE]), silent = TRUE),
