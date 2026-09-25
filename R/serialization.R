@@ -161,6 +161,7 @@ nirs4all_import_native_model <- function(bytes, pipeline, feature_names = NULL) 
   structure(list(steps = pipeline$steps, learner = pipeline$learner,
                  state = state, step_states = rep(list(NULL), length(pipeline$steps)),
                  preprocessing_owner = profile$owner,
+                 task = "regression", classes = NULL,
                  n_features = width,
                  feature_names = feature_names), class = "nirs4all_fitted")
 }

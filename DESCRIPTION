@@ -1,7 +1,7 @@
 Package: nirs4all
 Type: Package
 Title: Composable Near-Infrared Spectroscopy Pipelines for R
-Version: 0.4.0.9025
+Version: 0.4.0.9026
 Authors@R: c(person("Gregory", "Beurier", email = "gregory.beurier@cirad.fr", role = c("aut", "cre")), person("nirs4all", "contributors", role = "ctb"))
 Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     Composes portable preprocessing (including local and robust normalization,
@@ -11,7 +11,8 @@ Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     adapters, a 'ranger' probability-forest classification controller and
     optional CPU 'torch' regression and classification controllers.
     This development version offers
-    local fit, predict, portable 'n4m' model serialization, and a native
+    local fit, predict, portable 'n4m' model and bounded trained-pipeline
+    serialization, and a native
     'dagml' cross-validation, fixed-candidate selection, refit and replay path
     for single-node pipelines and optional sequential n4m transform nodes,
     including fixed-candidate selection and parallel preprocessing branches
@@ -27,8 +28,8 @@ License: AGPL (>= 3)
 URL: https://github.com/GBeurier/nirs4all-r
 BugReports: https://github.com/GBeurier/nirs4all-r/issues
 Depends: R (>= 4.1)
-Imports: jsonlite, n4m (>= 1.0.21.9003), stats, tools, yaml
-Suggests: dagml, dagmldata, digest, glmnet, mlr3, nirs4alldatasets, nirs4allformats, nirs4allio, parsnip, ranger, rpart, torch
+Imports: digest, jsonlite, n4m (>= 1.0.21.9003), stats, tools, yaml
+Suggests: dagml, dagmldata, glmnet, mlr3, nirs4alldatasets, nirs4allformats, nirs4allio, parsnip, ranger, rpart, torch
 Additional_repositories: https://gbeurier.r-universe.dev
 Encoding: UTF-8
 NeedsCompilation: no

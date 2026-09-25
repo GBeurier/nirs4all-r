@@ -84,3 +84,12 @@ Python nirs4all step parser and Methods runtime. A first Linux/R 4.6.0
 `--as-cran --no-manual` check passed with zero errors and the expected
 CRAN-incoming warning; documentation changed afterward, so do not cite that
 result for the final tarball before its separate check completes.
+
+The subsequent 0.4.0.9026 development line adds a bounded JSON trained n4m
+PLS envelope with hash-checked manifest and N4MM payload, verified locally
+for R/Python held-out prediction in both directions and a fresh Python Methods
+retrain. It is not a DAG-ML Archive V2/V3 package and does not carry full
+sample identity or selection provenance. An initial source tarball passed
+Linux/R 4.6.0 `--as-cran --no-manual` with zero errors and the expected
+CRAN-incoming warning; a subsequent N4MM re-export fix requires a rebuilt
+tarball and a fresh check before citing the result in a submission form.
