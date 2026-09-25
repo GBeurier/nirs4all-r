@@ -5,7 +5,8 @@
 \usage{
 nirs4all_dag_cv_refit_predict(pipeline, X, y = NULL, folds = 5L,
   sample_ids = NULL, root_seed = 1L, cli = Sys.which("dag-ml-cli"),
-  workdir = tempfile("nirs4all-dag-"), process_workers = 1L)
+  workdir = tempfile("nirs4all-dag-"), process_workers = 1L,
+  group_ids = NULL)
 }
 \arguments{
 \item{pipeline}{Pipeline definition with a built-in learner, or a named list
@@ -19,5 +20,7 @@ of at least two such pipelines to compare by native OOF RMSE.}
 \item{cli}{Path to the dag-ml-cli executable.}
 \item{workdir}{New or empty output directory.}
 \item{process_workers}{Positive process-adapter worker count.}
+\item{group_ids}{Optional group ID per sample. Named vectors must match
+\code{sample_ids} exactly. Validation folds preserve whole groups.}
 }
 \value{Native DAG-ML outcome list with the persisted workdir path.}
