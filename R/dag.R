@@ -159,7 +159,8 @@ nirs4all_dag_cv_refit_predict <- function(
   model_specs <- list()
   model_params <- lapply(pipelines, function(value) {
     params <- value$learner$spec
-    if (identical(params$learner, "parsnip")) {
+    if (is.character(params$learner) && length(params$learner) == 1L &&
+        params$learner %in% c("parsnip", "mlr3")) {
       spec_bytes <- serialize(value$learner$model_spec, NULL, version = 3L)
       key <- digest::digest(spec_bytes, algo = "sha256", serialize = FALSE)
       model_specs[[key]] <<- spec_bytes
