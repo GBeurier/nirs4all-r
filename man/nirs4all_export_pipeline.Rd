@@ -12,4 +12,4 @@ nirs4all_export_pipeline(pipeline, format = c("json", "yaml"),
 \item{name}{Pipeline name in the exported definition.}
 }
 \value{Serialized text, invisibly if \code{file} is provided.}
-\description{Exports only the currently shared Core portable subset: default SNV, Savitzky-Golay with unit spacing, and default native PLS settings. Unsupported n4m steps or parameters fail explicitly. This is a fit recipe, not trained model state.}
+\description{Exports the shared flat Core portable subset (default SNV, unit-spacing Savitzky-Golay and default native PLS) and Python's named feature-branch plus \code{merge: features} syntax for those operators. Branch recipes are checked against Python but are not yet qualified in Core/WASM. Unsupported n4m steps or parameters fail explicitly. This is a fit recipe, not trained model state.}
