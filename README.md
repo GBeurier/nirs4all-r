@@ -84,9 +84,19 @@ pipeline, validates its native descriptor and predicts directly on raw
 spectra. A strict test
 fits in R and predicts in a fresh Python process, then fits via Python n4m
 and predicts in R, with numerical equality. Other preprocessor combinations
-still use R-owned fit state and are refused by this export API. The RDS bundle
-remains R-specific. Cross-language Archive V2/V3 replay, recipe/lineage
-packaging and retraining still need a validated native archive bridge.
+still use R-owned fit state and are refused by this raw-N4MM export API.
+For n4m PLS pipelines covered by the portable recipe,
+`nirs4all_export_trained_pipeline()` writes a bounded JSON envelope with the
+recipe, fitted MSC/EMSC references (including feature-merge branches), and an
+exact hash-checked N4MM model. R imports it with
+`nirs4all_import_trained_pipeline()`; full Python `nirs4all` imports it with
+`PortableN4MTrainedPipeline.from_json(...)` and can fit a fresh Methods model
+via `.retrain(X, y)`. Python can also create the same envelope with
+`PortableN4MTrainedPipeline.fit_recipe(recipe, X, y).to_json(...)`, which R
+imports. Held-out predictions from both directions agree for plain, stateless,
+stateful, embedded and branch profiles. This is **not** a DAG-ML Archive V2/V3
+package and does not cover arbitrary native methods or non-n4m controllers.
+The RDS bundle remains R-specific.
 
 The former core R upstream accessors are also available here:
 `nirs4all_upstreams()`, `nirs4all_require()`, `formats()`, `methods()`,
@@ -265,7 +275,7 @@ survive the current R session. Native-only N4MM bytes are inside the bundle.
 The adapter reads a trusted RDS data sidecar; do not run it on untrusted files.
 Set `NIRS4ALL_REQUIRE_DAG_PARITY=1` and `NIRS4ALL_DAGML_CLI=/absolute/path`
 when running the package tests to require native CV/OOF/refit/replay checks.
-For the exported-recipe R↔Python regression test, set
+For the exported-recipe and trained-envelope R↔Python regression tests, set
 `NIRS4ALL_METHODS_PYTHON` to a Python executable and
 `NIRS4ALL_PYTHON_FULL_ROOT` to a checkout of full Python `nirs4all` containing
 the shared n4m alias resolver; the Methods Python binding must also be on
