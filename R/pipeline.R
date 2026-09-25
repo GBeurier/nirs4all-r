@@ -283,7 +283,8 @@ nirs4all_embedded_snv_savgol <- function(pipeline) {
 #' Fit a pipeline on R matrices
 #' @param pipeline A [nirs4all_pipeline()] definition.
 #' @param X Numeric samples-by-features matrix.
-#' @param y Finite numeric target vector.
+#' @param y Finite numeric target vector for regression, or factor/character
+#'   class labels for classification.
 #' @return Fitted pipeline. Use [nirs4all_predict()] or [nirs4all_save()].
 #' @export
 nirs4all_fit <- function(pipeline, X, y = NULL) {
@@ -295,13 +296,24 @@ nirs4all_fit <- function(pipeline, X, y = NULL) {
     X <- X$X
   }
   X <- nirs4all_matrix(X)
-  if (!is.numeric(y) || is.matrix(y) || length(y) != nrow(X) ||
-      anyNA(y) || any(!is.finite(y)))
+  task <- pipeline$learner$task
+  if (is.null(task)) task <- "regression"
+  if (identical(task, "classification")) {
+    if (is.character(y)) y <- factor(y)
+    if (!is.factor(y) || is.ordered(y) || is.matrix(y) ||
+        length(y) != nrow(X) || anyNA(y) || nlevels(y) < 2L ||
+        any(tabulate(as.integer(y), nbins = nlevels(y)) == 0L))
+      stop("classification y must be a factor or character vector with at least two observed classes", call. = FALSE)
+  } else if (!identical(task, "regression") || !is.numeric(y) ||
+             is.matrix(y) || length(y) != nrow(X) || anyNA(y) ||
+             any(!is.finite(y))) {
     stop("y must be one finite numeric value per row of X", call. = FALSE)
+  }
   if (!is.null(rownames(X)) && !is.null(names(y)) &&
       !identical(rownames(X), names(y)))
     stop("X row names and y sample names differ", call. = FALSE)
-  embedded <- nirs4all_embedded_snv_savgol(pipeline)
+  embedded <- if (identical(task, "regression"))
+    nirs4all_embedded_snv_savgol(pipeline) else NULL
   if (!is.null(embedded)) {
     state <- n4m::n4m_fit(X, as.numeric(y), algo = "pls_simpls",
       n_components = pipeline$learner$spec$n_components,
@@ -310,13 +322,16 @@ nirs4all_fit <- function(pipeline, X, y = NULL) {
     owner <- "embedded_methods"
   } else {
     transformed <- nirs4all_fit_transform(X, pipeline$steps)
-    state <- pipeline$learner$fit(transformed$X, as.numeric(y))
+    state <- pipeline$learner$fit(transformed$X,
+      if (identical(task, "classification")) y else as.numeric(y))
     states <- transformed$states
     owner <- "external_r"
   }
   structure(list(steps = pipeline$steps, learner = pipeline$learner,
                  state = state, step_states = states,
                  preprocessing_owner = owner,
+                 task = task,
+                 classes = if (identical(task, "classification")) levels(y) else NULL,
                  n_features = ncol(X),
                  feature_names = colnames(X)), class = "nirs4all_fitted")
 }
@@ -335,9 +350,40 @@ nirs4all_predict <- function(object, X) {
   transformed <- if (identical(object$preprocessing_owner, "embedded_methods"))
     X else nirs4all_transform(X, object$steps, object$step_states)
   out <- object$learner$predict(object$state, transformed)
+  if (identical(object$task, "classification")) {
+    if (!is.factor(out) || length(out) != nrow(X) || anyNA(out) ||
+        !identical(levels(out), object$classes))
+      stop("controller returned invalid class predictions", call. = FALSE)
+    return(out)
+  }
   if (!is.numeric(out) || length(out) != nrow(X) || anyNA(out) || any(!is.finite(out)))
     stop("controller returned invalid predictions", call. = FALSE)
   as.numeric(out)
+}
+
+#' Predict class probabilities from a fitted classifier
+#' @param object Fitted classification pipeline.
+#' @param X Numeric samples-by-features matrix.
+#' @return A samples-by-classes matrix with columns in training class order.
+#' @export
+nirs4all_predict_proba <- function(object, X) {
+  if (!inherits(object, "nirs4all_fitted") ||
+      !identical(object$task, "classification") ||
+      !is.function(object$learner$predict_proba))
+    stop("object must be a fitted classifier with probabilities", call. = FALSE)
+  if (inherits(X, "nirs4all_dataset")) X <- X$X
+  X <- nirs4all_matrix(X, object$n_features)
+  if (!is.null(object$feature_names) && !identical(colnames(X), object$feature_names))
+    stop("X feature names or order differ from training", call. = FALSE)
+  transformed <- nirs4all_transform(X, object$steps, object$step_states)
+  out <- object$learner$predict_proba(object$state, transformed)
+  if (!is.matrix(out) || !is.numeric(out) ||
+      !identical(dim(out), c(nrow(X), length(object$classes))) ||
+      !identical(colnames(out), object$classes) || anyNA(out) ||
+      any(!is.finite(out)) || any(out < 0) || any(out > 1) ||
+      any(abs(rowSums(out) - 1) > 1e-6))
+    stop("controller returned invalid class probabilities", call. = FALSE)
+  out
 }
 
 #' @export

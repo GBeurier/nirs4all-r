@@ -114,6 +114,33 @@ outcome$fit_cv_result_count
 outcome$replay_prediction_blocks
 ```
 
+For classification, use factor or character labels with the optional
+`ranger` probability forest. The local API returns factors and a probability
+matrix whose columns follow the training class order. DAG-ML encodes those
+classes as stable numeric labels, validates probabilities in each CV fold,
+selects variants by OOF accuracy, and restores factor labels for local
+external inference. Every training fold must contain every class; the R
+frontend rejects a fold assignment that violates this requirement.
+
+```r
+X <- as.matrix(iris[, 1:4])
+y <- iris$Species
+classifier <- nirs4all_pipeline(
+  list(nirs4all_snv()),
+  nirs4all_ranger_classifier(num.trees = 200, seed = 7)
+)
+fit <- nirs4all_fit(classifier, X, y)
+labels <- nirs4all_predict(fit, X)
+probabilities <- nirs4all_predict_proba(fit, X)
+outcome <- nirs4all_dag_cv_refit_predict(classifier, X, y,
+  folds = 4, split_steps = TRUE, cli = "/path/to/dag-ml-cli")
+new_labels <- nirs4all_dag_predict(outcome, X[1:3, , drop = FALSE])
+```
+
+This ranger model is an RDS sidecar, not a cross-language trained-model
+format. Its JSON/YAML alias and trained artifact are not yet portable to
+Python or WASM.
+
 For repeated samples, batches or sites, pass aligned `group_ids`. The R
 frontend assigns whole groups to folds deterministically; DAG-ML validates
 group boundaries before fitting. Named group IDs must match `sample_ids`

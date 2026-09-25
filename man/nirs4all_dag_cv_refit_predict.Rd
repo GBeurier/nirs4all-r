@@ -1,7 +1,7 @@
 \name{nirs4all_dag_cv_refit_predict}
 \alias{nirs4all_dag_cv_refit_predict}
 \title{Run a native DAG-ML CV, refit and predict campaign from R matrices}
-\description{Builds an explicit fold campaign. DAG-ML owns phase scheduling, out-of-fold evidence, variant selection, refit and replay. A named list of pipelines compares fixed candidates by OOF RMSE and refits the winner. With \code{split_steps = TRUE}, each preprocessing step is a separate DAG node. The replay cohort is the training cohort, not an independent test set. Arbitrary branch/merge graphs and adaptive HPO are not yet exposed.}
+\description{Builds an explicit fold campaign. DAG-ML owns phase scheduling, out-of-fold evidence, variant selection, refit and replay. A named list of pipelines compares fixed candidates by OOF RMSE for regression or accuracy for classification, then refits the winner. With \code{split_steps = TRUE}, each preprocessing step is a separate DAG node. The replay cohort is the training cohort, not an independent test set. Arbitrary branch/merge graphs and adaptive HPO are not yet exposed.}
 \usage{
 nirs4all_dag_cv_refit_predict(pipeline, X, y = NULL, folds = 5L,
   sample_ids = NULL, root_seed = 1L, cli = Sys.which("dag-ml-cli"),
@@ -10,10 +10,10 @@ nirs4all_dag_cv_refit_predict(pipeline, X, y = NULL, folds = 5L,
 }
 \arguments{
 \item{pipeline}{Pipeline definition with a built-in learner, or a named list
-of at least two such pipelines to compare by native OOF RMSE.}
+of at least two such pipelines to compare by native OOF score.}
 \item{X}{Finite numeric samples-by-features matrix or a
 \code{nirs4all_dataset} from \code{nirs4all_from_formats()}.}
-\item{y}{Finite numeric target vector; omit for a dataset.}
+\item{y}{Finite numeric regression target or factor/character class labels; omit for a dataset.}
 \item{folds}{Integer number of non-shuffled folds.}
 \item{sample_ids}{Optional unique sample IDs aligned to X and y.}
 \item{root_seed}{Non-negative DAG-ML root seed.}
