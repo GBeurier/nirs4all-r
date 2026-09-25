@@ -181,3 +181,45 @@ nirs4all_parsnip <- function(spec) {
   controller$model_spec <- spec
   controller
 }
+
+#' Optional mlr3 regression learner controller
+#'
+#' Clones the supplied learner before each fit so every fold owns independent
+#' mutable state. DAG-ML, not mlr3, controls the CV/OOF/refit phases.
+#' Only numeric one-target regression responses are currently supported.
+#' @param learner An untrained `mlr3` `LearnerRegr` instance.
+#' @export
+nirs4all_mlr3 <- function(learner) {
+  if (!requireNamespace("mlr3", quietly = TRUE))
+    stop("Install the optional 'mlr3' package first", call. = FALSE)
+  if (!inherits(learner, "LearnerRegr") ||
+      !is.character(learner$id) || length(learner$id) != 1L ||
+      is.na(learner$id) || !nzchar(learner$id) ||
+      !is.null(learner$model))
+    stop("learner must be an untrained mlr3 LearnerRegr", call. = FALSE)
+  template <- learner$clone(deep = TRUE)
+  controller <- nirs4all_controller(
+    fit = function(X, y) {
+      model <- template$clone(deep = TRUE)
+      model$predict_type <- "response"
+      frame <- as.data.frame(X)
+      names(frame) <- paste0("x", seq_len(ncol(X)))
+      frame$y <- y
+      task <- mlr3::TaskRegr$new(id = "nirs4all_fit", backend = frame,
+                                 target = "y")
+      model$train(task)
+      model
+    },
+    predict = function(state, X) {
+      frame <- as.data.frame(X)
+      names(frame) <- paste0("x", seq_len(ncol(X)))
+      response <- state$predict_newdata(frame)$response
+      if (!is.numeric(response))
+        stop("mlr3 returned an unsupported regression prediction",
+             call. = FALSE)
+      as.numeric(response)
+    }, name = paste0("mlr3:", template$id))
+  controller$spec <- list(learner = "mlr3", engine = template$id)
+  controller$model_spec <- template
+  controller
+}

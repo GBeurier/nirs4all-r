@@ -10,14 +10,15 @@ des champs de preuve à compléter avant toute soumission.
 
 ## Vérification actuellement réalisée
 
-- `R CMD build .` a produit `nirs4all_0.4.0.9008.tar.gz`.
+- `R CMD build .` a produit `nirs4all_0.4.0.9009.tar.gz`.
 - `R CMD check --as-cran --no-manual` sous R 4.6.0 (Linux) a exécuté les tests
   du paquet, y compris les exemples Python/n4m, les aller-retour N4MM
   formats 1 (PLS seul) et 2 (SNV→SG→PLS) R↔Python en processus Python distinct,
   les formats et le chemin DAG natif. Un test de CV groupée compare chaque
   fold à un fit R et Python indépendant, refuse le chevauchement des groupes
-  et la modification du sidecar des IDs. Le contrôleur optionnel `parsnip` est exercé en fit/prédiction,
-  persistance et CV/OOF/refit/rejeu DAG-ML. Après installation des tarballs R-universe `dagmldata` et
+  et la modification du sidecar des IDs. Les contrôleurs optionnels `parsnip`
+  et `mlr3` sont exercés en fit/prédiction, persistance et CV/OOF/refit/rejeu
+  DAG-ML ; `mlr3` est aussi rechargé en processus R neuf. Après installation des tarballs R-universe `dagmldata` et
   `nirs4alldatasets`, **tous les `Suggests` étaient disponibles** et le
   contrôle a été relancé sans `_R_CHECK_FORCE_SUGGESTS_=false` : 0 erreur,
   1 avertissement *CRAN incoming* sur la nouvelle soumission, la version de
@@ -59,4 +60,4 @@ Avant une soumission `nirs4all` :
 La [politique CRAN de soumission](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande un `R CMD check --as-cran` du tarball à envoyer et, en principe, aucun
 avertissement ni note significative. Aucun formulaire de soumission ne doit
-présenter la version `0.4.0.9008` comme prête tant que ces gates restent ouverts.
+présenter la version `0.4.0.9009` comme prête tant que ces gates restent ouverts.
