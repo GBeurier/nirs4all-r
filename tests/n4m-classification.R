@@ -16,6 +16,66 @@ for (format in c("json", "yaml")) {
             identical(predict(nirs4all_fit(roundtrip, X, y), new_X),
                       predict(nirs4all_fit(pipeline, X, y), new_X)))
 }
+portable <- list(name = "native_sparse_pls_da", pipeline = list(
+  list(class = "n4m.SNV"),
+  list(model = list(class = "n4m.SparsePLSDA",
+                    params = list(sparsity_lambda = 0.05)),
+       `_range_` = list(1L, 2L, 1L), param = "n_components")))
+for (source in list(portable,
+                    as.character(jsonlite::toJSON(portable, auto_unbox = TRUE)),
+                    yaml::as.yaml(portable))) {
+  for (with_holdout in c(FALSE, TRUE)) {
+    recipe <- nirs4all_load_pipeline(source)
+    if (with_holdout)
+      recipe$pipeline <- c(list(list(class = "n4m.KennardStone",
+        params = list(test_size = 0.25))), recipe$pipeline)
+    result <- nirs4all_run_portable_pipeline(recipe, list(X = X, y = y))
+    stopifnot(length(result$variants) == 2L,
+              identical(result$targets, as.character(y[result$split$testIndices + 1L])),
+              identical(result$selected$accuracy,
+                        max(vapply(result$variants, `[[`, numeric(1), "accuracy"))))
+    for (index in seq_along(result$variants)) {
+      candidate <- nirs4all_pipeline(list(nirs4all_snv()),
+        nirs4all_sparse_pls_da(index, 0.05))
+      train <- result$split$trainIndices + 1L
+      held <- result$split$testIndices + 1L
+      reference <- as.character(predict(nirs4all_fit(candidate,
+        X[train, , drop = FALSE], y[train]), X[held, , drop = FALSE]))
+      stopifnot(identical(result$variants[[index]]$predictions, reference),
+                identical(result$variants[[index]]$accuracy,
+                          mean(reference == as.character(y[held]))))
+    }
+  }
+}
+numeric_classes <- as.integer(y) - 1L
+numeric_result <- nirs4all_run_portable_pipeline(portable,
+  list(X = X, y = numeric_classes))
+stopifnot(is.integer(numeric_result$targets),
+          identical(numeric_result$targets, numeric_classes),
+          all(vapply(numeric_result$variants, function(variant)
+            is.integer(variant$predictions) &&
+              all(variant$predictions %in% unique(numeric_classes)), logical(1))))
+for (index in seq_along(numeric_result$variants)) {
+  manual <- nirs4all_fit(nirs4all_pipeline(list(nirs4all_snv()),
+    nirs4all_sparse_pls_da(index, 0.05)), X,
+    factor(numeric_classes, levels = 0:2))
+  stopifnot(identical(numeric_result$variants[[index]]$predictions,
+                      as.integer(predict(manual, X)) - 1L))
+}
+stopifnot(inherits(try(nirs4all_run_portable_pipeline(portable,
+    list(X = X, y = y[-1L])), silent = TRUE), "try-error"))
+if (requireNamespace("nirs4allformats", quietly = TRUE)) {
+  source_path <- system.file("extdata", "formats_classification.csv",
+                             package = "nirs4all", mustWork = TRUE)
+  formats_data <- nirs4all_from_formats(source_path, target = "species")
+  one_model <- list(pipeline = list(list(class = "n4m.SNV"),
+    list(model = list(class = "n4m.SparsePLSDA",
+                      params = list(n_components = 2L)))))
+  formats_result <- nirs4all_run_portable_pipeline(one_model, formats_data)
+  stopifnot(identical(formats_result$targets, unname(formats_data$y)),
+            length(formats_result$selected$predictions) == nrow(formats_data$X),
+            is.finite(formats_result$selected$accuracy))
+}
 fitted <- nirs4all_fit(pipeline, X, y)
 predictions <- predict(fitted, new_X)
 probabilities <- nirs4all_predict_proba(fitted, new_X)
@@ -71,6 +131,21 @@ if (nzchar(python)) {
   stopifnot(identical(oracle$classes, 0:2),
             max(abs(scores - oracle$scores)) < 1e-10,
             identical(as.integer(predict(plain, new_X)) - 1L,
+                      as.integer(oracle$predictions)))
+  writeLines(as.character(jsonlite::toJSON(list(
+    train = matrix_rows(X), target = numeric_classes, test = matrix_rows(X),
+    n_components = 2L, sparsity_lambda = 0.05,
+    preprocessing = list("n4m.SNV")), auto_unbox = TRUE, digits = NA)), request)
+  output <- suppressWarnings(system2(python,
+    c(shQuote(helper), shQuote(request), shQuote(response)),
+    stdout = TRUE, stderr = TRUE))
+  status <- attr(output, "status")
+  if (is.null(status)) status <- 0L
+  if (status != 0L)
+    stop("Python n4m SNV sparse PLS-DA recipe oracle failed: ",
+         paste(output, collapse = "\n"))
+  oracle <- jsonlite::fromJSON(response)
+  stopifnot(identical(numeric_result$variants[[2L]]$predictions,
                       as.integer(oracle$predictions)))
   unlink(work, recursive = TRUE)
 }
