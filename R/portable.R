@@ -11,6 +11,13 @@
   savgol = c("nirs4all.operators.transforms.SavitzkyGolay",
              "nirs4all.operators.transforms.nirs.SavitzkyGolay",
              "n4m.SavitzkyGolay", "preprocessing.savgol"),
+  local_snv = c("n4m.LSNV", "preprocessing.local_snv"),
+  robust_snv = c("n4m.RNV", "preprocessing.robust_snv"),
+  area_normalization = c("n4m.AreaNormalization",
+                         "preprocessing.area_normalization"),
+  detrend = c("n4m.Detrend", "preprocessing.detrend"),
+  msc = c("n4m.MSC", "preprocessing.msc"),
+  emsc = c("n4m.EMSC", "preprocessing.emsc"),
   pls = c("sklearn.cross_decomposition.PLSRegression",
           "sklearn.cross_decomposition._pls.PLSRegression",
           "n4m.PLS", "n4m.PLSRegression", "models.pls.pls_fit_simple")
@@ -271,6 +278,51 @@ nirs4all_parse_execution_plan <- function(source) {
           type = "SavitzkyGolay", params = list(window, order, deriv,
                                                  match(mode, c("mirror", "constant", "nearest", "wrap", "interp")) - 1L,
                                                  cval))
+      } else if (class_name %in% .nirs4all_portable_classes$local_snv) {
+        params <- nirs4all_portable_allowed_params(params,
+          c("window", "pad_mode", "constant_value"), "LSNV")
+        values <- list(window = nirs4all_portable_number(params$window, 11L,
+          "window", integer = TRUE, minimum = 3L),
+          pad_mode = nirs4all_portable_or(params$pad_mode, "reflect"),
+          constant_value = nirs4all_portable_number(params$constant_value, 0,
+            "constant_value"))
+        do.call(nirs4all_local_snv, values)
+        preprocessing[[length(preprocessing) + 1L]] <-
+          list(type = "LocalStandardNormalVariate", params = values)
+      } else if (class_name %in% .nirs4all_portable_classes$robust_snv) {
+        params <- nirs4all_portable_allowed_params(params,
+          c("with_center", "with_scale", "k"), "RNV")
+        values <- list(with_center = nirs4all_portable_or(params$with_center, TRUE),
+          with_scale = nirs4all_portable_or(params$with_scale, TRUE),
+          k = nirs4all_portable_number(params$k, 1.4826, "k", minimum = 0))
+        do.call(nirs4all_robust_snv, values)
+        preprocessing[[length(preprocessing) + 1L]] <-
+          list(type = "RobustStandardNormalVariate", params = values)
+      } else if (class_name %in% .nirs4all_portable_classes$area_normalization) {
+        params <- nirs4all_portable_allowed_params(params, "method",
+                                                   "AreaNormalization")
+        values <- list(method = nirs4all_portable_or(params$method, "sum"))
+        do.call(nirs4all_area_normalization, values)
+        preprocessing[[length(preprocessing) + 1L]] <-
+          list(type = "AreaNormalization", params = values)
+      } else if (class_name %in% .nirs4all_portable_classes$detrend) {
+        params <- nirs4all_portable_allowed_params(params, "polyorder", "Detrend")
+        values <- list(polyorder = nirs4all_portable_number(params$polyorder,
+          1L, "polyorder", integer = TRUE, minimum = 0L))
+        do.call(nirs4all_detrend, values)
+        preprocessing[[length(preprocessing) + 1L]] <-
+          list(type = "Detrend", params = values)
+      } else if (class_name %in% .nirs4all_portable_classes$msc) {
+        nirs4all_portable_allowed_params(params, character(), "MSC")
+        preprocessing[[length(preprocessing) + 1L]] <-
+          list(type = "MultiplicativeScatterCorrection", params = list())
+      } else if (class_name %in% .nirs4all_portable_classes$emsc) {
+        params <- nirs4all_portable_allowed_params(params, "degree", "EMSC")
+        values <- list(degree = nirs4all_portable_number(params$degree,
+          2L, "degree", integer = TRUE, minimum = 1L))
+        do.call(nirs4all_emsc, values)
+        preprocessing[[length(preprocessing) + 1L]] <-
+          list(type = "ExtendedMultiplicativeScatterCorrection", params = values)
       } else {
         stop(sprintf("unsupported portable class: %s", class_name), call. = FALSE)
       }
@@ -300,18 +352,15 @@ nirs4all_parse_execution_plan <- function(source) {
 
 #' Convert a portable JSON/YAML recipe into an R pipeline
 #'
-#' The bounded reader accepts native SNV, Savitzky-Golay and PLS components.
+#' The bounded reader accepts native SNV, Savitzky-Golay, LSNV, RNV, area
+#' normalization, detrend, train-fitted MSC/EMSC, and PLS components.
 #' Splitters and component sweeps are refused because a single fitted pipeline
 #' cannot represent an entire selection experiment.
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
 #' @return An unfitted [nirs4all_pipeline()].
 #' @export
-nirs4all_pipeline_from_portable <- function(source) {
-  plan <- nirs4all_parse_execution_plan(source)
-  if (!is.null(plan$splitter) || length(plan$n_components) != 1L)
-    stop("a single fitted pipeline cannot include a splitter or component sweep",
-         call. = FALSE)
-  steps <- lapply(plan$preprocessing, function(step) {
+nirs4all_portable_steps <- function(preprocessing) {
+  lapply(preprocessing, function(step) {
     if (identical(step$type, "StandardNormalVariate")) {
       params <- step$params
       return(nirs4all_snv(params$ddof, params$with_mean, params$with_std))
@@ -322,8 +371,25 @@ nirs4all_pipeline_from_portable <- function(source) {
       return(nirs4all_savgol(params[[1L]], params[[2L]], params[[3L]],
                              delta = 1, mode = mode, cval = params[[5L]]))
     }
+    constructors <- list(
+      LocalStandardNormalVariate = nirs4all_local_snv,
+      RobustStandardNormalVariate = nirs4all_robust_snv,
+      AreaNormalization = nirs4all_area_normalization,
+      Detrend = nirs4all_detrend,
+      MultiplicativeScatterCorrection = nirs4all_msc,
+      ExtendedMultiplicativeScatterCorrection = nirs4all_emsc)
+    constructor <- constructors[[step$type]]
+    if (!is.null(constructor)) return(do.call(constructor, step$params))
     stop("unsupported portable preprocessing step", call. = FALSE)
   })
+}
+
+nirs4all_pipeline_from_portable <- function(source) {
+  plan <- nirs4all_parse_execution_plan(source)
+  if (!is.null(plan$splitter) || length(plan$n_components) != 1L)
+    stop("a single fitted pipeline cannot include a splitter or component sweep",
+         call. = FALSE)
+  steps <- nirs4all_portable_steps(plan$preprocessing)
   spec <- plan$learner
   learner <- nirs4all_pls(plan$n_components[[1L]], algo = spec$algo,
     center_x = spec$center_x, scale_x = spec$scale_x,
@@ -368,7 +434,8 @@ nirs4all_portable_generator_options <- function(node) {
 
 #' Expand a bounded Python-style generator recipe into R pipelines
 #'
-#' Supports ordinary n4m SNV/Savitzky-Golay/PLS recipes, a component `_range_`,
+#' Supports the n4m preprocessing classes accepted by the portable reader,
+#' a PLS component `_range_`,
 #' and preprocessing `_or_` or `_cartesian_` stages without selection modifiers.
 #' Variant order matches Python's left-to-right Cartesian product. Unsupported
 #' generators and splitters are rejected. Pass the resulting named list to
@@ -436,7 +503,7 @@ nirs4all_portable_dataset <- function(dataset) {
 #' Run a portable Python-style JSON/YAML pipeline on R data
 #'
 #' This bounded compatibility path supports optional Kennard-Stone holdout,
-#' SNV, Savitzky-Golay and PLS component sweeps. It delegates splitting and
+#' native n4m preprocessing steps and PLS component sweeps. It delegates splitting and
 #' numerical work to `n4m`; selection on the holdout is *not* an independent
 #' test estimate. For general CV/OOF/refit use [nirs4all_dag_cv_refit_predict()].
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
@@ -459,14 +526,7 @@ nirs4all_run_portable_pipeline <- function(source, dataset) {
   }
   train <- split$trainIndices + 1L
   validation <- split$testIndices + 1L
-  steps <- lapply(plan$preprocessing, function(item) {
-    if (identical(item$type, "StandardNormalVariate"))
-      return(do.call(nirs4all_snv, item$params))
-    params <- item$params
-    nirs4all_savgol(params[[1L]], params[[2L]], params[[3L]], 1,
-                    c("mirror", "constant", "nearest", "wrap", "interp")[[params[[4L]] + 1L]],
-                    params[[5L]])
-  })
+  steps <- nirs4all_portable_steps(plan$preprocessing)
   targets <- data$y[validation]
   variants <- lapply(plan$n_components, function(n) {
     learner <- plan$learner
