@@ -10,6 +10,8 @@ nirs4all_save <- function(object, file) {
   saved <- object
   if (identical(saved$learner$format, "n4mm"))
     saved$state <- n4m::n4m_model_export(object$state)
+  if (identical(saved$learner$format, "n4mm_affine"))
+    saved$state <- nirs4all_affine_export(object$state)
   if (identical(saved$learner$format, "torch-r")) {
     if (!requireNamespace("torch", quietly = TRUE))
       stop("torch is required to save this model", call. = FALSE)
@@ -32,6 +34,11 @@ nirs4all_load <- function(file) {
     if (!is.raw(fitted$state)) stop("n4m model bundle lacks N4MM bytes", call. = FALSE)
     fitted$state <- n4m::n4m_model_import(fitted$state)
   }
+  if (identical(fitted$learner$format, "n4mm_affine")) {
+    if (!is.raw(fitted$state)) stop("affine model bundle lacks N4MM bytes", call. = FALSE)
+    nirs4all_affine_validate(fitted$state, fitted$n_features)
+    fitted$state <- list(native_model = n4m::n4m_model_import(fitted$state))
+  }
   if (identical(fitted$learner$format, "torch-r")) {
     if (!is.list(fitted$state) || !is.raw(fitted$state$module))
       stop("torch bundle lacks serialized module bytes", call. = FALSE)
@@ -46,7 +53,7 @@ nirs4all_load <- function(file) {
 
 #' Export a fitted native pipeline as portable N4MM bytes
 #'
-#' Accepts plain SIMPLS (N4MM format 1) or the native
+#' Accepts plain SIMPLS or an affine n4m MethodResult (N4MM format 1), or the native
 #' SNV → Savitzky-Golay → SIMPLS profile (format 2). Export the unfitted recipe separately with
 #' [nirs4all_export_pipeline()] when transferring it to another language.
 #' These bytes are model state, not a full DAG-ML Archive V2/V3.
@@ -55,14 +62,19 @@ nirs4all_load <- function(file) {
 #' @export
 nirs4all_export_native_model <- function(object) {
   if (!inherits(object, "nirs4all_fitted") ||
-      !identical(object$learner$format, "n4mm"))
-    stop("only a native n4m PLS pipeline can be exported", call. = FALSE)
+      !(object$learner$format %in% c("n4mm", "n4mm_affine")))
+    stop("only a native n4m pipeline can be exported", call. = FALSE)
   recipe <- structure(list(steps = object$steps, learner = object$learner),
                       class = "nirs4all_pipeline")
   profile <- nirs4all_native_model_profile(recipe)
   if (is.null(profile) ||
       !identical(object$preprocessing_owner, profile$owner))
     stop("fitted native recipe is unsupported", call. = FALSE)
+  if (identical(profile$family, "affine")) {
+    bytes <- nirs4all_affine_export(object$state)
+    nirs4all_affine_validate(bytes, object$n_features)
+    return(bytes)
+  }
   bytes <- n4m::n4m_model_export(object$state)
   info <- n4m::n4m_model_pipeline_info(bytes)
   descriptor <- n4m::n4m_model_descriptor(bytes)
@@ -88,7 +100,9 @@ nirs4all_export_native_model <- function(object) {
 #' This function refuses a mismatched R recipe or feature width. The caller
 #' supplies the recipe and, if relevant, the original ordered feature names.
 #' For plain format-1 PLS, scaling flags are caller assertions because the
-#' validated native descriptor does not expose those training flags.
+#' validated native descriptor does not expose those training flags. For an
+#' affine N4MM, the MethodResult fitting method and parameters are likewise
+#' caller assertions: the wire format identifies only the fitted predictor.
 #' @param bytes Raw N4MM format-1 or format-2 bytes.
 #' @param pipeline Matching unfitted [nirs4all_pipeline()] definition or its
 #'   portable JSON/YAML recipe.
@@ -102,6 +116,24 @@ nirs4all_import_native_model <- function(bytes, pipeline, feature_names = NULL) 
     pipeline <- nirs4all_pipeline_from_portable(pipeline)
   profile <- nirs4all_native_model_profile(pipeline)
   if (is.null(profile)) stop("R recipe is not a supported native profile", call. = FALSE)
+  if (identical(profile$family, "affine")) {
+    descriptor <- nirs4all_affine_validate(bytes)
+    width <- descriptor$n_features
+    if (!is.null(feature_names) &&
+        (!is.character(feature_names) || length(feature_names) != width ||
+         anyNA(feature_names) || any(!nzchar(feature_names)) ||
+         anyDuplicated(feature_names)))
+      stop("feature_names must match the native feature width", call. = FALSE)
+    state <- n4m::n4m_model_import(bytes)
+    if (!identical(attr(state, "n_features"), width) ||
+        !identical(attr(state, "n_targets"), 1L))
+      stop("imported affine N4MM dimensions do not match the recipe", call. = FALSE)
+    return(structure(list(steps = pipeline$steps, learner = pipeline$learner,
+      state = list(native_model = state), step_states = list(),
+      preprocessing_owner = profile$owner, task = "regression", classes = NULL,
+      n_features = width, feature_names = feature_names),
+      class = "nirs4all_fitted"))
+  }
   info <- n4m::n4m_model_pipeline_info(bytes)
   descriptor <- n4m::n4m_model_descriptor(bytes)
   width <- descriptor$n_features
@@ -135,6 +167,11 @@ nirs4all_import_native_model <- function(bytes, pipeline, feature_names = NULL) 
 
 nirs4all_native_model_profile <- function(pipeline) {
   spec <- pipeline$learner$spec
+  if (is.list(spec) && identical(spec$learner, "n4m_method") &&
+      identical(pipeline$learner$format, "n4mm_affine") &&
+      !length(pipeline$steps))
+    return(list(family = "affine", format_version = 1L,
+                owner = "external_r", capabilities = 5L))
   defaults <- is.list(spec) && identical(spec$learner, "pls") &&
     identical(spec$algo, "pls_simpls") &&
     all(vapply(spec[c("center_x", "scale_x", "center_y", "scale_y")],
@@ -147,6 +184,34 @@ nirs4all_native_model_profile <- function(pipeline) {
   if (is.null(embedded)) return(NULL)
   list(format_version = 2L, owner = "embedded_methods",
        capabilities = 9L, embedded = embedded)
+}
+
+nirs4all_affine_export <- function(state) {
+  if (!is.null(state$native_model))
+    return(n4m::n4m_model_export(state$native_model))
+  coefficients <- state$coefficients
+  intercept <- as.numeric(state$y_mean -
+                            drop(state$x_mean %*% coefficients))
+  model <- n4m::n4m_model_import_linear_predictor(
+    coefficients, intercept, state$source_training_samples)
+  n4m::n4m_model_export(model)
+}
+
+nirs4all_affine_validate <- function(bytes, width = NULL) {
+  descriptor <- n4m::n4m_model_descriptor(bytes)
+  info <- n4m::n4m_model_pipeline_info(bytes)
+  if (!identical(descriptor$format_version, 1L) ||
+      !identical(descriptor$algorithm, 11L) ||
+      !identical(descriptor$solver, 0L) ||
+      !identical(descriptor$deflation, 0L) ||
+      !identical(descriptor$n_components, 0L) ||
+      !identical(descriptor$n_targets, 1L) ||
+      descriptor$n_features < 1L ||
+      (!is.null(width) && !identical(descriptor$n_features, as.integer(width))) ||
+      bitwAnd(as.integer(descriptor$capabilities), 5L) != 5L ||
+      isTRUE(info$present))
+    stop("N4MM state is not a matching single-target affine predictor", call. = FALSE)
+  descriptor
 }
 
 nirs4all_native_model_pipeline_matches <- function(info, profile, width) {

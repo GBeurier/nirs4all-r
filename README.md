@@ -259,8 +259,14 @@ when running the package tests to require native CV/OOF/refit/replay checks.
 
 `nirs4all_n4m_method()` exposes eight native linear MethodResult regressors:
 ridge, ridge-PLS, robust PLS, CPPLS, sparse SIMPLS, ECR, continuum regression
-and MIR-PLS. These use `n4m` for fitting and coefficient-based prediction;
-their R model bundles are not N4MM exports. `nirs4all_lm()` uses base R.
+and MIR-PLS. These use `n4m` for fitting. Their R bundles now contain a
+portable N4MM affine predictor, and a preprocessing-free fit can be exported
+as N4MM for Python/R inference. That artifact attests the fitted affine
+prediction, not the original fitting method, its hyperparameters, or a
+retrainable pipeline; export the recipe separately. A MethodResult fit with
+R preprocessing can still be saved and replayed in R, but its bare N4MM
+export is rejected because it would omit the preprocessing. `nirs4all_lm()`
+uses base R.
 `nirs4all_ranger()` and
 `nirs4all_glmnet(lambda, alpha)` are optional random-forest and
 regularized-regression controllers. `nirs4all_parsnip(spec)` accepts an

@@ -15,4 +15,7 @@ its portable JSON/YAML recipe.}
 preprocessing profile. A mismatched R recipe or feature width is refused.
 The caller supplies the recipe and, if relevant, the original ordered
 feature names. For plain format-1 PLS, scaling flags are caller assertions
-because the native descriptor does not expose those training flags.}
+because the native descriptor does not expose those training flags. For an
+affine N4MM, the supplied MethodResult method and parameters are likewise
+caller assertions: the wire format identifies the predictor, not its
+training algorithm.}
