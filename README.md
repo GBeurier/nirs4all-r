@@ -14,6 +14,24 @@ DAG-ML path are separate surfaces. The native path covers single-model
 CV → OOF → refit → replay; branches, HPO, external-test prediction and
 Python/R host-model conversion are not yet exposed by the high-level API.
 
+The optional `nirs4allformats` reader can feed either path without reparsing
+spectra in this package. It accepts homogeneous one-dimensional signals and
+keeps sample IDs plus spectral-axis/unit/type identities explicit:
+
+```r
+pipeline <- nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(2))
+dataset <- nirs4all_from_formats("spectra.csv", target = "protein")
+fit <- nirs4all_fit(pipeline, dataset)
+predictions <- predict(fit, nirs4all_from_formats("new_spectra.csv"))
+# Or: nirs4all_dag_cv_refit_predict(pipeline, dataset, cli = ".../dag-ml-cli")
+```
+
+The Rust `nirs4all-formats` registry owns file decoding. Files with different
+axes, multidimensional signals, missing targets or duplicate sample IDs are
+not silently coerced into a training matrix. The flat dataset currently
+preserves format labels and metadata, but not the full per-source provenance
+available through `nirs4allformats_open_records()`.
+
 ```r
 library(nirs4all)
 X <- matrix(rnorm(160), 16, 10)

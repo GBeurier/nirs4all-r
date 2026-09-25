@@ -21,7 +21,7 @@
 #' @return Native DAG-ML outcome with an additional `workdir` path.
 #' @export
 nirs4all_dag_cv_refit_predict <- function(
-    pipeline, X, y, folds = 5L, sample_ids = NULL, root_seed = 1L,
+    pipeline, X, y = NULL, folds = 5L, sample_ids = NULL, root_seed = 1L,
     cli = Sys.which("dag-ml-cli"), workdir = tempfile("nirs4all-dag-"),
     process_workers = 1L) {
   if (!requireNamespace("dagml", quietly = TRUE) ||
@@ -31,6 +31,14 @@ nirs4all_dag_cv_refit_predict <- function(
   if (!inherits(pipeline, "nirs4all_pipeline") || is.null(pipeline$learner$spec))
     stop("native DAG execution requires a pipeline with a built-in learner",
          call. = FALSE)
+  if (inherits(X, "nirs4all_dataset")) {
+    if (!is.null(y)) stop("y must come from the nirs4all_dataset", call. = FALSE)
+    if (!is.null(sample_ids) && !identical(sample_ids, X$sample_ids))
+      stop("sample_ids and formats sample IDs differ", call. = FALSE)
+    sample_ids <- X$sample_ids
+    y <- X$y
+    X <- X$X
+  }
   X <- nirs4all_matrix(X)
   if (!is.numeric(y) || is.matrix(y) || length(y) != nrow(X) ||
       anyNA(y) || any(!is.finite(y)))

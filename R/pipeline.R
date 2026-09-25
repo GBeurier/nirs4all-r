@@ -83,9 +83,14 @@ nirs4all_transform <- function(X, steps) {
 #' @param y Finite numeric target vector.
 #' @return Fitted pipeline. Use [nirs4all_predict()] or [nirs4all_save()].
 #' @export
-nirs4all_fit <- function(pipeline, X, y) {
+nirs4all_fit <- function(pipeline, X, y = NULL) {
   if (!inherits(pipeline, "nirs4all_pipeline"))
     stop("pipeline must be a nirs4all_pipeline", call. = FALSE)
+  if (inherits(X, "nirs4all_dataset")) {
+    if (!is.null(y)) stop("y must come from the nirs4all_dataset", call. = FALSE)
+    y <- X$y
+    X <- X$X
+  }
   X <- nirs4all_matrix(X)
   if (!is.numeric(y) || is.matrix(y) || length(y) != nrow(X) ||
       anyNA(y) || any(!is.finite(y)))
@@ -107,6 +112,7 @@ nirs4all_fit <- function(pipeline, X, y) {
 nirs4all_predict <- function(object, X) {
   if (!inherits(object, "nirs4all_fitted"))
     stop("object must be a fitted nirs4all pipeline", call. = FALSE)
+  if (inherits(X, "nirs4all_dataset")) X <- X$X
   X <- nirs4all_matrix(X, object$n_features)
   if (!is.null(object$feature_names) && !identical(colnames(X), object$feature_names))
     stop("X feature names or order differ from training", call. = FALSE)

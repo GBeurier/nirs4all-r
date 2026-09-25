@@ -102,4 +102,20 @@ if (available) {
               grepl("does not attest R data", paste(rejected, collapse = "\n")))
   }
   verify_tamper_rejected(outcome$workdir)
+
+  if (requireNamespace("nirs4allformats", quietly = TRUE)) {
+    path <- system.file("extdata", "formats_integration.csv",
+                        package = "nirs4all", mustWork = TRUE)
+    dataset <- nirs4all_from_formats(path, target = "protein")
+    pipeline <- nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(2L))
+    outcome <- nirs4all_dag_cv_refit_predict(pipeline, dataset,
+                                              folds = 3L, cli = cli)
+    block <- outcome$replay_prediction_blocks[[1L]]
+    ids <- as.character(unlist(block$sample_ids, use.names = FALSE))
+    values <- vapply(block$values, function(value) as.numeric(value[[1L]]),
+                     numeric(1))
+    expected <- predict(nirs4all_fit(pipeline, dataset), dataset)
+    stopifnot(max(abs(values - expected[match(ids, dataset$sample_ids)])) < 1e-10)
+    message("formats file → native DAG CV/refit/replay passed")
+  }
 }
