@@ -10,7 +10,7 @@ des champs de preuve à compléter avant toute soumission.
 
 ## Vérification actuellement réalisée
 
-Le développement courant est `nirs4all` 0.4.0.9025 avec `n4m >=
+Le développement courant est `nirs4all` 0.4.0.9026 avec `n4m >=
 1.0.21.9003`. Les résultats historiques ci-dessous documentent la
 progression, mais ne remplacent pas le contrôle du tarball final.
 
@@ -145,6 +145,17 @@ progression, mais ne remplacent pas le contrôle du tarball final.
   restent à vérifier avant une revendication de publication ou une soumission.
   L'export de SNV non défaut reste refusé :
   le parseur Core/WASM actuel ignore silencieusement ses paramètres.
+- `nirs4all` R 0.4.0.9026 ajoute une enveloppe JSON bornée pour le pipeline
+  n4m PLS entraîné : recette, état MSC/EMSC, empreintes SHA-256 du manifeste
+  et de N4MM. Les cinq profils de test (sans prétraitement, stateless,
+  MSC/EMSC, SNV/SG embarqué et branche feature-merge) prédisent sur des lignes
+  tenues à part en R et Python, dans les deux sens, puis se réentraînent côté
+  Python avec Methods. Ce n'est pas un Archive V2/V3 de DAG-ML : identité des
+  échantillons, sélection, OOF et provenance de refit n'y figurent pas.
+  Un premier tarball 0.4.0.9026 passe le contrôle Linux/R 4.6.0 strict
+  avec zéro erreur et l'avertissement CRAN-incoming attendu. Un correctif de
+  réexport N4MM a ensuite été ajouté ; le tarball exact reconstruit doit
+  être revérifié avant toute revendication de publication ou soumission.
 - Les résultats de Windows/macOS et la portabilité Archive V2/V3 Python↔R du
   pipeline entraîné complet restent à qualifier pour **le tarball courant**.
   R-universe publie déjà `nirs4all` 0.4.0.9018 depuis `nirs4all-r` : son
@@ -188,4 +199,4 @@ Avant une soumission `nirs4all` :
 La [politique CRAN de soumission](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande un `R CMD check --as-cran` du tarball à envoyer et, en principe, aucun
 avertissement ni note significative. Aucun formulaire de soumission ne doit
-présenter la version `0.4.0.9025` comme prête tant que ces gates restent ouverts.
+présenter la version `0.4.0.9026` comme prête tant que ces gates restent ouverts.

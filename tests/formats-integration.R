@@ -26,10 +26,16 @@ if (available) {
   predict_dataset <- nirs4all_from_formats(path)
   stopifnot(isTRUE(all.equal(predict(fitted, predict_dataset),
                              predict(explicit, dataset$X), tolerance = 1e-12)))
+  trained_bundle <- nirs4all_export_trained_pipeline(fitted)
+  transferred <- nirs4all_import_trained_pipeline(trained_bundle)
+  stopifnot(isTRUE(all.equal(predict(transferred, predict_dataset),
+                             predict(fitted, predict_dataset), tolerance = 1e-12)))
   changed_axis <- raw
   changed_axis$axis_unit <- "cm-1"
   changed <- nirs4all_from_formats(changed_axis)
   bad <- tryCatch(predict(fitted, changed), error = identity)
+  stopifnot(inherits(bad, "error"), grepl("feature names", conditionMessage(bad)))
+  bad <- tryCatch(predict(transferred, changed), error = identity)
   stopifnot(inherits(bad, "error"), grepl("feature names", conditionMessage(bad)))
   duplicate <- raw
   duplicate$sample_ids[[2L]] <- duplicate$sample_ids[[1L]]
