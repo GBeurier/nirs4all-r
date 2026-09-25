@@ -2,10 +2,13 @@
 #'
 #' The Rust-backed `nirs4allformats` package owns file detection and decoding.
 #' This function only checks the rectangular R view, records explicit sample
-#' and spectral-axis identities, and selects one finite numeric target.
+#' and spectral-axis identities, and selects one finite numeric target or
+#' explicit categorical label from a target column or the reader's
+#' per-record metadata.
 #'
 #' @param source A file path or a `nirs4allformats_dataset`.
-#' @param target Name of one numeric target column, or `NULL` for prediction.
+#' @param target Name of one numeric or categorical target column, or a
+#'   complete categorical metadata field; `NULL` for prediction.
 #' @param signal Optional signal name when `source` is a file path.
 #' @return A `nirs4all_dataset` with `X`, optional `y`, sample IDs, axis and
 #'   source metadata. Pass it directly to [nirs4all_fit()] or [predict()].
@@ -42,17 +45,46 @@ nirs4all_from_formats <- function(source, target = NULL, signal = NULL) {
     stop("formats axis kind, unit and signal type are required", call. = FALSE)
   if (!is.null(target) && (!is.character(target) || length(target) != 1L ||
                           is.na(target) || !nzchar(target)))
-    stop("target must name one numeric column", call. = FALSE)
+    stop("target must name one numeric or categorical field", call. = FALSE)
   y <- NULL
   if (!is.null(target)) {
-    if (!is.data.frame(dataset$targets) || !(target %in% names(dataset$targets)))
-      stop("requested target is not present in the formats dataset", call. = FALSE)
-    y <- dataset$targets[[target]]
-    if (!is.numeric(y) || length(y) != nrow(X) || anyNA(y) ||
-        any(!is.finite(y)))
-      stop("requested formats target must be finite and numeric for every sample",
-           call. = FALSE)
-    y <- stats::setNames(as.numeric(y), ids)
+    if (is.data.frame(dataset$targets) && target %in% names(dataset$targets)) {
+      y <- dataset$targets[[target]]
+      if (length(y) != nrow(X) || anyNA(y))
+        stop("requested formats target must be complete for every sample",
+             call. = FALSE)
+      if (is.numeric(y)) {
+        if (any(!is.finite(y)))
+          stop("requested numeric formats target must be finite for every sample",
+               call. = FALSE)
+        y <- stats::setNames(as.numeric(y), ids)
+      } else if (is.character(y) || is.factor(y)) {
+        labels <- as.character(y)
+        if (any(!nzchar(trimws(labels))))
+          stop("requested categorical formats target must be non-empty text for every sample",
+               call. = FALSE)
+        y <- stats::setNames(labels, ids)
+      } else {
+        stop("requested formats target must be numeric or categorical text",
+             call. = FALSE)
+      }
+    } else {
+      metadata <- dataset$metadata
+      if (!is.list(metadata) || length(metadata) != nrow(X) ||
+          !all(vapply(metadata, function(record)
+            is.list(record) && target %in% names(record), logical(1))))
+        stop("requested target is not present for every formats sample",
+             call. = FALSE)
+      if (!all(vapply(metadata, function(record) {
+        label <- record[[target]]
+        is.character(label) && length(label) == 1L && !is.na(label) &&
+          nzchar(trimws(label))
+      }, logical(1))))
+        stop("requested categorical formats target must be non-empty text for every sample",
+             call. = FALSE)
+      labels <- vapply(metadata, function(record) record[[target]], character(1))
+      y <- stats::setNames(labels, ids)
+    }
   }
   rownames(X) <- ids
   colnames(X) <- paste0("axis:", signal_type, ":", kind, ":", unit, ":",
