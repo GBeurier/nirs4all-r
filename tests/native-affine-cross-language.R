@@ -12,6 +12,9 @@ for (method in methods) {
   pipeline <- nirs4all_pipeline(learner = learner)
   fitted <- nirs4all_fit(pipeline, X, y)
   expected <- predict(fitted, X_test)
+  stopifnot(!is.null(fitted$state$native_model),
+    max(abs(expected - as.numeric(n4m::n4m_predict(
+      fitted$state$native_model, X_test)))) < 1e-12)
   bytes <- nirs4all_export_native_model(fitted)
   descriptor <- n4m::n4m_model_descriptor(bytes)
   stopifnot(identical(descriptor$algorithm, 11L),
