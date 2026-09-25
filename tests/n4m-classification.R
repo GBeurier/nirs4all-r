@@ -79,6 +79,13 @@ if (requireNamespace("nirs4allformats", quietly = TRUE)) {
 fitted <- nirs4all_fit(pipeline, X, y)
 predictions <- predict(fitted, new_X)
 probabilities <- nirs4all_predict_proba(fitted, new_X)
+native_scores <- n4m::n4m_predict(fitted$state$native_model,
+  n4m::snv_transform(new_X))
+manual_scores <- n4m::snv_transform(new_X)
+manual_scores <- sweep(manual_scores, 2L, fitted$state$x_mean, "-") %*%
+  fitted$state$coefficients
+manual_scores <- sweep(manual_scores, 2L, fitted$state$y_mean, "+")
+stopifnot(max(abs(native_scores - manual_scores)) < 1e-10)
 stopifnot(is.factor(predictions), identical(levels(predictions), levels(y)),
           identical(dim(probabilities), c(nrow(new_X), nlevels(y))),
           identical(colnames(probabilities), levels(y)),
@@ -88,7 +95,13 @@ bundle <- tempfile(fileext = ".rds")
 nirs4all_save(fitted, bundle)
 reloaded <- nirs4all_load(bundle)
 stopifnot(identical(predict(reloaded, new_X), predictions),
-          identical(nirs4all_predict_proba(reloaded, new_X), probabilities))
+          identical(nirs4all_predict_proba(reloaded, new_X), probabilities),
+          identical(n4m::n4m_model_export(reloaded$state$native_model),
+                    n4m::n4m_model_export(fitted$state$native_model)))
+tampered <- readRDS(bundle)
+tampered$fitted$state$classes <- rev(tampered$fitted$state$classes)
+saveRDS(tampered, bundle)
+stopifnot(inherits(try(nirs4all_load(bundle), silent = TRUE), "try-error"))
 unlink(bundle)
 stopifnot(inherits(try(nirs4all_sparse_pls_da(0L), silent = TRUE), "try-error"),
           inherits(try(nirs4all_sparse_pls_da(sparsity_lambda = -1),

@@ -12,6 +12,12 @@ nirs4all_save <- function(object, file) {
     saved$state <- n4m::n4m_model_export(object$state)
   if (identical(saved$learner$format, "n4mm_affine"))
     saved$state <- nirs4all_affine_export(object$state)
+  if (identical(saved$learner$format, "n4mm_sparse_pls_da")) {
+    if (!is.list(saved$state) ||
+        typeof(saved$state$native_model) != "externalptr")
+      stop("sparse PLS-DA model lacks native state", call. = FALSE)
+    saved$state$native_model <- n4m::n4m_model_export(saved$state$native_model)
+  }
   if (identical(saved$learner$format, "torch-r")) {
     if (!requireNamespace("torch", quietly = TRUE))
       stop("torch is required to save this model", call. = FALSE)
@@ -38,6 +44,21 @@ nirs4all_load <- function(file) {
     if (!is.raw(fitted$state)) stop("affine model bundle lacks N4MM bytes", call. = FALSE)
     nirs4all_affine_validate(fitted$state, fitted$n_features)
     fitted$state <- list(native_model = n4m::n4m_model_import(fitted$state))
+  }
+  if (identical(fitted$learner$format, "n4mm_sparse_pls_da")) {
+    state <- fitted$state
+    if (!is.list(state) || !is.raw(state$native_model) ||
+        !is.character(state$classes) || length(state$classes) < 2L ||
+        anyNA(state$classes) || anyDuplicated(state$classes) ||
+        !identical(state$classes, fitted$classes))
+      stop("sparse PLS-DA bundle lacks coherent native state", call. = FALSE)
+    descriptor <- n4m::n4m_model_descriptor(state$native_model)
+    if (!identical(descriptor$algorithm, 11L) ||
+        !identical(descriptor$n_features, as.integer(fitted$n_features)) ||
+        !identical(descriptor$n_targets, as.integer(length(state$classes))))
+      stop("sparse PLS-DA native state has incompatible dimensions", call. = FALSE)
+    state$native_model <- n4m::n4m_model_import(state$native_model)
+    fitted$state <- state
   }
   if (identical(fitted$learner$format, "torch-r")) {
     if (!is.list(fitted$state) || !is.raw(fitted$state$module))
