@@ -10,9 +10,10 @@ DAG-ML parity gates. Do **not** publish both sources under the R package name
 
 The package composes `n4m` numerical preprocessing and PLS with R learner
 controllers on real numeric matrices. Local fit/predict and a first native
-DAG-ML path are separate surfaces. The native path covers single-model
-CV → OOF → refit → replay; branches, HPO, external-test prediction and
-Python/R host-model conversion are not yet exposed by the high-level API.
+DAG-ML path are separate surfaces. The native path covers fixed candidate
+selection by CV → OOF → one winner refit → replay; branches, adaptive HPO,
+external-test prediction and Python/R host-model conversion are not yet
+exposed by the high-level API.
 
 The optional `nirs4allformats` reader can feed either path without reparsing
 spectra in this package. It accepts homogeneous one-dimensional signals and
@@ -57,6 +58,24 @@ outcome$fit_cv_result_count
 outcome$replay_prediction_blocks
 ```
 
+Pass a named list to compare complete preprocessing/learner pipelines on the
+same folds. DAG-ML ranks their OOF RMSE and refits only the winner:
+
+```r
+candidates <- list(
+  pls2 = nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(2)),
+  pls4 = nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(4))
+)
+outcome <- nirs4all_dag_cv_refit_predict(candidates, X, y,
+                                        cli = "/path/to/dag-ml-cli")
+outcome$bundle$selected_variant_id
+outcome$bundle$metadata$variant_catalog
+```
+
+This is a fixed candidate grid, not nested CV or adaptive hyperparameter
+search. Its selected OOF score is optimistic if reported as an unbiased
+generalization estimate; use independent outer validation for that purpose.
+
 The CLI and `dagml` are still external development dependencies; the package
 does not install either automatically. The replay in this path uses the
 training cohort, so its predictions are **not** an independent test score.
@@ -91,7 +110,8 @@ numerical path. A second frozen Python `n4m` oracle checks six MethodResult
 regressors, including solver-sensitive CPPLS, ridge-PLS and continuum
 regression. A separate strict test checks native DAG-ML execution with
 PLS, `n4m` ridge/CPPLS, `lm`, `ranger`, `glmnet` and `torch` against manual
-fold-local fits.
+fold-local fits. It also checks a five-candidate PLS sweep against manual
+fold-local OOF calculations and the selected refit.
 Neither test qualifies arbitrary n4m compositions or complex DAG graphs.
 
 Current missing product gates are documented in

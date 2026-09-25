@@ -118,4 +118,71 @@ if (available) {
     stopifnot(max(abs(values - expected[match(ids, dataset$sample_ids)])) < 1e-10)
     message("formats file → native DAG CV/refit/replay passed")
   }
+
+  oracle <- jsonlite::fromJSON(system.file(
+    "extdata", "python_oracle_n4m_examples.json", package = "nirs4all",
+    mustWork = TRUE), simplifyVector = FALSE)
+  oracle_X <- matrix(as.numeric(unlist(oracle$dataset$X)),
+                     as.integer(oracle$dataset$rows),
+                     as.integer(oracle$dataset$cols), byrow = TRUE)
+  oracle_y <- as.numeric(unlist(oracle$dataset$y))
+  candidates <- stats::setNames(lapply(c(2L, 4L, 6L, 8L, 10L), function(components)
+    nirs4all_pipeline(list(nirs4all_snv(), nirs4all_savgol(11L)),
+                     nirs4all_pls(components))),
+    paste0("pls", c(2L, 4L, 6L, 8L, 10L)))
+  selected <- nirs4all_dag_cv_refit_predict(candidates, oracle_X, oracle_y,
+                                             folds = 5L, cli = cli)
+  catalog <- selected$bundle$metadata$variant_catalog
+  by_id <- stats::setNames(vapply(catalog, function(variant)
+    variant$choices$nirs4all_r_pipeline$label, character(1)),
+    vapply(catalog, `[[`, character(1), "variant_id"))
+  stopifnot(length(catalog) == length(candidates),
+            setequal(unname(by_id), names(candidates)),
+            identical(as.integer(selected$fit_cv_result_count), 5L),
+            identical(as.integer(selected$refit_result_count), 1L))
+  manual_rmse <- numeric(length(candidates))
+  names(manual_rmse) <- names(candidates)
+  for (label in names(candidates)) {
+    predictions <- numeric(nrow(oracle_X))
+    variant_id <- names(by_id)[by_id == label]
+    reports <- Filter(function(report)
+      identical(report$variant_id, variant_id) &&
+        identical(report$partition, "validation") &&
+        is.character(report$fold_id) &&
+        grepl("^fold:[0-9]+$", report$fold_id),
+      selected$bundle$scores$reports)
+    stopifnot(length(reports) == 5L)
+    for (fold in 0:4) {
+      validation <- which((seq_len(nrow(oracle_X)) - 1L) %% 5L == fold)
+      training <- setdiff(seq_len(nrow(oracle_X)), validation)
+      predictions[validation] <- predict(nirs4all_fit(
+        candidates[[label]], oracle_X[training, , drop = FALSE],
+        oracle_y[training]), oracle_X[validation, , drop = FALSE])
+      report <- Filter(function(value) identical(value$fold_id,
+                                                  paste0("fold:", fold)), reports)
+      stopifnot(length(report) == 1L,
+                abs(as.numeric(report[[1L]]$metrics$rmse) - sqrt(mean(
+                  (predictions[validation] - oracle_y[validation])^2))) < 1e-10)
+    }
+    manual_rmse[[label]] <- sqrt(mean((predictions - oracle_y)^2))
+  }
+  averages <- Filter(function(report)
+    identical(report$fold_id, "avg") &&
+      identical(report$partition, "validation"),
+    selected$bundle$scores$reports)
+  stopifnot(length(averages) == length(candidates),
+            max(abs(sort(vapply(averages, function(report)
+              as.numeric(report$metrics$rmse), numeric(1))) -
+              sort(manual_rmse))) < 1e-10)
+  winner <- by_id[[selected$bundle$selected_variant_id]]
+  stopifnot(identical(winner, names(which.min(manual_rmse))))
+  replay <- selected$replay_prediction_blocks[[1L]]
+  replay_ids <- as.character(unlist(replay$sample_ids, use.names = FALSE))
+  replay_values <- vapply(replay$values,
+                          function(value) as.numeric(value[[1L]]), numeric(1))
+  expected <- predict(nirs4all_fit(candidates[[winner]], oracle_X, oracle_y),
+                      oracle_X)
+  row_ids <- sprintf("sample:%08d", seq_len(nrow(oracle_X)))
+  stopifnot(max(abs(replay_values - expected[match(replay_ids, row_ids)])) < 1e-10)
+  message("native DAG model selection on Python n4m example passed: ", winner)
 }

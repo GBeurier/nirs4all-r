@@ -1,13 +1,16 @@
 #' Run native DAG-ML CV, refit and prediction from an R matrix
 #'
-#' Builds a single-model DAG-ML campaign with explicit sample IDs and folds.
+#' Builds a single-node DAG-ML campaign with explicit sample IDs and folds.
 #' DAG-ML owns the FIT_CV, OOF, REFIT and PREDICT schedule; the R process
 #' adapter fits the selected nirs4all learner on the requested rows. The
 #' returned replay predictions are on the refit cohort, not an independent
-#' external test set. This bridge does not yet expose arbitrary DAG branches,
-#' nested CV, or host HPO from the high-level R API.
+#' external test set. A named list of pipelines activates native parameter
+#' variant generation and OOF-based selection before one full-data refit. This
+#' bridge does not yet expose arbitrary DAG branches, nested CV, or adaptive
+#' host HPO from the high-level R API.
 #'
-#' @param pipeline A [nirs4all_pipeline()] using a built-in learner.
+#' @param pipeline A [nirs4all_pipeline()] using a built-in learner, or a named
+#'   list of at least two such pipelines to compare by native OOF RMSE.
 #' @param X Finite numeric samples-by-features matrix.
 #' @param y Finite numeric target vector.
 #' @param folds Number of deterministic, non-shuffled CV folds.
@@ -28,8 +31,23 @@ nirs4all_dag_cv_refit_predict <- function(
       !requireNamespace("jsonlite", quietly = TRUE) ||
       !requireNamespace("digest", quietly = TRUE))
     stop("Native DAG execution requires dagml, jsonlite and digest", call. = FALSE)
-  if (!inherits(pipeline, "nirs4all_pipeline") || is.null(pipeline$learner$spec))
-    stop("native DAG execution requires a pipeline with a built-in learner",
+  variants <- NULL
+  if (inherits(pipeline, "nirs4all_pipeline")) {
+    pipelines <- list(pipeline)
+  } else if (is.list(pipeline) && length(pipeline) >= 2L &&
+             !is.null(names(pipeline)) && !anyNA(names(pipeline)) &&
+             !anyDuplicated(names(pipeline)) &&
+             all(grepl("^[A-Za-z][A-Za-z0-9_.-]*$", names(pipeline)))) {
+    pipelines <- pipeline
+    variants <- names(pipeline)
+  } else {
+    stop("pipeline must be one built-in pipeline or a named list of variants",
+         call. = FALSE)
+  }
+  if (!all(vapply(pipelines, function(value)
+      inherits(value, "nirs4all_pipeline") && !is.null(value$learner$spec),
+      logical(1))))
+    stop("native DAG execution requires built-in learners in every pipeline",
          call. = FALSE)
   if (inherits(X, "nirs4all_dataset")) {
     if (!is.null(y)) stop("y must come from the nirs4all_dataset", call. = FALSE)
@@ -103,8 +121,11 @@ nirs4all_dag_cv_refit_predict <- function(
                    data_content_fingerprint = fingerprints$data_content_fingerprint,
                    target_content_fingerprint = fingerprints$target_content_fingerprint,
                    coordinator_relations = relations)
-  model_params <- pipeline$learner$spec
-  model_params$preprocessing <- lapply(pipeline$steps, unclass)
+  model_params <- lapply(pipelines, function(value) {
+    params <- value$learner$spec
+    params$preprocessing <- lapply(value$steps, unclass)
+    params
+  })
   dsl <- list(id = "dsl:nirs4all-r", campaign_id = "campaign:nirs4all-r",
               root_seed = as.integer(root_seed), leakage_policy = leakage,
               split_invocation = list(id = "split:outer", controller_id = NULL,
@@ -115,7 +136,16 @@ nirs4all_dag_cv_refit_predict <- function(
                                       fold_set = fold_set),
               steps = list(list(kind = "model", id = "model:nirs4all-r",
                                 operator = list(type = "Nirs4allR"),
-                                params = model_params)))
+                                params = model_params[[1L]])))
+  if (!is.null(variants)) {
+    dsl$max_variants <- length(variants)
+    dsl$generation_dimensions <- list(list(
+      name = "nirs4all_r_pipeline",
+      choices = lapply(seq_along(variants), function(index) list(
+        label = variants[[index]],
+        param_overrides = list(list(node_id = "model:nirs4all-r",
+                                    params = model_params[[index]]))))))
+  }
   port <- list(name = "oof", kind = "prediction", representation = NULL,
                cardinality = "one", description = "")
   controller <- list(

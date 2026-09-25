@@ -1,14 +1,15 @@
 \name{nirs4all_dag_cv_refit_predict}
 \alias{nirs4all_dag_cv_refit_predict}
 \title{Run a native DAG-ML CV, refit and predict campaign from R matrices}
-\description{Builds an explicit single-model fold campaign. DAG-ML owns phase scheduling, out-of-fold evidence, refit and replay. The replay cohort is the training cohort, not an independent test set. This development bridge does not yet expose arbitrary branch/merge graphs or native HPO from the high-level R API.}
+\description{Builds an explicit single-node fold campaign. DAG-ML owns phase scheduling, out-of-fold evidence, variant selection, refit and replay. A named list of pipelines compares fixed candidates by OOF RMSE and refits the winner. The replay cohort is the training cohort, not an independent test set. Arbitrary branch/merge graphs and adaptive HPO are not yet exposed.}
 \usage{
 nirs4all_dag_cv_refit_predict(pipeline, X, y = NULL, folds = 5L,
   sample_ids = NULL, root_seed = 1L, cli = Sys.which("dag-ml-cli"),
   workdir = tempfile("nirs4all-dag-"), process_workers = 1L)
 }
 \arguments{
-\item{pipeline}{Pipeline definition with a built-in learner.}
+\item{pipeline}{Pipeline definition with a built-in learner, or a named list
+of at least two such pipelines to compare by native OOF RMSE.}
 \item{X}{Finite numeric samples-by-features matrix or a
 \code{nirs4all_dataset} from \code{nirs4all_from_formats()}.}
 \item{y}{Finite numeric target vector; omit for a dataset.}
