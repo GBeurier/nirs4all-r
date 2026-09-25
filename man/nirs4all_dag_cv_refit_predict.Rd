@@ -23,6 +23,7 @@ of at least two such pipelines to compare by native OOF RMSE.}
 \item{group_ids}{Optional group ID per sample. Named vectors must match
 \code{sample_ids} exactly. Validation folds preserve whole groups.}
 \item{split_steps}{If \code{TRUE}, run each n4m preprocessing step as a
-separate DAG transform node. Currently supported for one pipeline, not variants.}
+separate DAG transform node. Named variants must have the same number of
+steps; their methods and parameters may differ.}
 }
 \value{Native DAG-ML outcome list with the persisted workdir path.}

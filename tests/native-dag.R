@@ -163,6 +163,60 @@ if (available) {
               grepl("artifact identity or content mismatch", rejected))
   }
   message("native multi-node n4m transform graph CV/OOF/refit/replay passed")
+
+  graph_candidates <- list(
+    snv_pls2 = nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(2L)),
+    msc_pls3 = nirs4all_pipeline(list(nirs4all_msc()), nirs4all_pls(3L)))
+  graph_selection <- nirs4all_dag_cv_refit_predict(
+    graph_candidates, X, y, folds = 3L, cli = cli,
+    split_steps = TRUE, process_workers = 2L)
+  graph_catalog <- graph_selection$bundle$metadata$variant_catalog
+  graph_labels <- stats::setNames(vapply(graph_catalog, function(variant)
+    variant$choices$nirs4all_r_pipeline$label, character(1)),
+    vapply(graph_catalog, `[[`, "", "variant_id"))
+  stopifnot(setequal(unname(graph_labels), names(graph_candidates)),
+            identical(as.integer(graph_selection$fit_cv_result_count), 6L),
+            identical(as.integer(graph_selection$refit_result_count), 2L))
+  manual_scores <- stats::setNames(numeric(length(graph_candidates)),
+                                   names(graph_candidates))
+  for (label in names(graph_candidates)) {
+    oof <- numeric(nrow(X))
+    for (fold in 0:2) {
+      validation <- seq_len(nrow(X))[(seq_len(nrow(X)) - 1L) %% 3L == fold]
+      training <- setdiff(seq_len(nrow(X)), validation)
+      oof[validation] <- predict(nirs4all_fit(graph_candidates[[label]],
+        X[training, , drop = FALSE], y[training]),
+        X[validation, , drop = FALSE])
+    }
+    manual_scores[[label]] <- sqrt(mean((oof - y)^2))
+    variant_id <- names(graph_labels)[graph_labels == label]
+    fold_reports <- Filter(function(report)
+      identical(report$variant_id, variant_id) &&
+        identical(report$partition, "validation") &&
+        !is.null(report$fold_id) && grepl("^fold:[0-9]+$", report$fold_id),
+      graph_selection$bundle$scores$reports)
+    stopifnot(length(fold_reports) == 3L)
+    for (report in fold_reports) {
+      fold <- as.integer(sub("^fold:", "", report$fold_id))
+      validation <- seq_len(nrow(X))[(seq_len(nrow(X)) - 1L) %% 3L == fold]
+      stopifnot(abs(as.numeric(report$metrics$rmse) - sqrt(mean(
+        (oof[validation] - y[validation])^2))) < 1e-10)
+    }
+  }
+  graph_winner <- graph_labels[[graph_selection$bundle$selected_variant_id]]
+  stopifnot(identical(graph_winner, names(which.min(manual_scores))))
+  external_X <- X[1:4, , drop = FALSE] + 0.01
+  stopifnot(max(abs(nirs4all_dag_predict(graph_selection, external_X) -
+    predict(nirs4all_fit(graph_candidates[[graph_winner]], X, y),
+            external_X))) < 1e-10)
+  wrong_topology <- list(one = graph_candidates[[1L]],
+    two = nirs4all_pipeline(list(nirs4all_snv(), nirs4all_msc()),
+                           nirs4all_pls(2L)))
+  stopifnot(inherits(try(nirs4all_dag_cv_refit_predict(
+    wrong_topology, X, y, folds = 3L, cli = cli, split_steps = TRUE),
+    silent = TRUE), "try-error"))
+  message("native multi-node n4m preprocessing/model selection passed: ",
+          graph_winner)
   verify_tamper_rejected <- function(workdir) {
     data_path <- file.path(workdir, "data.rds")
     tampered <- readRDS(data_path)
@@ -285,6 +339,27 @@ if (available) {
   stopifnot(inherits(try(nirs4all_dag_predict(altered, external_X),
                          silent = TRUE), "try-error"))
   message("native DAG model selection on Python n4m example passed: ", winner)
+
+  selected_graph <- nirs4all_dag_cv_refit_predict(
+    candidates, oracle_X, oracle_y, folds = 5L, cli = cli,
+    split_steps = TRUE, process_workers = 2L)
+  graph_catalog <- selected_graph$bundle$metadata$variant_catalog
+  graph_by_id <- stats::setNames(vapply(graph_catalog, function(variant)
+    variant$choices$nirs4all_r_pipeline$label, character(1)),
+    vapply(graph_catalog, `[[`, "", "variant_id"))
+  graph_winner <- graph_by_id[[selected_graph$bundle$selected_variant_id]]
+  stopifnot(identical(graph_winner, winner),
+            identical(as.integer(selected_graph$fit_cv_result_count), 15L),
+            identical(as.integer(selected_graph$refit_result_count), 3L))
+  graph_replay <- selected_graph$replay_prediction_blocks[[1L]]
+  graph_ids <- as.character(unlist(graph_replay$sample_ids, use.names = FALSE))
+  graph_values <- vapply(graph_replay$values,
+    function(value) as.numeric(value[[1L]]), numeric(1))
+  stopifnot(max(abs(graph_values - expected[match(graph_ids, row_ids)])) < 1e-10,
+            max(abs(nirs4all_dag_predict(selected_graph, external_X) -
+              manual_external)) < 1e-10)
+  message("native DAG multi-node selection on Python n4m example passed: ",
+          graph_winner)
 
   mixed <- list(
     pls = nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(3L)),
