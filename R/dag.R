@@ -1,6 +1,6 @@
 #' Run native DAG-ML CV, refit and prediction from an R matrix
 #'
-#' Builds a single-node DAG-ML campaign with explicit sample IDs and folds.
+#' Builds a DAG-ML campaign with explicit sample IDs and folds.
 #' DAG-ML owns the FIT_CV, OOF, REFIT and PREDICT schedule; the R process
 #' adapter fits the selected nirs4all learner on the requested rows. The
 #' returned replay predictions are on the refit cohort, not an independent
@@ -24,12 +24,14 @@
 #' @param group_ids Optional group ID per sample, in the same order as `X`.
 #'   Named vectors must have names identical to `sample_ids`. When supplied,
 #'   whole groups, not individual samples, are assigned to validation folds.
+#' @param split_steps If `TRUE`, run each n4m preprocessing step as a separate
+#'   DAG transform node. Currently supported for one pipeline, not variants.
 #' @return Native DAG-ML outcome with an additional `workdir` path.
 #' @export
 nirs4all_dag_cv_refit_predict <- function(
     pipeline, X, y = NULL, folds = 5L, sample_ids = NULL, root_seed = 1L,
     cli = Sys.which("dag-ml-cli"), workdir = tempfile("nirs4all-dag-"),
-    process_workers = 1L, group_ids = NULL) {
+    process_workers = 1L, group_ids = NULL, split_steps = FALSE) {
   if (!requireNamespace("dagml", quietly = TRUE) ||
       !requireNamespace("jsonlite", quietly = TRUE) ||
       !requireNamespace("digest", quietly = TRUE))
@@ -52,6 +54,10 @@ nirs4all_dag_cv_refit_predict <- function(
       logical(1))))
     stop("native DAG execution requires built-in learners in every pipeline",
          call. = FALSE)
+  if (!is.logical(split_steps) || length(split_steps) != 1L || is.na(split_steps))
+    stop("split_steps must be TRUE or FALSE", call. = FALSE)
+  if (split_steps && !is.null(variants))
+    stop("split_steps does not yet support pipeline variants", call. = FALSE)
   if (inherits(X, "nirs4all_dataset")) {
     if (!is.null(y)) stop("y must come from the nirs4all_dataset", call. = FALSE)
     if (!is.null(sample_ids) && !identical(sample_ids, X$sample_ids))
@@ -166,9 +172,15 @@ nirs4all_dag_cv_refit_predict <- function(
       model_specs[[key]] <<- spec_bytes
       params$spec_key <- key
     }
-    params$preprocessing <- lapply(value$steps, unclass)
+    params$preprocessing <- if (split_steps) list() else lapply(value$steps, unclass)
     params
   })
+  transform_steps <- if (split_steps) lapply(seq_along(pipelines[[1L]]$steps),
+    function(index) list(kind = "transform",
+      id = sprintf("transform:nirs4all-r:%03d", index),
+      operator = list(type = "Nirs4allRPreprocess"),
+      params = list(preprocessing = list(unclass(pipelines[[1L]]$steps[[index]])))))
+    else list()
   dsl <- list(id = "dsl:nirs4all-r", campaign_id = "campaign:nirs4all-r",
               root_seed = as.integer(root_seed), leakage_policy = leakage,
               split_invocation = list(id = "split:outer", controller_id = NULL,
@@ -177,9 +189,9 @@ nirs4all_dag_cv_refit_predict <- function(
                                                     n_splits = as.integer(folds),
                                                     shuffle = FALSE),
                                       fold_set = fold_set),
-              steps = list(list(kind = "model", id = "model:nirs4all-r",
+              steps = c(transform_steps, list(list(kind = "model", id = "model:nirs4all-r",
                                 operator = list(type = "Nirs4allR"),
-                                params = model_params[[1L]])))
+                                params = model_params[[1L]]))))
   if (!is.null(variants)) {
     dsl$max_variants <- length(variants)
     dsl$generation_dimensions <- list(list(
@@ -201,6 +213,22 @@ nirs4all_dag_cv_refit_predict <- function(
                         "emits_artifacts", "stateful"),
     fit_scope = "fold_train", rng_policy = "externally_deterministic",
     artifact_policy = "serializable")
+  controllers <- list(controller)
+  if (length(transform_steps)) {
+    data_port <- function(name) list(name = name, kind = "data",
+      representation = "tabular_numeric", cardinality = "one", description = "")
+    controllers[[2L]] <- list(
+      controller_id = "controller:nirs4all-r-transform",
+      controller_version = as.character(utils::packageVersion("nirs4all")),
+      operator_kind = "transform", priority = 0L,
+      supported_phases = list("FIT_CV", "REFIT", "PREDICT"),
+      input_ports = list(data_port("x")),
+      output_ports = list(data_port("x_out")), data_requirements = NULL,
+      capabilities = list("deterministic", "process_safe", "emits_artifacts", "stateful"),
+      fit_scope = "fold_train", rng_policy = "externally_deterministic",
+      artifact_policy = "serializable")
+    controllers[[1L]]$input_ports <- list(data_port("x"))
+  }
   write_json <- function(filename, value) {
     path <- file.path(workdir, filename)
     jsonlite::write_json(value, path, auto_unbox = TRUE, null = "null",
@@ -212,7 +240,7 @@ nirs4all_dag_cv_refit_predict <- function(
                group_ids = group_ids,
                model_specs = model_specs), data_path)
   dsl_path <- write_json("dsl.json", dsl)
-  controllers_path <- write_json("controllers.json", list(controller))
+  controllers_path <- write_json("controllers.json", controllers)
   envelope_path <- write_json("envelope.json", envelope)
   artifact_dir <- file.path(workdir, "artifacts")
   dir.create(artifact_dir)
@@ -272,8 +300,8 @@ nirs4all_dag_cv_refit_predict <- function(
 
 #' Predict new samples with a native DAG-ML refit artifact
 #'
-#' Loads the single winning R model sidecar recorded by a completed native
-#' campaign. The sidecar is checked against the bundle's SHA-256 fingerprint
+#' Loads the winning R model and any preceding transform sidecars recorded by
+#' a completed native campaign. Each sidecar is checked against its SHA-256 fingerprint
 #' before loading. This is local R inference from a DAG-ML-selected model;
 #' it does not run a new DAG-ML PREDICT phase or score the new cohort.
 #' Only load outcomes and RDS artifacts from trusted sources.
@@ -291,28 +319,61 @@ nirs4all_dag_predict <- function(outcome, X) {
       is.na(outcome$workdir) || !dir.exists(outcome$workdir))
     stop("outcome must be a persisted native nirs4all DAG result", call. = FALSE)
   records <- outcome$bundle$refit_artifacts
-  if (!is.list(records) || length(records) != 1L ||
-      !is.list(records[[1L]]$artifact))
-    stop("DAG bundle must contain exactly one refit artifact", call. = FALSE)
-  artifact <- records[[1L]]$artifact
-  path <- artifact$uri
-  fingerprint <- artifact$content_fingerprint
+  if (!is.list(records) || !length(records) ||
+      !all(vapply(records, function(record) is.list(record$artifact), logical(1))))
+    stop("DAG bundle has no valid refit artifacts", call. = FALSE)
   artifact_root <- normalizePath(file.path(outcome$workdir, "artifacts"),
                                  mustWork = FALSE)
-  resolved_path <- if (is.character(path) && length(path) == 1L &&
-                       !is.na(path) && file.exists(path))
-    normalizePath(path, mustWork = TRUE) else ""
-  if (!identical(artifact$kind, "nirs4all_r_model") ||
-      !identical(artifact$backend, "rds") ||
-      !identical(artifact$controller_id, "controller:nirs4all-r") ||
-      !startsWith(resolved_path, paste0(artifact_root, .Platform$file.sep)) ||
-      !is.character(fingerprint) ||
-      length(fingerprint) != 1L || is.na(fingerprint) ||
-      !grepl("^[a-f0-9]{64}$", fingerprint) ||
-      !identical(digest::digest(resolved_path, algo = "sha256", file = TRUE),
-                 fingerprint))
-    stop("DAG refit artifact identity or content mismatch", call. = FALSE)
-  nirs4all_predict(nirs4all_load(resolved_path), X)
+  checked_path <- function(record, kind, controller) {
+    artifact <- record$artifact
+    path <- artifact$uri
+    fingerprint <- artifact$content_fingerprint
+    resolved <- if (is.character(path) && length(path) == 1L &&
+                    !is.na(path) && file.exists(path))
+      normalizePath(path, mustWork = TRUE) else ""
+    if (!identical(artifact$kind, kind) ||
+        !identical(artifact$backend, "rds") ||
+        !identical(artifact$controller_id, controller) ||
+        !identical(record$controller_id, controller) ||
+        !startsWith(resolved, paste0(artifact_root, .Platform$file.sep)) ||
+        !is.character(fingerprint) || length(fingerprint) != 1L ||
+        is.na(fingerprint) || !grepl("^[a-f0-9]{64}$", fingerprint) ||
+        !identical(digest::digest(resolved, algo = "sha256", file = TRUE),
+                   fingerprint))
+      stop("DAG refit artifact identity or content mismatch", call. = FALSE)
+    resolved
+  }
+  model_records <- Filter(function(record)
+    identical(record$node_id, "model:nirs4all-r"), records)
+  if (length(model_records) != 1L)
+    stop("DAG bundle must contain exactly one model refit artifact", call. = FALSE)
+  model_path <- checked_path(model_records[[1L]], "nirs4all_r_model",
+                             "controller:nirs4all-r")
+  transform_records <- Filter(function(record)
+    startsWith(record$node_id, "transform:nirs4all-r:"), records)
+  if (length(records) != length(transform_records) + 1L ||
+      anyDuplicated(vapply(transform_records, `[[`, "", "node_id")))
+    stop("DAG bundle has unexpected or duplicate refit artifacts", call. = FALSE)
+  if (length(transform_records)) {
+    expected_ids <- sprintf("transform:nirs4all-r:%03d",
+                            seq_along(transform_records))
+    ids <- vapply(transform_records, `[[`, "", "node_id")
+    if (!setequal(ids, expected_ids))
+      stop("DAG transform artifacts are incomplete", call. = FALSE)
+    transform_records <- transform_records[match(expected_ids, ids)]
+    if (inherits(X, "nirs4all_dataset")) X <- X$X
+    X <- nirs4all_matrix(X)
+    for (record in transform_records) {
+      path <- checked_path(record, "nirs4all_r_transform",
+                           "controller:nirs4all-r-transform")
+      state <- readRDS(path)
+      if (!is.list(state) || length(state$steps) != 1L ||
+          length(state$states) != 1L || !identical(state$n_features, ncol(X)))
+        stop("DAG transform state does not match prediction features", call. = FALSE)
+      X <- nirs4all_transform(X, state$steps, state$states)
+    }
+  }
+  nirs4all_predict(nirs4all_load(model_path), X)
 }
 
 nirs4all_dag_fingerprints <- function(X, y, sample_ids, group_ids = NULL) {
