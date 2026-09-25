@@ -144,3 +144,40 @@ nirs4all_glmnet <- function(lambda, alpha = 1, standardize = TRUE) {
                           standardize = standardize)
   controller
 }
+
+#' Optional parsnip regression controller
+#'
+#' Accepts a fully specified `parsnip` model specification (including its
+#' engine). The model is fitted separately within every nirs4all training
+#' scope; no preprocessing is fitted on validation or prediction samples.
+#' Only one-column numeric regression predictions are currently supported.
+#' @param spec A `parsnip` regression `model_spec` with an engine selected.
+#' @export
+nirs4all_parsnip <- function(spec) {
+  if (!requireNamespace("parsnip", quietly = TRUE))
+    stop("Install the optional 'parsnip' package first", call. = FALSE)
+  if (!inherits(spec, "model_spec") || !identical(spec$mode, "regression") ||
+      !is.character(spec$engine) || length(spec$engine) != 1L ||
+      is.na(spec$engine) || !nzchar(spec$engine))
+    stop("spec must be a parsnip regression model with a selected engine",
+         call. = FALSE)
+  controller <- nirs4all_controller(
+    fit = function(X, y) {
+      predictors <- as.data.frame(X)
+      names(predictors) <- paste0("x", seq_len(ncol(X)))
+      parsnip::fit_xy(spec, x = predictors, y = y)
+    },
+    predict = function(state, X) {
+      predictors <- as.data.frame(X)
+      names(predictors) <- paste0("x", seq_len(ncol(X)))
+      result <- stats::predict(state, new_data = predictors, type = "numeric")
+      if (!is.data.frame(result) || !identical(names(result), ".pred") ||
+          !is.numeric(result$.pred))
+        stop("parsnip returned an unsupported regression prediction",
+             call. = FALSE)
+      as.numeric(result$.pred)
+    }, name = paste0("parsnip:", spec$engine))
+  controller$spec <- list(learner = "parsnip", engine = spec$engine)
+  controller$model_spec <- spec
+  controller
+}

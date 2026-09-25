@@ -7,8 +7,12 @@ y <- 2 + 0.7 * X[, 2L] - 0.3 * X[, 7L]
 pipeline <- nirs4all_pipeline(list(nirs4all_snv(), nirs4all_savgol(5L)),
                              nirs4all_pls(n_components = 2L))
 fitted <- nirs4all_fit(pipeline, X, y)
-expected <- n4m::n4m_predict(fitted$state,
-  n4m::savgol_transform(n4m::snv_transform(X), 5L, 2L, mode = "interp"))
+transformed <- n4m::savgol_transform(n4m::snv_transform(X),
+                                     5L, 2L, mode = "interp")
+plain_model <- n4m::n4m_fit(transformed, y, algo = "pls_simpls",
+                            n_components = 2L)
+expected <- n4m::n4m_predict(plain_model, transformed)
+stopifnot(identical(fitted$preprocessing_owner, "embedded_methods"))
 stopifnot(isTRUE(all.equal(nirs4all_predict(fitted, X), as.numeric(expected),
                            tolerance = 1e-12)))
 path <- tempfile(fileext = ".rds")
@@ -17,6 +21,92 @@ reloaded <- nirs4all_load(path)
 stopifnot(isTRUE(all.equal(predict(reloaded, X), predict(fitted, X),
                            tolerance = 1e-12)))
 unlink(path)
+
+native_bytes <- nirs4all_export_native_model(fitted)
+native_info <- n4m::n4m_model_pipeline_info(native_bytes)
+stopifnot(identical(native_info$semantic_profile, 1L),
+          identical(native_info$window_length, 5L),
+          identical(native_info$polyorder, 2L),
+          identical(native_info$raw_n_features, ncol(X)))
+native_import <- nirs4all_import_native_model(native_bytes, pipeline)
+stopifnot(max(abs(predict(native_import, X) - predict(fitted, X))) < 1e-12)
+recipe <- nirs4all_export_pipeline(pipeline, "yaml")
+native_import_recipe <- nirs4all_import_native_model(native_bytes, recipe)
+stopifnot(max(abs(predict(native_import_recipe, X) - predict(fitted, X))) < 1e-12)
+wrong_recipe <- nirs4all_pipeline(list(nirs4all_snv(), nirs4all_savgol(7L)),
+                                  nirs4all_pls(2L))
+stopifnot(inherits(try(nirs4all_import_native_model(native_bytes, wrong_recipe),
+                     silent = TRUE), "try-error"))
+wrong_components <- n4m::n4m_fit(X, y, "pls_simpls", 1L,
+  embedded_snv_savgol = c(5, 2))
+stopifnot(inherits(try(nirs4all_import_native_model(
+  n4m::n4m_model_export(wrong_components), pipeline), silent = TRUE),
+  "try-error"))
+stopifnot(inherits(try(nirs4all_import_native_model(
+  native_bytes, pipeline, feature_names = letters[1:9]), silent = TRUE),
+  "try-error"))
+external_fit <- nirs4all_fit(
+  nirs4all_pipeline(list(nirs4all_snv(with_mean = FALSE)), nirs4all_pls(2L)),
+  X, y)
+stopifnot(inherits(try(nirs4all_export_native_model(external_fit), silent = TRUE),
+                   "try-error"))
+
+preprocess_cases <- list(
+  snv_flags = list(step = nirs4all_snv(with_mean = FALSE),
+                   reference = n4m::snv_transform(X, with_mean = FALSE)),
+  local_snv = list(step = nirs4all_local_snv(window = 5L),
+                   reference = n4m::local_snv_transform(X, window = 5L)),
+  robust_snv = list(step = nirs4all_robust_snv(),
+                    reference = n4m::robust_snv_transform(X)),
+  area = list(step = nirs4all_area_normalization("trapz"),
+              reference = n4m::area_normalization_transform(X, "trapz")),
+  detrend = list(step = nirs4all_detrend(2L),
+                 reference = n4m::detrend_transform(X, 2L)))
+for (case in preprocess_cases) {
+  candidate <- nirs4all_pipeline(list(case$step), nirs4all_pls(2L))
+  fit <- nirs4all_fit(candidate, X, y)
+  direct <- n4m::n4m_fit(case$reference, y, algo = "pls_simpls",
+                         n_components = 2L)
+  stopifnot(max(abs(predict(fit, X) -
+                    as.numeric(n4m::n4m_predict(direct, case$reference)))) < 1e-10)
+  saved <- tempfile(fileext = ".rds")
+  nirs4all_save(fit, saved)
+  stopifnot(max(abs(predict(nirs4all_load(saved), X) - predict(fit, X))) < 1e-10)
+  unlink(saved)
+}
+
+msc_train <- X[1:8, , drop = FALSE]
+msc_test <- X[9:12, , drop = FALSE]
+msc_pipeline <- nirs4all_pipeline(list(nirs4all_msc()), nirs4all_pls(2L))
+msc_fitted <- nirs4all_fit(msc_pipeline, msc_train, y[1:8])
+msc_reference <- n4m::msc_fit(msc_train)
+stopifnot(length(msc_fitted$step_states[[1L]]) == ncol(X),
+          isTRUE(all.equal(msc_fitted$step_states[[1L]], msc_reference,
+                           tolerance = 1e-12)))
+msc_direct <- n4m::n4m_fit(n4m::msc_transform(msc_train, msc_reference), y[1:8],
+                           algo = "pls_simpls", n_components = 2L)
+msc_expected <- as.numeric(n4m::n4m_predict(
+  msc_direct, n4m::msc_transform(msc_test, msc_reference)))
+stopifnot(max(abs(predict(msc_fitted, msc_test) - msc_expected)) < 1e-10)
+msc_path <- tempfile(fileext = ".rds")
+nirs4all_save(msc_fitted, msc_path)
+stopifnot(max(abs(predict(nirs4all_load(msc_path), msc_test) - msc_expected)) < 1e-10)
+unlink(msc_path)
+
+emsc_pipeline <- nirs4all_pipeline(list(nirs4all_emsc(2L)), nirs4all_pls(2L))
+emsc_fitted <- nirs4all_fit(emsc_pipeline, msc_train, y[1:8])
+emsc_reference <- n4m::emsc_fit(msc_train, 2L)
+stopifnot(isTRUE(all.equal(emsc_fitted$step_states[[1L]], emsc_reference,
+                           tolerance = 1e-12)))
+emsc_direct <- n4m::n4m_fit(n4m::emsc_transform(msc_train, emsc_reference, 2L),
+                            y[1:8], algo = "pls_simpls", n_components = 2L)
+emsc_expected <- as.numeric(n4m::n4m_predict(
+  emsc_direct, n4m::emsc_transform(msc_test, emsc_reference, 2L)))
+stopifnot(max(abs(predict(emsc_fitted, msc_test) - emsc_expected)) < 1e-10)
+emsc_path <- tempfile(fileext = ".rds")
+nirs4all_save(emsc_fitted, emsc_path)
+stopifnot(max(abs(predict(nirs4all_load(emsc_path), msc_test) - emsc_expected)) < 1e-10)
+unlink(emsc_path)
 
 lm_pipeline <- nirs4all_pipeline(learner = nirs4all_lm())
 lm_fit <- nirs4all_fit(lm_pipeline, X[, c(2L, 7L), drop = FALSE], y)
@@ -61,6 +151,10 @@ bad <- tryCatch(nirs4all_snv("1"), error = identity)
 stopifnot(inherits(bad, "error"), grepl("ddof", conditionMessage(bad)))
 bad <- tryCatch(nirs4all_snv(2147483648), error = identity)
 stopifnot(inherits(bad, "error"), grepl("ddof", conditionMessage(bad)))
+stopifnot(inherits(try(nirs4all_local_snv(4L), silent = TRUE), "try-error"),
+          inherits(try(nirs4all_robust_snv(k = 0), silent = TRUE), "try-error"),
+          inherits(try(nirs4all_area_normalization("bad"), silent = TRUE), "try-error"),
+          inherits(try(nirs4all_detrend(-1L), silent = TRUE), "try-error"))
 bad <- tryCatch(nirs4all_pls(2147483648), error = identity)
 stopifnot(inherits(bad, "error"), grepl("n_components", conditionMessage(bad)))
 bad <- tryCatch(nirs4all_fit(nirs4all_pipeline(learner = nirs4all_lm()),

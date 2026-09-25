@@ -1,12 +1,14 @@
 # nirs4all for R (development)
 
-License: AGPL-3.0-or-later. The local package is not yet published to
-R-universe or submitted to CRAN.
+License: AGPL-3.0-or-later. The R-universe registry now tracks this development
+branch, but a successful external rebuild and installation have not yet been
+verified. The package has not been submitted to CRAN.
 
-This is the dedicated R product package. Its name will move from the current
-`nirs4all-core/bindings/r` package only after this repository passes the native
-DAG-ML parity gates. Do **not** publish both sources under the R package name
-`nirs4all` simultaneously.
+This is the dedicated R product package named `nirs4all`. The former
+`nirs4all-core/bindings/r` package and release workflow were retired from
+Core's `main` by [PR #14](https://github.com/GBeurier/nirs4all-core/pull/14),
+so the two repositories no longer own the same public R package. Full native
+DAG and cross-language trained-pipeline parity remain development gates.
 
 The package composes `n4m` numerical preprocessing and PLS with R learner
 controllers on real numeric matrices. Local fit/predict and a first native
@@ -15,6 +17,19 @@ selection by CV → OOF → one winner refit → replay. The persisted R refit
 artifact can predict new samples locally; branches, adaptive HPO, native
 external-cohort replay and Python/R host-model conversion are not yet exposed
 by the high-level API.
+
+The built-in `n4m` preprocessing steps now include SNV (with centering/scaling
+flags), local SNV, robust SNV, area normalization, polynomial detrend and
+Savitzky–Golay. They use the upstream C ABI through the R `n4m` binding;
+their numerical kernels are not reimplemented here. Four new operators have
+frozen matrix parity tests against Python `n4m` and are exercised in local
+and native DAG pipelines. MSC and EMSC learn a reference on each training fold,
+store only that vector in the fitted R bundle, and reuse it for validation or
+future samples. EMSC also records its polynomial degree in the step definition.
+Other train-fitted preprocessing such as baseline centering still needs an
+explicitly serialized fit state.
+Until the upstream `n4m` R release lands, this development branch requires
+`n4m >= 1.0.21.9002` from its `feat/r-preprocessing-parity` branch.
 
 The optional `nirs4allformats` reader can feed either path without reparsing
 spectra in this package. It accepts homogeneous one-dimensional signals and
@@ -29,6 +44,36 @@ predictions <- predict(fit, nirs4all_from_formats("new_spectra.csv"))
 #                                              cli = ".../dag-ml-cli")
 #     nirs4all_dag_predict(outcome, nirs4all_from_formats("new_spectra.csv"))
 ```
+
+The former `nirs4all-core` R JSON/YAML PipelineConfigs reader has moved here.
+`nirs4all_load_pipeline()` and `nirs4all_run_portable_pipeline()` preserve its
+bounded Kennard-Stone/SNV/Savitzky-Golay/PLS subset, including component
+sweeps, and are checked against the four frozen Python examples. Unsupported
+operators fail explicitly. Holdout selection RMSE is not an independent test
+score; use the native DAG path for CV/OOF/refit.
+
+`nirs4all_export_pipeline()` emits JSON or YAML from an unfitted R pipeline
+for the currently shared Core profile (default SNV, unit-spacing SG, default
+PLS). Its output is checked by the R, Python and WASM readers. It rejects
+unsupported native options rather than dropping them. This is a recipe export,
+not an export of a trained model.
+
+For the exact default SNV → Savitzky-Golay smoothing → SIMPLS profile,
+`nirs4all_fit()` now embeds preprocessing in the native N4MM format-2 model.
+`nirs4all_export_native_model()` returns that fitted state as raw bytes;
+`nirs4all_import_native_model()` accepts that JSON/YAML recipe or an R
+pipeline, validates its native descriptor and predicts directly on raw
+spectra. A strict test
+fits in R and predicts in a fresh Python process, then fits via Python n4m
+and predicts in R, with numerical equality. Other preprocessor combinations
+still use R-owned fit state and are refused by this export API. The RDS bundle
+remains R-specific. Cross-language Archive V2/V3 replay, recipe/lineage
+packaging and retraining still need a validated native archive bridge.
+
+The former core R upstream accessors are also available here:
+`nirs4all_upstreams()`, `nirs4all_require()`, `formats()`, `methods()`,
+`dag_ml()` and the DAG-ML local implementation registry delegate to their
+owning packages. Missing optional domains fail explicitly.
 
 The Rust `nirs4all-formats` registry owns file decoding. Files with different
 axes, multidimensional signals, missing targets or duplicate sample IDs are
@@ -100,11 +145,14 @@ and MIR-PLS. These use `n4m` for fitting and coefficient-based prediction;
 their R model bundles are not N4MM exports. `nirs4all_lm()` uses base R.
 `nirs4all_ranger()` and
 `nirs4all_glmnet(lambda, alpha)` are optional random-forest and
-regularized-regression controllers. A user-defined controller can be
+regularized-regression controllers. `nirs4all_parsnip(spec)` accepts an
+engine-selected `parsnip` regression model, widening the R backend surface
+without copying engine implementations. A user-defined controller can be
 provided with `nirs4all_controller(fit, predict, name)`; its state is R-only.
 The `n4m` PLS model is saved as portable N4MM bytes inside the RDS bundle.
-This makes the native model portable, not the surrounding R preprocessing or
-custom-controller code.
+The exact default SNV → SG → SIMPLS profile now embeds its preprocessing in
+those bytes; other pipelines still leave R preprocessing outside the model.
+Custom-controller code and state remain R-specific.
 `nirs4all_torch_mlp()` provides an optional CPU neural-network regressor
 through the R `torch` runtime. Torch modules are saved with `torch`'s own
 serializer inside the RDS bundle; they are R-specific and not ONNX exports.
@@ -118,7 +166,7 @@ PLS component sweep) against a vendored Python oracle. This tests the n4m
 numerical path. A second frozen Python `n4m` oracle checks six MethodResult
 regressors, including solver-sensitive CPPLS, ridge-PLS and continuum
 regression. A separate strict test checks native DAG-ML execution with
-PLS, `n4m` ridge/CPPLS, `lm`, `ranger`, `glmnet` and `torch` against manual
+PLS, `n4m` ridge/CPPLS, `lm`, `ranger`, `glmnet`, `parsnip` and `torch` against manual
 fold-local fits. It also checks a five-candidate PLS sweep against manual
 fold-local OOF calculations and the selected refit, plus cross-family
 selection among `n4m` PLS/ridge and `ranger`. External predictions are checked
