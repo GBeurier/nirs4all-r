@@ -86,6 +86,18 @@ nirs4all_msc <- function() {
   structure(list(kind = "msc"), class = "nirs4all_step")
 }
 
+#' Define a train-fitted Extended Multiplicative Scatter Correction step
+#' @param degree Positive polynomial degree; requires at least `degree + 2` features.
+#' @export
+nirs4all_emsc <- function(degree = 2L) {
+  if (length(degree) != 1L || !is.numeric(degree) || !is.finite(degree) ||
+      degree < 1L || degree > .Machine$integer.max - 2L ||
+      degree != floor(degree))
+    stop("degree must be a positive integer", call. = FALSE)
+  structure(list(kind = "emsc", degree = as.integer(degree)),
+            class = "nirs4all_step")
+}
+
 #' Define a Savitzky-Golay step
 #' @param window_length Odd window length.
 #' @param polyorder Polynomial order below the window length.
@@ -166,6 +178,12 @@ nirs4all_transform <- function(X, steps, step_states = NULL) {
           stop("MSC requires a fitted training reference", call. = FALSE)
         n4m::msc_transform(X, reference)
       },
+      emsc = {
+        reference <- step_states[[index]]
+        if (is.null(reference))
+          stop("EMSC requires a fitted training reference", call. = FALSE)
+        n4m::emsc_transform(X, reference, step$degree)
+      },
       savgol = n4m::savgol_transform(X, step$window_length,
         step$polyorder, step$deriv, step$delta, step$mode, step$cval),
       stop("unknown preprocessing step", call. = FALSE))
@@ -180,6 +198,8 @@ nirs4all_fit_transform <- function(X, steps) {
   for (index in seq_along(steps)) {
     if (identical(steps[[index]]$kind, "msc"))
       states[[index]] <- n4m::msc_fit(X)
+    if (identical(steps[[index]]$kind, "emsc"))
+      states[[index]] <- n4m::emsc_fit(X, steps[[index]]$degree)
     X <- nirs4all_transform(X, list(steps[[index]]), list(states[[index]]))
   }
   list(X = X, states = states)

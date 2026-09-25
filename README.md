@@ -21,12 +21,13 @@ flags), local SNV, robust SNV, area normalization, polynomial detrend and
 Savitzky–Golay. They use the upstream C ABI through the R `n4m` binding;
 their numerical kernels are not reimplemented here. Four new operators have
 frozen matrix parity tests against Python `n4m` and are exercised in local
-and native DAG pipelines. MSC also learns a reference on each training fold,
-stores only that vector in the fitted R bundle, and reuses it for validation
-or future samples. Other train-fitted preprocessing such as EMSC and baseline
-centering still needs an explicitly serialized fit state.
+and native DAG pipelines. MSC and EMSC learn a reference on each training fold,
+store only that vector in the fitted R bundle, and reuse it for validation or
+future samples. EMSC also records its polynomial degree in the step definition.
+Other train-fitted preprocessing such as baseline centering still needs an
+explicitly serialized fit state.
 Until the upstream `n4m` R release lands, this development branch requires
-`n4m >= 1.0.21.9000` from its `feat/r-preprocessing-parity` branch.
+`n4m >= 1.0.21.9001` from its `feat/r-preprocessing-parity` branch.
 
 The optional `nirs4allformats` reader can feed either path without reparsing
 spectra in this package. It accepts homogeneous one-dimensional signals and

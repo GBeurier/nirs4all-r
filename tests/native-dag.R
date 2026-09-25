@@ -31,6 +31,9 @@ if (available) {
     n4m_msc = list(pipeline = nirs4all_pipeline(
       list(nirs4all_msc()), nirs4all_pls(2L)),
       X = X, tolerance = 1e-10),
+    n4m_emsc = list(pipeline = nirs4all_pipeline(
+      list(nirs4all_emsc(2L)), nirs4all_pls(2L)),
+      X = X, tolerance = 1e-10),
     lm = list(pipeline = nirs4all_pipeline(learner = nirs4all_lm()),
               X = X[, c(2L, 5L), drop = FALSE], tolerance = 1e-10))
   if (requireNamespace("ranger", quietly = TRUE))
@@ -47,7 +50,7 @@ if (available) {
       X = X, tolerance = 1e-5)
   if (strict && !setequal(names(cases),
                           c("pls", "n4m_ridge", "n4m_cppls",
-                            "n4m_preprocessing", "n4m_area", "n4m_msc", "lm",
+                            "n4m_preprocessing", "n4m_area", "n4m_msc", "n4m_emsc", "lm",
                             "ranger", "glmnet", "torch")))
     stop("strict native DAG parity requires ranger, glmnet and torch CPU")
 
@@ -122,7 +125,7 @@ if (available) {
     path <- system.file("extdata", "formats_integration.csv",
                         package = "nirs4all", mustWork = TRUE)
     dataset <- nirs4all_from_formats(path, target = "protein")
-    for (step in list(nirs4all_snv(), nirs4all_msc())) {
+    for (step in list(nirs4all_snv(), nirs4all_msc(), nirs4all_emsc(2L))) {
       pipeline <- nirs4all_pipeline(list(step), nirs4all_pls(2L))
       outcome <- nirs4all_dag_cv_refit_predict(pipeline, dataset,
                                                 folds = 3L, cli = cli)
