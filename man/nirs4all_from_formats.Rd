@@ -6,13 +6,14 @@ nirs4all_from_formats(source, target = NULL, signal = NULL)
 }
 \arguments{
 \item{source}{A file path or a \code{nirs4allformats_dataset}.}
-\item{target}{Name of one numeric target column, or \code{NULL} for prediction.}
+\item{target}{Name of one numeric or categorical target column, or a complete categorical metadata field; \code{NULL} for prediction.}
 \item{signal}{Optional signal name when \code{source} is a file path.}
 }
 \description{
 The Rust-backed \code{nirs4allformats} package owns file detection and decoding.
 This function checks the rectangular R view, records explicit sample and
-spectral-axis identities, and selects one finite numeric target. Heterogeneous
+spectral-axis identities, and selects one finite numeric target or categorical
+label from a target column or the reader's per-record metadata. Heterogeneous
 axes or multidimensional signals require the lossless records interface of
 \code{nirs4allformats} and are not silently flattened.
 }
