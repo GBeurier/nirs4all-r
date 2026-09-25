@@ -184,8 +184,12 @@ against independent Python n4m fits. The cross-language recipe *export* remains
 restricted to the earlier default SNV/Savitzky-Golay/PLS subset until these
 additional identifiers are qualified by the other language readers.
 `nirs4all_torch_mlp()` provides an optional CPU neural-network regressor
-through the R `torch` runtime. Torch modules are saved with `torch`'s own
-serializer inside the RDS bundle; they are R-specific and not ONNX exports.
+through the R `torch` runtime. `nirs4all_torch_module(builder, name)` accepts
+a self-contained builder for a custom `nn_module` mapping `N × p` inputs to
+`N × 1` regression outputs. DAG-ML invokes a fresh module for each fold and
+stores the builder behind a validated R-specific specification fingerprint.
+Torch modules are saved with `torch`'s own serializer inside the RDS bundle;
+they are R-specific and not ONNX exports or portable Python weights.
 Custom controllers may capture non-serializable R state; their bundles are
 only reliable when the controller author has tested a fresh-process load.
 When feature names exist, prediction requires their exact training order; when
@@ -196,7 +200,7 @@ PLS component sweep) against a vendored Python oracle. This tests the n4m
 numerical path. A second frozen Python `n4m` oracle checks six MethodResult
 regressors, including solver-sensitive CPPLS, ridge-PLS and continuum
 regression. A separate strict test checks native DAG-ML execution with
-PLS, `n4m` ridge/CPPLS, `lm`, `ranger`, `glmnet`, `parsnip`, `mlr3` and `torch` against manual
+PLS, `n4m` ridge/CPPLS, `lm`, `ranger`, `glmnet`, `parsnip`, `mlr3` and two R `torch` architectures against manual
 fold-local fits. It also checks a five-candidate PLS sweep against manual
 fold-local OOF calculations and the selected refit, plus cross-family
 selection among `n4m` PLS/ridge and `ranger`. Grouped CV is tested against
