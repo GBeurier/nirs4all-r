@@ -73,6 +73,9 @@ def main() -> None:
     x = np.asarray(request["X"], dtype=np.float64)
     if x.ndim != 2:
         raise ValueError("X must be a matrix")
+    predict_x = np.asarray(request.get("predict_X", request["X"]), dtype=np.float64)
+    if predict_x.ndim != 2 or predict_x.shape[1] != x.shape[1]:
+        raise ValueError("predict_X must be a matrix with the training feature width")
     if mode in ("fit", "fit_plain"):
         payload = train_native(x, np.asarray(request["y"], dtype=np.float64),
                                embedded=mode == "fit")
@@ -90,7 +93,7 @@ def main() -> None:
     with Context() as context:
         model = Model.from_bytes(context, payload)
         try:
-            predictions = model.predict(context, x).reshape(-1).tolist()
+            predictions = model.predict(context, predict_x).reshape(-1).tolist()
         finally:
             model.close()
     result_path.write_text(json.dumps({"predictions": predictions}), encoding="utf-8")

@@ -44,8 +44,27 @@ if (anyDuplicated(fold_universe) || anyDuplicated(relation_universe) ||
     !setequal(fold_universe, data$sample_ids) ||
     !setequal(relation_universe, data$sample_ids))
   stop("DAG-ML fold, relation and matrix sample IDs disagree")
+if (!is.null(data$group_ids)) {
+  if (!is.character(data$group_ids) ||
+      length(data$group_ids) != length(data$sample_ids) ||
+      anyNA(data$group_ids) || any(!nzchar(trimws(data$group_ids))))
+    stop("invalid R group IDs for DAG-ML adapter")
+  expected_groups <- stats::setNames(data$group_ids, data$sample_ids)
+  fold_groups <- dsl$split_invocation$fold_set$sample_groups
+  relation_groups <- stats::setNames(vapply(
+    envelope$coordinator_relations$records,
+    function(record) record$group_id, character(1)), relation_universe)
+  if (!is.list(fold_groups) ||
+      !setequal(names(fold_groups), data$sample_ids) ||
+      !identical(unname(vapply(fold_groups[data$sample_ids], `[[`, character(1), 1L)),
+                 unname(expected_groups)) ||
+      !identical(unname(relation_groups[data$sample_ids]),
+                 unname(expected_groups)) ||
+      !identical(dsl$leakage_policy$split_unit, "group"))
+    stop("DAG-ML fold, relation and matrix group IDs disagree")
+}
 fingerprints <- nirs4all:::nirs4all_dag_fingerprints(
-  data$X, data$y, data$sample_ids)
+  data$X, data$y, data$sample_ids, data$group_ids)
 for (key in names(fingerprints)) {
   if (!identical(envelope[[key]], fingerprints[[key]]))
     stop(paste("DAG-ML envelope does not attest R data:", key))

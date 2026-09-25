@@ -21,12 +21,15 @@
 #' @param workdir New or empty directory for the native contracts and model
 #'   artifact. Keep it to replay the outcome later.
 #' @param process_workers Number of process adapter workers.
+#' @param group_ids Optional group ID per sample, in the same order as `X`.
+#'   Named vectors must have names identical to `sample_ids`. When supplied,
+#'   whole groups, not individual samples, are assigned to validation folds.
 #' @return Native DAG-ML outcome with an additional `workdir` path.
 #' @export
 nirs4all_dag_cv_refit_predict <- function(
     pipeline, X, y = NULL, folds = 5L, sample_ids = NULL, root_seed = 1L,
     cli = Sys.which("dag-ml-cli"), workdir = tempfile("nirs4all-dag-"),
-    process_workers = 1L) {
+    process_workers = 1L, group_ids = NULL) {
   if (!requireNamespace("dagml", quietly = TRUE) ||
       !requireNamespace("jsonlite", quietly = TRUE) ||
       !requireNamespace("digest", quietly = TRUE))
@@ -82,6 +85,19 @@ nirs4all_dag_cv_refit_predict <- function(
     stop("sample_ids and X row names differ", call. = FALSE)
   if (!is.null(names(y)) && !identical(names(y), sample_ids))
     stop("sample_ids and y names differ", call. = FALSE)
+  if (is.factor(group_ids)) group_ids <- as.character(group_ids)
+  if (!is.null(group_ids)) {
+    if (!is.character(group_ids) || length(group_ids) != nrow(X) ||
+        anyNA(group_ids) || any(!nzchar(trimws(group_ids))) ||
+        (!is.null(names(group_ids)) &&
+         !identical(names(group_ids), sample_ids)))
+      stop("group_ids must be non-empty strings aligned to sample_ids",
+           call. = FALSE)
+    if (length(unique(group_ids)) < folds)
+      stop("grouped CV needs at least one distinct group per fold",
+           call. = FALSE)
+    group_ids <- unname(group_ids)
+  }
   if (!is.character(cli) || length(cli) != 1L || is.na(cli) || !nzchar(cli))
     stop("dag-ml-cli is required for native DAG execution", call. = FALSE)
   if (!is.character(workdir) || length(workdir) != 1L || is.na(workdir) ||
@@ -93,27 +109,46 @@ nirs4all_dag_cv_refit_predict <- function(
   workdir <- normalizePath(workdir, mustWork = TRUE)
 
   empty <- structure(list(), names = character())
-  leakage <- list(split_unit = "sample", forbid_origin_cross_fold = TRUE,
+  leakage <- list(split_unit = if (is.null(group_ids)) "sample" else "group",
+                  forbid_origin_cross_fold = TRUE,
                   allow_observation_split_with_shared_target = FALSE,
-                  require_group_ids = FALSE, unsafe_flags = list())
+                  require_group_ids = !is.null(group_ids), unsafe_flags = list())
   indices <- seq_len(nrow(X))
+  fold_number <- if (is.null(group_ids)) {
+    (indices - 1L) %% as.integer(folds) + 1L
+  } else {
+    group_sizes <- table(group_ids)
+    ordered_groups <- names(group_sizes)[order(-as.integer(group_sizes),
+                                                names(group_sizes))]
+    assigned <- stats::setNames(integer(length(ordered_groups)), ordered_groups)
+    fold_load <- integer(as.integer(folds))
+    for (group in ordered_groups) {
+      fold <- which.min(fold_load)
+      assigned[[group]] <- fold
+      fold_load[[fold]] <- fold_load[[fold]] + as.integer(group_sizes[[group]])
+    }
+    unname(as.integer(assigned[group_ids]))
+  }
   fold_set <- list(
     id = "folds:nirs4all-r", sample_ids = as.list(sort(sample_ids)),
-    sample_groups = empty,
+    sample_groups = if (is.null(group_ids)) empty else
+      as.list(stats::setNames(group_ids, sample_ids)),
     folds = lapply(seq_len(as.integer(folds)), function(index) {
-      validation_rows <- indices[(indices - 1L) %% as.integer(folds) == index - 1L]
+      validation_rows <- indices[fold_number == index]
       train_rows <- indices[!indices %in% validation_rows]
       list(fold_id = paste0("fold:", index - 1L),
            train_sample_ids = as.list(sort(sample_ids[train_rows])),
            validation_sample_ids = as.list(sort(sample_ids[validation_rows])),
            metadata = empty)
     }))
-  fingerprints <- nirs4all_dag_fingerprints(X, y, sample_ids)
+  fingerprints <- nirs4all_dag_fingerprints(X, y, sample_ids, group_ids)
   data_content_fingerprint <- fingerprints$data_content_fingerprint
   relations <- list(records = lapply(seq_along(sample_ids), function(index) {
-    list(observation_id = paste0("observation:", index),
+    record <- list(observation_id = paste0("observation:", index),
          sample_id = sample_ids[[index]],
          target_id = paste0("target:", index), source_id = "r_matrix")
+    if (!is.null(group_ids)) record$group_id <- group_ids[[index]]
+    record
   }))
   envelope <- list(schema_version = 1L,
                    schema_fingerprint = fingerprints$schema_fingerprint,
@@ -173,6 +208,7 @@ nirs4all_dag_cv_refit_predict <- function(
   }
   data_path <- file.path(workdir, "data.rds")
   saveRDS(list(X = X, y = as.numeric(y), sample_ids = sample_ids,
+               group_ids = group_ids,
                model_specs = model_specs), data_path)
   dsl_path <- write_json("dsl.json", dsl)
   controllers_path <- write_json("controllers.json", list(controller))
@@ -278,12 +314,15 @@ nirs4all_dag_predict <- function(outcome, X) {
   nirs4all_predict(nirs4all_load(resolved_path), X)
 }
 
-nirs4all_dag_fingerprints <- function(X, y, sample_ids) {
+nirs4all_dag_fingerprints <- function(X, y, sample_ids, group_ids = NULL) {
   fingerprint <- function(value) digest::digest(
     jsonlite::toJSON(value, auto_unbox = TRUE, null = "null", digits = 17),
     algo = "sha256", serialize = FALSE)
   feature_names <- colnames(X)
   if (is.null(feature_names)) feature_names <- sprintf("feature:%08d", seq_len(ncol(X)))
+  data_fields <- list(sample_ids = as.list(sample_ids), rows = nrow(X),
+                      cols = ncol(X), values_row_major = as.list(as.numeric(t(X))))
+  if (!is.null(group_ids)) data_fields$group_ids <- as.list(group_ids)
   list(
     schema_fingerprint = fingerprint(list(
       schema = "nirs4all-r.matrix-schema.v1", representation = "tabular_numeric",
@@ -291,9 +330,7 @@ nirs4all_dag_fingerprints <- function(X, y, sample_ids) {
     plan_fingerprint = fingerprint(list(
       plan = "nirs4all-r.direct-matrix.v1", source = "r_matrix",
       output = "tabular_numeric")),
-    data_content_fingerprint = fingerprint(list(
-      sample_ids = as.list(sample_ids), rows = nrow(X), cols = ncol(X),
-      values_row_major = as.list(as.numeric(t(X))))),
+    data_content_fingerprint = fingerprint(data_fields),
     target_content_fingerprint = fingerprint(list(
       sample_ids = as.list(sample_ids), targets = as.list(as.numeric(y)))))
 }
