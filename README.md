@@ -1,12 +1,14 @@
 # nirs4all for R (development)
 
-License: AGPL-3.0-or-later. The local package is not yet published to
-R-universe or submitted to CRAN.
+License: AGPL-3.0-or-later. The R-universe registry now tracks this development
+branch, but a successful external rebuild and installation have not yet been
+verified. The package has not been submitted to CRAN.
 
-This is the dedicated R product package. Its name will move from the current
-`nirs4all-core/bindings/r` package only after this repository passes the native
-DAG-ML parity gates. Do **not** publish both sources under the R package name
-`nirs4all` simultaneously.
+This is the dedicated R product package named `nirs4all`. The former
+`nirs4all-core/bindings/r` package and release workflow were retired from
+Core's `main` by [PR #14](https://github.com/GBeurier/nirs4all-core/pull/14),
+so the two repositories no longer own the same public R package. Full native
+DAG and cross-language trained-pipeline parity remain development gates.
 
 The package composes `n4m` numerical preprocessing and PLS with R learner
 controllers on real numeric matrices. Local fit/predict and a first native
