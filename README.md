@@ -58,15 +58,17 @@ retain their original regression behavior. No CSV parsing is duplicated here.
 The former `nirs4all-core` R JSON/YAML PipelineConfigs reader has moved here.
 `nirs4all_load_pipeline()` and `nirs4all_run_portable_pipeline()` preserve its
 bounded Kennard-Stone/SNV/Savitzky-Golay/PLS subset, including component
-sweeps, and are checked against the four frozen Python examples. Unsupported
-operators fail explicitly. Holdout selection RMSE is not an independent test
-score; use the native DAG path for CV/OOF/refit.
+sweeps, and add the n4m preprocessing listed below. The original subset is
+checked against four frozen Python examples; unsupported operators fail
+explicitly. Holdout selection RMSE is not an independent test score; use the
+native DAG path for CV/OOF/refit.
 
-`nirs4all_export_pipeline()` emits JSON or YAML from an unfitted R pipeline
-for the currently shared Core profile (default SNV, unit-spacing SG, default
-PLS). Its output is checked by the R, Python and WASM readers. It rejects
-unsupported native options rather than dropping them. This is a recipe export,
-not an export of a trained model.
+`nirs4all_export_pipeline()` emits JSON or YAML from an unfitted R pipeline.
+The original default SNV/unit-spacing SG/PLS profile is checked by R, Python
+and WASM readers; the additional n4m preprocessing below is checked by R and
+the full Python `nirs4all` parser, with Core/WASM qualification still open.
+Unsupported settings fail rather than being dropped. This exports a recipe,
+not a trained model.
 
 The R reader also imports Python-style `branch` → `merge: features` recipes
 with n4m-only preprocessing branches. For branches containing only default
@@ -263,6 +265,11 @@ survive the current R session. Native-only N4MM bytes are inside the bundle.
 The adapter reads a trusted RDS data sidecar; do not run it on untrusted files.
 Set `NIRS4ALL_REQUIRE_DAG_PARITY=1` and `NIRS4ALL_DAGML_CLI=/absolute/path`
 when running the package tests to require native CV/OOF/refit/replay checks.
+For the exported-recipe R↔Python regression test, set
+`NIRS4ALL_METHODS_PYTHON` to a Python executable and
+`NIRS4ALL_PYTHON_FULL_ROOT` to a checkout of full Python `nirs4all` containing
+the shared n4m alias resolver; the Methods Python binding must also be on
+`PYTHONPATH` with a matching `N4M_LIB_PATH`.
 
 `nirs4all_n4m_method()` exposes eight native linear MethodResult regressors:
 ridge, ridge-PLS, robust PLS, CPPLS, sparse SIMPLS, ECR, continuum regression
@@ -296,12 +303,14 @@ ranges into named R pipelines. These can be passed to
 `nirs4all_dag_cv_refit_predict()` for native OOF selection; generator modifiers,
 other operators, and general DAG branch/stacking constructs still fail
 explicitly; the feature-only branch/merge form above is the bounded exception.
-The R JSON/YAML reader also resolves `n4m.LSNV`, `n4m.RNV`,
+The R JSON/YAML reader and exporter resolve `n4m.LSNV`, `n4m.RNV`,
 `n4m.AreaNormalization`, `n4m.Detrend`, `n4m.MSC` and `n4m.EMSC` through the
-native Methods binding. Their transformed train/validation matrices are checked
-against independent Python n4m fits. The cross-language recipe *export* remains
-restricted to the earlier default SNV/Savitzky-Golay/PLS subset until these
-additional identifiers are qualified by the other language readers.
+native Methods binding. Exported recipes have been parsed and executed in the
+full Python `nirs4all` step parser with its n4m-backed aliases, including
+stateful MSC/EMSC fitted on training rows only; predictions match R. Core/WASM
+qualification of these additional aliases is still pending. Recipe export does
+not include fitted state; use a native N4MM bundle for a supported trained
+model, and preserve external fitted preprocessing separately.
 `nirs4all_torch_mlp()` provides an optional CPU neural-network regressor
 through the R `torch` runtime. `nirs4all_torch_module(builder, name)` accepts
 a self-contained builder for a custom `nn_module` mapping `N × p` inputs to
