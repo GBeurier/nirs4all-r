@@ -56,18 +56,7 @@ nirs4all_torch_module <- function(builder, name = "custom", epochs = 100L,
 nirs4all_torch_cpu_regressor <- function(builder, name, epochs,
                                          learning_rate, seed, spec,
                                          model_spec = NULL) {
-  if (!requireNamespace("torch", quietly = TRUE) || !torch::torch_is_installed())
-    stop("Install the optional 'torch' R package and its CPU runtime first",
-         call. = FALSE)
-  whole_positive <- function(x) is.numeric(x) && length(x) == 1L &&
-    is.finite(x) && x >= 1 && x <= .Machine$integer.max && x == floor(x)
-  if (!whole_positive(epochs)) stop("epochs must be a positive integer", call. = FALSE)
-  if (!is.numeric(learning_rate) || length(learning_rate) != 1L ||
-      !is.finite(learning_rate) || learning_rate <= 0)
-    stop("learning_rate must be positive and finite", call. = FALSE)
-  if (!is.numeric(seed) || length(seed) != 1L || !is.finite(seed) ||
-      seed < 0 || seed > .Machine$integer.max || seed != floor(seed))
-    stop("seed must be a non-negative integer", call. = FALSE)
+  nirs4all_torch_check_training(epochs, learning_rate, seed)
   spec$epochs <- as.integer(epochs)
   spec$seed <- as.integer(seed)
   controller <- nirs4all_controller(
@@ -120,6 +109,141 @@ nirs4all_torch_cpu_regressor <- function(builder, name, epochs,
       })
       normalized_predictions * state$y_scale + state$y_center
     }, name = paste0("torch:", name))
+  controller$format <- "torch-r"
+  controller$spec <- spec
+  if (!is.null(model_spec)) controller$model_spec <- model_spec
+  controller
+}
+
+nirs4all_torch_check_training <- function(epochs, learning_rate, seed) {
+  if (!requireNamespace("torch", quietly = TRUE) || !torch::torch_is_installed())
+    stop("Install the optional 'torch' R package and its CPU runtime first",
+         call. = FALSE)
+  whole_positive <- function(x) is.numeric(x) && length(x) == 1L &&
+    is.finite(x) && x >= 1 && x <= .Machine$integer.max && x == floor(x)
+  if (!whole_positive(epochs)) stop("epochs must be a positive integer", call. = FALSE)
+  if (!is.numeric(learning_rate) || length(learning_rate) != 1L ||
+      !is.finite(learning_rate) || learning_rate <= 0)
+    stop("learning_rate must be positive and finite", call. = FALSE)
+  if (!is.numeric(seed) || length(seed) != 1L || !is.finite(seed) ||
+      seed < 0 || seed > .Machine$integer.max || seed != floor(seed))
+    stop("seed must be a non-negative integer", call. = FALSE)
+}
+
+#' Optional R torch multilayer-perceptron classification controller
+#'
+#' Fits a CPU MLP with cross-entropy on factor class indices and returns
+#' softmax class probabilities. The weights remain R-torch
+#' artifacts; they are not portable PyTorch or ONNX weights.
+#' @inheritParams nirs4all_torch_mlp
+#' @export
+nirs4all_torch_mlp_classifier <- function(hidden = 32L, epochs = 100L,
+                                         learning_rate = 0.001, seed = 1L) {
+  if (!is.numeric(hidden) || length(hidden) != 1L || !is.finite(hidden) ||
+      hidden < 1L || hidden > .Machine$integer.max || hidden != floor(hidden))
+    stop("hidden must be a positive integer", call. = FALSE)
+  builder <- function(n_features, n_classes) torch::nn_sequential(
+    torch::nn_linear(n_features, as.integer(hidden)),
+    torch::nn_relu(),
+    torch::nn_linear(as.integer(hidden), n_classes))
+  nirs4all_torch_cpu_classifier(builder, "mlp.classification", epochs,
+    learning_rate, seed, list(learner = "torch_mlp_classifier",
+      hidden = as.integer(hidden), epochs = as.integer(epochs),
+      learning_rate = learning_rate, seed = as.integer(seed)))
+}
+
+#' Optional R torch module classification controller
+#'
+#' The builder receives `n_features` and `n_classes`, returning a fresh CPU
+#' `nn_module` that emits an `N x n_classes` matrix of raw logits. Every fold
+#' gets independent module, optimizer, and feature normalization state.
+#' Only trusted R builder functions should be used: they are serialized in
+#' R-specific DAG sidecars and are not cross-language model artifacts.
+#' @param builder Function of `n_features, n_classes` returning an untrained
+#'   torch module.
+#' @param name Stable model label.
+#' @inheritParams nirs4all_torch_module
+#' @export
+nirs4all_torch_module_classifier <- function(builder, name = "custom",
+                                            epochs = 100L,
+                                            learning_rate = 0.001,
+                                            seed = 1L) {
+  if (!is.function(builder)) stop("builder must be a function", call. = FALSE)
+  if (!is.character(name) || length(name) != 1L || is.na(name) ||
+      !grepl("^[A-Za-z][A-Za-z0-9_.-]*$", name))
+    stop("name must be a stable non-empty identifier", call. = FALSE)
+  nirs4all_torch_cpu_classifier(builder, name, epochs, learning_rate, seed,
+    list(learner = "torch_module_classifier", name = name, epochs = epochs,
+      learning_rate = learning_rate, seed = seed), model_spec = builder)
+}
+
+nirs4all_torch_cpu_classifier <- function(builder, name, epochs,
+                                         learning_rate, seed, spec,
+                                         model_spec = NULL) {
+  nirs4all_torch_check_training(epochs, learning_rate, seed)
+  spec$epochs <- as.integer(epochs)
+  spec$seed <- as.integer(seed)
+  probabilities <- function(state, X) {
+    normalized_x <- sweep(sweep(X, 2L, state$x_center, "-"),
+                          2L, state$x_scale, "/")
+    state$module$eval()
+    values <- torch::with_no_grad({
+      logits <- state$module(torch::torch_tensor(normalized_x,
+                                                dtype = torch::torch_float()))
+      expected <- c(nrow(X), length(state$classes))
+      if (!inherits(logits, "torch_tensor") ||
+          !identical(as.integer(logits$size()), expected))
+        stop("torch classifier must emit an N x classes logits matrix",
+             call. = FALSE)
+      as.matrix(as.array(torch::nnf_softmax(logits, dim = 2L)))
+    })
+    if (!identical(dim(values), c(nrow(X), length(state$classes))) ||
+        anyNA(values) || any(!is.finite(values)))
+      stop("torch classifier returned invalid probabilities", call. = FALSE)
+    colnames(values) <- state$classes
+    values
+  }
+  controller <- nirs4all_controller(
+    fit = function(X, y) {
+      if (!is.factor(y) || nlevels(y) < 2L ||
+          any(tabulate(as.integer(y), nbins = nlevels(y)) == 0L))
+        stop("each class must occur in the training fold", call. = FALSE)
+      x_center <- colMeans(X)
+      x_scale <- apply(X, 2L, stats::sd)
+      x_scale[!is.finite(x_scale) | x_scale <= .Machine$double.eps] <- 1
+      normalized_x <- sweep(sweep(X, 2L, x_center, "-"), 2L, x_scale, "/")
+      torch::torch_manual_seed(as.integer(seed))
+      module <- builder(as.integer(ncol(X)), as.integer(nlevels(y)))
+      if (!inherits(module, "nn_module"))
+        stop("torch builder must return an nn_module", call. = FALSE)
+      module$to(device = torch::torch_device("cpu"))
+      optimizer <- torch::optim_adam(module$parameters, lr = learning_rate)
+      input <- torch::torch_tensor(normalized_x, dtype = torch::torch_float())
+      target <- torch::torch_tensor(as.integer(y), dtype = torch::torch_long())
+      module$train()
+      for (epoch in seq_len(as.integer(epochs))) {
+        optimizer$zero_grad()
+        logits <- module(input)
+        if (!inherits(logits, "torch_tensor") ||
+            !identical(as.integer(logits$size()), c(nrow(X), nlevels(y))))
+          stop("torch classifier must emit an N x classes logits matrix",
+               call. = FALSE)
+        loss <- torch::nnf_cross_entropy(logits, target)
+        if (!is.finite(as.numeric(loss$item())))
+          stop("torch classification loss became non-finite", call. = FALSE)
+        loss$backward()
+        optimizer$step()
+      }
+      module$eval()
+      list(module = module, x_center = x_center, x_scale = x_scale,
+           classes = levels(y))
+    },
+    predict = function(state, X) {
+      values <- probabilities(state, X)
+      factor(state$classes[max.col(values, ties.method = "first")],
+             levels = state$classes)
+    }, predict_proba = probabilities, task = "classification",
+    name = paste0("torch:", name))
   controller$format <- "torch-r"
   controller$spec <- spec
   if (!is.null(model_spec)) controller$model_spec <- model_spec

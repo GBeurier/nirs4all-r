@@ -216,7 +216,8 @@ nirs4all_dag_cv_refit_predict <- function(
     params <- value$learner$spec
     if (is.character(params$learner) && length(params$learner) == 1L &&
         params$learner %in% c("parsnip", "parsnip_classifier", "mlr3",
-                             "mlr3_classifier", "torch_module")) {
+                             "mlr3_classifier", "torch_module",
+                             "torch_module_classifier")) {
       spec_bytes <- serialize(value$learner$model_spec, NULL, version = 3L)
       key <- digest::digest(spec_bytes, algo = "sha256", serialize = FALSE)
       model_specs[[key]] <<- spec_bytes

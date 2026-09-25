@@ -1,8 +1,10 @@
 # nirs4all for R (development)
 
-License: AGPL-3.0-or-later. The R-universe registry now tracks this development
-branch, but a successful external rebuild and installation have not yet been
-verified. The package has not been submitted to CRAN.
+License: AGPL-3.0-or-later. R-universe serves this development package from
+`nirs4all-r`; version 0.4.0.9018 and its `n4m` dependency were installed and
+exercised from public source tarballs in a clean R library. Later versions
+must be checked after each repository synchronization. The package has not
+been submitted to CRAN.
 
 This is the dedicated R product package named `nirs4all`. The former
 `nirs4all-core/bindings/r` package and release workflow were retired from
@@ -30,8 +32,8 @@ store only that vector in the fitted R bundle, and reuse it for validation or
 future samples. EMSC also records its polynomial degree in the step definition.
 Other train-fitted preprocessing such as baseline centering still needs an
 explicitly serialized fit state.
-Until the upstream `n4m` R release lands, this development branch requires
-`n4m >= 1.0.21.9002` from its `feat/r-preprocessing-parity` branch.
+This development branch requires `n4m >= 1.0.21.9002`, available on R-universe
+but not yet on CRAN.
 
 The optional `nirs4allformats` reader can feed either path without reparsing
 spectra in this package. It accepts homogeneous one-dimensional signals and
@@ -123,7 +125,8 @@ outcome$replay_prediction_blocks
 For classification, use factor or character labels with the optional
 `ranger` probability forest, a `parsnip` classification specification with
 an explicit engine, or an untrained `mlr3` `LearnerClassif` supporting
-probabilities. The local API returns factors and a probability matrix whose
+probabilities. Optional `torch` CPU MLP and custom-module classification
+controllers use cross-entropy and softmax probabilities. The local API returns factors and a probability matrix whose
 columns follow the training class order. DAG-ML encodes those
 classes as stable numeric labels, validates probabilities in each CV fold,
 selects variants by OOF accuracy, and restores factor labels for local
@@ -277,7 +280,11 @@ through the R `torch` runtime. `nirs4all_torch_module(builder, name)` accepts
 a self-contained builder for a custom `nn_module` mapping `N × p` inputs to
 `N × 1` regression outputs. DAG-ML invokes a fresh module for each fold and
 stores the builder behind a validated R-specific specification fingerprint.
-Torch modules are saved with `torch`'s own serializer inside the RDS bundle;
+The corresponding `nirs4all_torch_mlp_classifier()` and
+`nirs4all_torch_module_classifier(builder, name)` controllers accept factor
+targets; a classification builder receives both the feature and class counts
+and emits `N × classes` raw logits. Fold-local OOF and fresh-process replay
+are tested. Torch modules are saved with `torch`'s own serializer inside the RDS bundle;
 they are R-specific and not ONNX exports or portable Python weights.
 Custom controllers may capture non-serializable R state; their bundles are
 only reliable when the controller author has tested a fresh-process load.
@@ -299,4 +306,4 @@ against independent full-data fits.
 Neither test qualifies arbitrary n4m compositions or complex DAG graphs.
 
 Current missing product gates are documented in
-[`dag-ml/docs/R_BINDING_PARITY_AND_INTEROP.md`](https://github.com/GBeurier/dag-ml/blob/fix/v1-stability-dag/docs/R_BINDING_PARITY_AND_INTEROP.md).
+[`dag-ml/docs/R_BINDING_PARITY_AND_INTEROP.md`](https://github.com/GBeurier/dag-ml/blob/main/docs/R_BINDING_PARITY_AND_INTEROP.md).
