@@ -10,7 +10,7 @@ des champs de preuve à compléter avant toute soumission.
 
 ## Vérification actuellement réalisée
 
-- `R CMD build .` a produit `nirs4all_0.4.0.9015.tar.gz`.
+- `R CMD build .` a produit `nirs4all_0.4.0.9016.tar.gz`.
 - `R CMD check --as-cran --no-manual` sous R 4.6.0 (Linux) a exécuté les tests
   du paquet, y compris les exemples Python/n4m, les aller-retour N4MM
   formats 1 (PLS seul) et 2 (SNV→SG→PLS) R↔Python en processus Python distinct,
@@ -36,6 +36,12 @@ des champs de preuve à compléter avant toute soumission.
   par fold, les matrices concaténées, les OOF et l'inférence externe sont
   recoupées avec des ajustements indépendants ; les matrices train/validation
   concordent aussi avec un processus Python n4m distinct.
+  Le lecteur portable accepte maintenant les recettes Python
+  `branch` → `merge: features` (branches nommées ou en listes), y compris
+  MSC et un holdout Kennard–Stone. L'export R borné SNV/SG de cette structure
+  est reconnu par l'analyseur de topologie Python ; son exécution numérique
+  et son abaissement en DAG-ML sont testés. La lecture de cette structure par
+  Core/WASM n'est pas encore qualifiée.
   Après installation des tarballs R-universe `dagmldata` et
   `nirs4alldatasets`, **tous les `Suggests` étaient disponibles** et le
   contrôle a été relancé sans `_R_CHECK_FORCE_SUGGESTS_=false` : 0 erreur,
@@ -78,4 +84,4 @@ Avant une soumission `nirs4all` :
 La [politique CRAN de soumission](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande un `R CMD check --as-cran` du tarball à envoyer et, en principe, aucun
 avertissement ni note significative. Aucun formulaire de soumission ne doit
-présenter la version `0.4.0.9015` comme prête tant que ces gates restent ouverts.
+présenter la version `0.4.0.9016` comme prête tant que ces gates restent ouverts.
