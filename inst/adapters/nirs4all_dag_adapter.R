@@ -124,6 +124,9 @@ learner_from_task <- function(task) {
     n4m_method = nirs4all_n4m_method(
       method = params$method, n_components = as.integer(params$n_components),
       params = if (is.null(params$params)) list() else params$params),
+    sparse_pls_da = nirs4all_sparse_pls_da(
+      n_components = as.integer(params$n_components),
+      sparsity_lambda = as.numeric(params$sparsity_lambda)),
     lm = nirs4all_lm(),
     ranger = do.call(nirs4all_ranger, c(
       list(num.trees = as.integer(params$num_trees),
