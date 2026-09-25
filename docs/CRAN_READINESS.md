@@ -10,7 +10,7 @@ des champs de preuve à compléter avant toute soumission.
 
 ## Vérification actuellement réalisée
 
-Le développement courant est `nirs4all` 0.4.0.9023 avec `n4m >=
+Le développement courant est `nirs4all` 0.4.0.9024 avec `n4m >=
 1.0.21.9003`. Les résultats historiques ci-dessous documentent la
 progression, mais ne remplacent pas le contrôle du tarball final.
 
@@ -120,6 +120,19 @@ progression, mais ne remplacent pas le contrôle du tarball final.
   strict et oracle Python : 0 erreur, 1 avertissement CRAN-incoming. Le test
   hors échantillon a été renforcé après ce premier tarball et doit figurer
   dans le contrôle final de l'archive reconstruite.
+- `nirs4all` R 0.4.0.9024 (en développement) détache les artefacts de refit
+  n4m entièrement natifs dans le bundle DAG-ML comme octets N4MM, au lieu
+  d'un sidecar RDS. Sont qualifiés localement PLS simple, SNV→SG→PLS embarqué
+  et Ridge affine avec deux workers, import/prediction Python, rejeu R en
+  processus neuf sans le workdir d'origine, et refus d'octets altérés. Un
+  prétraitement ou un contrôleur R non natif conserve son sidecar RDS. La
+  recette de réentraînement et le plan entier ne sont **pas** encore empaquetés
+  en Archive V2/V3 ; ne pas annoncer le niveau 2 complet. Un premier tarball
+  0.4.0.9024 a passé `R CMD check --as-cran --no-manual` sous Linux/R 4.6.0
+  (0 erreur, 1 avertissement CRAN-incoming attendu) avec tous les `Suggests`,
+  le DAG natif, l'oracle Python et torch CPU. Le tarball finalement soumis
+  devra toujours être contrôlé tel quel ; la publication R-universe reste
+  ouverte.
 - Les résultats de Windows/macOS et la portabilité Archive V2/V3 Python↔R du
   pipeline entraîné complet restent à qualifier pour **le tarball courant**.
   R-universe publie déjà `nirs4all` 0.4.0.9018 depuis `nirs4all-r` : son
@@ -163,4 +176,4 @@ Avant une soumission `nirs4all` :
 La [politique CRAN de soumission](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande un `R CMD check --as-cran` du tarball à envoyer et, en principe, aucun
 avertissement ni note significative. Aucun formulaire de soumission ne doit
-présenter la version `0.4.0.9023` comme prête tant que ces gates restent ouverts.
+présenter la version `0.4.0.9024` comme prête tant que ces gates restent ouverts.

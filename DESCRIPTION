@@ -1,7 +1,7 @@
 Package: nirs4all
 Type: Package
 Title: Composable Near-Infrared Spectroscopy Pipelines for R
-Version: 0.4.0.9023
+Version: 0.4.0.9024
 Authors@R: c(person("Gregory", "Beurier", email = "gregory.beurier@cirad.fr", role = c("aut", "cre")), person("nirs4all", "contributors", role = "ctb"))
 Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     Composes portable preprocessing (including local and robust normalization,
@@ -16,7 +16,9 @@ Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     for single-node pipelines and optional sequential n4m transform nodes,
     including fixed-candidate selection and parallel preprocessing branches
     joined before a model.
-    Persisted refit models and transform states can predict new R samples.
+    Native-only n4m refit artifacts are detached into portable N4MM bytes in
+    the DAG bundle; other persisted refit models and transform states remain
+    R sidecars. Both can predict new R samples.
     Optional 'nirs4allformats' datasets feed local and native paths with
     numeric or categorical targets while preserving sample and spectral-axis
     identities. Branching DAGs and host
