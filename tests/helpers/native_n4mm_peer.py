@@ -1,4 +1,4 @@
-"""Fresh Python process consumer of an R-trained embedded N4MM model."""
+"""Fresh Python process consumer of R-trained native N4MM models."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def checked(status: int, name: str) -> None:
         raise RuntimeError(f"{name} failed with native status {status}")
 
 
-def train_embedded(x: np.ndarray, y: np.ndarray) -> bytes:
+def train_native(x: np.ndarray, y: np.ndarray, embedded: bool) -> bytes:
     """Fit through n4m's C ABI; all numerical work remains native."""
     x = np.ascontiguousarray(x, dtype=np.float64)
     y = np.ascontiguousarray(y.reshape(-1, 1), dtype=np.float64)
@@ -32,11 +32,12 @@ def train_embedded(x: np.ndarray, y: np.ndarray) -> bytes:
         checked(lib.n4m_config_set_algorithm(config, 0), "set_algorithm")
         checked(lib.n4m_config_set_solver(config, 1), "set_solver")
         checked(lib.n4m_config_set_n_components(config, 2), "set_n_components")
-        checked(lib.n4m_pipeline_create(ctypes.byref(pipeline)), "pipeline_create")
-        checked(lib.n4m_pipeline_add_operator(pipeline, 4, None, 0), "add_snv")
-        sg_params = (ctypes.c_double * 2)(5.0, 2.0)
-        checked(lib.n4m_pipeline_add_operator(pipeline, 8, sg_params, 2), "add_savgol")
-        checked(lib.n4m_config_set_pipeline(config, pipeline), "set_pipeline")
+        if embedded:
+            checked(lib.n4m_pipeline_create(ctypes.byref(pipeline)), "pipeline_create")
+            checked(lib.n4m_pipeline_add_operator(pipeline, 4, None, 0), "add_snv")
+            sg_params = (ctypes.c_double * 2)(5.0, 2.0)
+            checked(lib.n4m_pipeline_add_operator(pipeline, 8, sg_params, 2), "add_savgol")
+            checked(lib.n4m_config_set_pipeline(config, pipeline), "set_pipeline")
         x_view = MatrixView()
         y_view = MatrixView()
         checked(lib.n4m_matrix_view_init_rowmajor(
@@ -72,15 +73,19 @@ def main() -> None:
     x = np.asarray(request["X"], dtype=np.float64)
     if x.ndim != 2:
         raise ValueError("X must be a matrix")
-    if mode == "fit":
-        payload = train_embedded(x, np.asarray(request["y"], dtype=np.float64))
+    if mode in ("fit", "fit_plain"):
+        payload = train_native(x, np.asarray(request["y"], dtype=np.float64),
+                               embedded=mode == "fit")
         model_path.write_bytes(payload)
-    elif mode == "predict":
+    elif mode in ("predict", "predict_plain"):
         payload = model_path.read_bytes()
     else:
-        raise ValueError("mode must be 'fit' or 'predict'")
+        raise ValueError("unsupported native peer mode")
     info = inspect_n4mm(payload)
-    if info.pipeline is None or info.pipeline.semantic_profile != 1:
+    if mode.endswith("_plain"):
+        if info.pipeline is not None:
+            raise ValueError("expected plain native PLS model")
+    elif info.pipeline is None or info.pipeline.semantic_profile != 1:
         raise ValueError("expected embedded native SNV-Savitzky-Golay profile")
     with Context() as context:
         model = Model.from_bytes(context, payload)

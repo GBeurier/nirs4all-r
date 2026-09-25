@@ -150,8 +150,11 @@ engine-selected `parsnip` regression model, widening the R backend surface
 without copying engine implementations. A user-defined controller can be
 provided with `nirs4all_controller(fit, predict, name)`; its state is R-only.
 The `n4m` PLS model is saved as portable N4MM bytes inside the RDS bundle.
-The exact default SNV → SG → SIMPLS profile now embeds its preprocessing in
-those bytes; other pipelines still leave R preprocessing outside the model.
+Plain SIMPLS exports N4MM format 1; the exact default SNV → SG → SIMPLS
+profile embeds its preprocessing in N4MM format 2. Both have fresh-process
+R↔Python prediction tests. Other pipelines still leave R preprocessing
+outside the model. The separate recipe is required to retrain, and N4MM
+format 1 does not expose scaling flags for independent recipe verification.
 Custom-controller code and state remain R-specific.
 `nirs4all_torch_mlp()` provides an optional CPU neural-network regressor
 through the R `torch` runtime. Torch modules are saved with `torch`'s own
