@@ -10,9 +10,15 @@ des champs de preuve à compléter avant toute soumission.
 
 ## Vérification actuellement réalisée
 
-Le développement courant est `nirs4all` 0.4.0.9026 avec `n4m >=
-1.0.21.9003`. Les résultats historiques ci-dessous documentent la
-progression, mais ne remplacent pas le contrôle du tarball final.
+Le développement courant est `nirs4all` 0.4.0.9027 avec `n4m >=
+1.0.21.9003`. Le tarball source exact précédant cette mise à jour
+documentaire (`968c858c9731d4a984102cda24f4c1da49e81e4f99b765c6d81069fe402509b3`
+SHA-256) a passé `R CMD check --as-cran --no-manual` sous Linux/R 4.6.0 avec
+zéro erreur et le seul avertissement CRAN-incoming attendu ; tous les
+`Suggests`, DAG/Formats/Python stricts et torch CPU étaient actifs. Ce résultat
+ne vaut pas pour un tarball reconstruit après cette modification, ni pour les
+plateformes Windows/macOS. Les résultats historiques ci-dessous documentent
+la progression, mais ne remplacent pas le contrôle du tarball final.
 
 - `R CMD build .` a produit `nirs4all_0.4.0.9021.tar.gz`.
 - `R CMD check --as-cran --no-manual` sous R 4.6.0 (Linux) a exécuté les tests
@@ -152,19 +158,26 @@ progression, mais ne remplacent pas le contrôle du tarball final.
   tenues à part en R et Python, dans les deux sens, puis se réentraînent côté
   Python avec Methods. Ce n'est pas un Archive V2/V3 de DAG-ML : identité des
   échantillons, sélection, OOF et provenance de refit n'y figurent pas.
-  Un premier tarball 0.4.0.9026 passe le contrôle Linux/R 4.6.0 strict
-  avec zéro erreur et l'avertissement CRAN-incoming attendu. Un correctif de
-  réexport N4MM a ensuite été ajouté ; le tarball exact reconstruit doit
-  être revérifié avant toute revendication de publication ou soumission.
+  Le tarball exact avec correctif de réexport N4MM
+  (`6f1c08ad76a58a454f96de4376fe93de2bc8491ee56b295ac0979803be3e798d`
+  SHA-256) a passé le contrôle Linux/R 4.6.0 strict avec zéro erreur et
+  l'avertissement CRAN-incoming attendu. Ce n'est pas un contrôle multi-OS.
+- `nirs4all` R 0.4.0.9027 route les prédictions des huit régressions affines
+  MethodResult par le prédicteur N4MM de Methods et réentraîne en R une
+  recette de pipeline importée de Python via `nirs4all_retrain()`. Les tests
+  interlangages passent avec le binding Methods courant et la roue Python
+  1.0.21 publiée. Le tarball exact cité en tête a passé le contrôle Linux
+  strict (0 erreur, 1 avertissement CRAN-incoming attendu). La version publiée
+  sur R-universe doit être vérifiée séparément après son rebuild externe.
 - Les résultats de Windows/macOS et la portabilité Archive V2/V3 Python↔R du
   pipeline entraîné complet restent à qualifier pour **le tarball courant**.
-  R-universe publie déjà `nirs4all` 0.4.0.9018 depuis `nirs4all-r` : son
-  rebuild a réussi sur Linux, Windows, macOS et WASM. Ses sources publiques
-  et celles de `n4m` 1.0.21.9002 ont été installées dans une bibliothèque R
-  vierge sous Linux/R 4.6.0 avec GCC système ; un pipeline
-  SNV→Savitzky-Golay→PLS a ajusté et prédit sans checkout local. Cette preuve
-  de distribution ne remplace ni le check multi-OS du tarball courant ni la
-  publication de `dagml`, encore en attente de synchronisation.
+  Au dernier contrôle, R-universe sert `nirs4all` 0.4.0.9025 depuis
+  `nirs4all-r` et `n4m` 1.0.21.9003, avec source et binaires
+  Linux/Windows/macOS/WASM construits. La source publique `nirs4all` a été
+  installée dans une bibliothèque R vierge sous Linux/R 4.6.0 ; une recette
+  MSC→EMSC→PLS y a été exportée, réimportée, ajustée et prédite sans checkout
+  local. Cette preuve de distribution ne remplace pas un contrôle multi-OS
+  du tarball courant 0.4.0.9027.
 - Le tarball autonome `n4m_1.0.21.9002.tar.gz`, avec 238 unités natives
   vendorizées, a passé `R CMD check --as-cran --no-manual` sous Linux/R 4.6.0 :
   0 erreur, 0 avertissement, 2 notes (nouvelle soumission/version de
@@ -199,4 +212,4 @@ Avant une soumission `nirs4all` :
 La [politique CRAN de soumission](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande un `R CMD check --as-cran` du tarball à envoyer et, en principe, aucun
 avertissement ni note significative. Aucun formulaire de soumission ne doit
-présenter la version `0.4.0.9026` comme prête tant que ces gates restent ouverts.
+présenter la version `0.4.0.9027` comme prête tant que ces gates restent ouverts.
