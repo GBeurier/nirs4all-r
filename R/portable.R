@@ -20,7 +20,8 @@
   emsc = c("n4m.EMSC", "preprocessing.emsc"),
   pls = c("sklearn.cross_decomposition.PLSRegression",
           "sklearn.cross_decomposition._pls.PLSRegression",
-          "n4m.PLS", "n4m.PLSRegression", "models.pls.pls_fit_simple")
+          "n4m.PLS", "n4m.PLSRegression", "models.pls.pls_fit_simple"),
+  sparse_pls_da = c("n4m.SparsePLSDA", "pls4all.sklearn.SparsePLSDAClassifier")
 )
 
 nirs4all_portable_named <- function(value) {
@@ -209,15 +210,22 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
     }
   }
   spec <- pipeline$learner$spec
-  if (!is.list(spec) || !identical(spec$learner, "pls") ||
-      !identical(spec$algo, "pls_simpls") ||
-      !all(vapply(spec[c("center_x", "scale_x", "center_y", "scale_y")],
-                  identical, logical(1), TRUE)))
-    stop("cross-language recipe export supports default n4m PLS only",
-         call. = FALSE)
-  steps[[length(steps) + 1L]] <- list(model = list(
-    class = "n4m.PLS",
-    params = list(n_components = spec$n_components)))
+  if (is.list(spec) && identical(spec$learner, "sparse_pls_da")) {
+    steps[[length(steps) + 1L]] <- list(model = list(
+      class = "n4m.SparsePLSDA",
+      params = list(n_components = spec$n_components,
+                    sparsity_lambda = spec$sparsity_lambda)))
+  } else {
+    if (!is.list(spec) || !identical(spec$learner, "pls") ||
+        !identical(spec$algo, "pls_simpls") ||
+        !all(vapply(spec[c("center_x", "scale_x", "center_y", "scale_y")],
+                    identical, logical(1), TRUE)))
+      stop("cross-language recipe export supports native n4m PLS or sparse PLS-DA only",
+           call. = FALSE)
+    steps[[length(steps) + 1L]] <- list(model = list(
+      class = "n4m.PLS",
+      params = list(n_components = spec$n_components)))
+  }
   definition <- list(name = name, pipeline = steps)
   serialized <- if (identical(format, "json"))
     as.character(jsonlite::toJSON(definition, auto_unbox = TRUE, pretty = TRUE))
@@ -279,7 +287,7 @@ nirs4all_portable_components <- function(step) {
 
 #' Translate the portable JSON/YAML subset into a product execution plan
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
-#' @return Splitter, preprocessing and PLS component variants.
+#' @return Splitter, preprocessing and native model component variants.
 #' @export
 nirs4all_parse_execution_plan <- function(source) {
   definition <- nirs4all_load_pipeline(source)
@@ -415,16 +423,30 @@ nirs4all_parse_execution_plan <- function(source) {
         nirs4all_portable_or(step$model$params, list()),
         c("n_components", "algo", "center_x", "scale_x", "center_y", "scale_y"),
         "PLS")
+    } else if (is.list(step$model) &&
+               is.character(step$model$class) &&
+               length(step$model$class) == 1L &&
+               step$model$class %in% .nirs4all_portable_classes$sparse_pls_da) {
+      if (any(!names(step$model) %in% c("class", "params")))
+        stop("unsupported portable model field", call. = FALSE)
+      model <- step
+      model$params <- nirs4all_portable_allowed_params(
+        nirs4all_portable_or(step$model$params, list()),
+        c("n_components", "sparsity_lambda"), "sparse PLS-DA")
     } else {
-      stop("portable execution requires a PLSRegression model", call. = FALSE)
+      stop("portable execution requires a native PLS or sparse PLS-DA model", call. = FALSE)
     }
   }
   if (!is.null(pending_branch))
     stop("portable feature branch is missing merge: features", call. = FALSE)
-  if (is.null(model)) stop("portable execution requires PLSRegression", call. = FALSE)
-  learner <- do.call(nirs4all_pls, c(list(n_components = 2L),
-    model$params[intersect(names(model$params),
-      c("algo", "center_x", "scale_x", "center_y", "scale_y"))]))
+  if (is.null(model)) stop("portable execution requires a native model", call. = FALSE)
+  classifier <- model$model$class %in% .nirs4all_portable_classes$sparse_pls_da
+  learner <- if (classifier) nirs4all_sparse_pls_da(
+    sparsity_lambda = nirs4all_portable_number(
+      model$params$sparsity_lambda, 0.05, "sparsity_lambda", minimum = 0)) else
+    do.call(nirs4all_pls, c(list(n_components = 2L),
+      model$params[intersect(names(model$params),
+        c("algo", "center_x", "scale_x", "center_y", "scale_y"))]))
   list(splitter = splitter, preprocessing = preprocessing,
        n_components = nirs4all_portable_components(model),
        learner = learner$spec)
@@ -434,7 +456,7 @@ nirs4all_parse_execution_plan <- function(source) {
 #'
 #' The bounded reader accepts native SNV, Savitzky-Golay, LSNV, RNV, area
 #' normalization, detrend, train-fitted MSC/EMSC, feature-only branches merged
-#' by concatenation, and PLS components.
+#' by concatenation, PLS regression and sparse PLS-DA classification.
 #' Splitters and component sweeps are refused because a single fitted pipeline
 #' cannot represent an entire selection experiment.
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
@@ -475,9 +497,11 @@ nirs4all_pipeline_from_portable <- function(source) {
          call. = FALSE)
   steps <- nirs4all_portable_steps(plan$preprocessing)
   spec <- plan$learner
-  learner <- nirs4all_pls(plan$n_components[[1L]], algo = spec$algo,
-    center_x = spec$center_x, scale_x = spec$scale_x,
-    center_y = spec$center_y, scale_y = spec$scale_y)
+  learner <- if (identical(spec$learner, "sparse_pls_da"))
+    nirs4all_sparse_pls_da(plan$n_components[[1L]], spec$sparsity_lambda) else
+    nirs4all_pls(plan$n_components[[1L]], algo = spec$algo,
+      center_x = spec$center_x, scale_x = spec$scale_x,
+      center_y = spec$center_y, scale_y = spec$scale_y)
   nirs4all_pipeline(steps, learner)
 }
 
@@ -598,6 +622,9 @@ nirs4all_portable_dataset <- function(dataset) {
 nirs4all_run_portable_pipeline <- function(source, dataset) {
   definition <- nirs4all_load_pipeline(source)
   plan <- nirs4all_parse_execution_plan(definition)
+  if (!identical(plan$learner$learner, "pls"))
+    stop("portable selection runner currently supports regression PLS only",
+         call. = FALSE)
   data <- nirs4all_portable_dataset(dataset)
   if (is.null(plan$splitter)) {
     indices <- seq.int(0L, nrow(data$X) - 1L)

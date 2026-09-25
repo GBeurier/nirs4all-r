@@ -122,8 +122,9 @@ outcome$fit_cv_result_count
 outcome$replay_prediction_blocks
 ```
 
-For classification, use factor or character labels with the optional
-`ranger` probability forest, a `parsnip` classification specification with
+For classification, use factor or character labels with the native
+`nirs4all_sparse_pls_da()` controller, the optional `ranger` probability
+forest, a `parsnip` classification specification with
 an explicit engine, or an untrained `mlr3` `LearnerClassif` supporting
 probabilities. Optional `torch` CPU MLP and custom-module classification
 controllers use cross-entropy and softmax probabilities. The local API returns factors and a probability matrix whose
@@ -132,6 +133,12 @@ classes as stable numeric labels, validates probabilities in each CV fold,
 selects variants by OOF accuracy, and restores factor labels for local
 external inference. Every training fold must contain every class; the R
 frontend rejects a fold assignment that violates this requirement.
+The sparse PLS-DA controller fits through `n4m`, accepts the portable
+`n4m.SparsePLSDA` JSON/YAML model alias, and matches the Python n4m decision
+scores on unseen samples. Its softmax outputs are **not calibrated
+probabilities**; they are only a DAG-compatible normalization of class scores.
+Its trained state is currently an RDS sidecar, not an N4MM or Archive V2/V3
+cross-language artifact.
 
 ```r
 X <- as.matrix(iris[, 1:4])

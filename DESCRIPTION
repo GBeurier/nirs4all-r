@@ -1,13 +1,13 @@
 Package: nirs4all
 Type: Package
 Title: Composable Near-Infrared Spectroscopy Pipelines for R
-Version: 0.4.0.9020
+Version: 0.4.0.9021
 Authors@R: c(person("Gregory", "Beurier", email = "gregory.beurier@cirad.fr", role = c("aut", "cre")), person("nirs4all", "contributors", role = "ctb"))
 Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     Composes portable preprocessing (including local and robust normalization,
     area normalization, detrending, train-fitted MSC and Savitzky-Golay filtering) and partial
     least squares operations from 'n4m' with explicit R learner controllers,
-    including optional 'parsnip' and 'mlr3' regression and classification
+    including native sparse PLS-DA, optional 'parsnip' and 'mlr3' regression and classification
     adapters, a 'ranger' probability-forest classification controller and
     optional CPU 'torch' regression and classification controllers.
     This development version offers
