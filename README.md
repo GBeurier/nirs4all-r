@@ -70,4 +70,4 @@ PLS, `lm`, `ranger`, `glmnet` and `torch` against manual fold-local fits.
 Neither test qualifies arbitrary n4m compositions or complex DAG graphs.
 
 Current missing product gates are documented in
-[`dag-ml/docs/R_BINDING_PARITY_AND_INTEROP.md`](https://github.com/GBeurier/dag-ml/blob/main/docs/R_BINDING_PARITY_AND_INTEROP.md).
+[`dag-ml/docs/R_BINDING_PARITY_AND_INTEROP.md`](https://github.com/GBeurier/dag-ml/blob/fix/v1-stability-dag/docs/R_BINDING_PARITY_AND_INTEROP.md).
