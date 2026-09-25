@@ -62,3 +62,11 @@ dependencies: 0 errors and the same CRAN-incoming warning. Its SHA-256 is
 `10a94ad79899e28a4e8ae1cfeaee10441fc21b68f717d91c34c57ea8c9f6be5a`.
 The new portable sparse PLS-DA recipe runner does not remove the dependency
 policy or trained-archive interoperability blockers.
+
+The 0.4.0.9023 development line additionally depends on `n4m >=
+1.0.21.9003` for N4MM affine predictor import/export. This verifies
+cross-language *prediction* for eight native linear MethodResult controllers,
+not cross-language retraining or a complete trained DAG archive. Its first
+Linux/R 4.6.0 strict check had 0 errors and the same CRAN-incoming warning;
+the final rebuilt archive with the out-of-sample regression test still needs
+its own exact-file check. Do not use these observations as form claims.

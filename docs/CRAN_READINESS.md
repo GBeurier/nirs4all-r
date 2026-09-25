@@ -10,6 +10,10 @@ des champs de preuve à compléter avant toute soumission.
 
 ## Vérification actuellement réalisée
 
+Le développement courant est `nirs4all` 0.4.0.9023 avec `n4m >=
+1.0.21.9003`. Les résultats historiques ci-dessous documentent la
+progression, mais ne remplacent pas le contrôle du tarball final.
+
 - `R CMD build .` a produit `nirs4all_0.4.0.9021.tar.gz`.
 - `R CMD check --as-cran --no-manual` sous R 4.6.0 (Linux) a exécuté les tests
   du paquet, y compris les exemples Python/n4m, les aller-retour N4MM
@@ -99,14 +103,31 @@ des champs de preuve à compléter avant toute soumission.
   encore qualifié dans les lecteurs Python/Core/WASM, et son état entraîné
   reste un RDS. Le présent ajout documentaire est postérieur au tarball ;
   une archive finale devra être rebâtie et contrôlée.
+- `n4m` 1.0.21.9003 ajoute au binding R l'import d'un prédicteur affine natif
+  (N4MM format 1). Le tarball autonome construit avec les 238 unités natives
+  vendorizées a passé le contrôle Linux/R 4.6.0 : 0 erreur, 0 avertissement,
+  2 notes (nouvelle soumission/version de développement et option de compilation
+  de la distribution R locale). Les matrices multi-cibles et la conservation
+  de l'ordre des coefficients ont été testées dans R, puis le même artefact
+  a été consommé par Python dans les deux sens.
+- `nirs4all` R 0.4.0.9023 enveloppe les huit régressions `MethodResult` à
+  prédicteur affine dans ces octets N4MM. La prédiction R↔Python est testée
+  hors de l'échantillon d'entraînement ; l'export refuse un prétraitement R
+  externe, tandis que la sauvegarde RDS conserve le pipeline R complet.
+  Le format affine ne certifie **ni** la méthode d'ajustement **ni** ses
+  paramètres et ne transporte pas la recette de réentraînement. Une première
+  archive a passé le contrôle Linux/R 4.6.0 avec tous les `Suggests`, DAG
+  strict et oracle Python : 0 erreur, 1 avertissement CRAN-incoming. Le test
+  hors échantillon a été renforcé après ce premier tarball et doit figurer
+  dans le contrôle final de l'archive reconstruite.
 - Les résultats de Windows/macOS et la portabilité Archive V2/V3 Python↔R du
-  pipeline entraîné complet restent à qualifier pour **ce tarball 0.4.0.9021**.
+  pipeline entraîné complet restent à qualifier pour **le tarball courant**.
   R-universe publie déjà `nirs4all` 0.4.0.9018 depuis `nirs4all-r` : son
   rebuild a réussi sur Linux, Windows, macOS et WASM. Ses sources publiques
   et celles de `n4m` 1.0.21.9002 ont été installées dans une bibliothèque R
   vierge sous Linux/R 4.6.0 avec GCC système ; un pipeline
   SNV→Savitzky-Golay→PLS a ajusté et prédit sans checkout local. Cette preuve
-  de distribution ne remplace ni le check multi-OS du tarball 0.4.0.9021 ni la
+  de distribution ne remplace ni le check multi-OS du tarball courant ni la
   publication de `dagml`, encore en attente de synchronisation.
 - Le tarball autonome `n4m_1.0.21.9002.tar.gz`, avec 238 unités natives
   vendorizées, a passé `R CMD check --as-cran --no-manual` sous Linux/R 4.6.0 :
@@ -117,7 +138,7 @@ des champs de preuve à compléter avant toute soumission.
 
 ## Blocage de politique et ordre de soumission
 
-`n4m (>= 1.0.21.9002)` est dans `Imports`, mais n'est pas dans CRAN ni dans le
+`n4m (>= 1.0.21.9003)` est dans `Imports`, mais n'est pas dans CRAN ni dans le
 dépôt logiciel Bioconductor. La [politique CRAN sur les dépendances](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande que les dépendances fortes (`Depends`, `Imports`, `LinkingTo`) soient
 disponibles dans l'un de ces dépôts ; `Additional_repositories` couvre les
@@ -142,4 +163,4 @@ Avant une soumission `nirs4all` :
 La [politique CRAN de soumission](https://stat.ethz.ch/CRAN/web/packages/policies.html)
 demande un `R CMD check --as-cran` du tarball à envoyer et, en principe, aucun
 avertissement ni note significative. Aucun formulaire de soumission ne doit
-présenter la version `0.4.0.9021` comme prête tant que ces gates restent ouverts.
+présenter la version `0.4.0.9023` comme prête tant que ces gates restent ouverts.

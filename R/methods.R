@@ -3,8 +3,8 @@
 #' Exposes MethodResult regressors whose fitted coefficients obey
 #' `(X - x_mean) %*% coefficients + y_mean`. Other n4m methods may need
 #' algorithm-specific prediction state and are deliberately excluded.
-#' MethodResult coefficients are saved in the R bundle; unlike the PLS
-#' controller, this is not an N4MM model export.
+#' MethodResult coefficients are wrapped as an affine N4MM predictor when
+#' serialized. The native bytes attest predictions, not the fitting algorithm.
 #'
 #' @param method Supported native regression method.
 #' @param n_components Positive component count; ignored by ridge's solver.
@@ -53,11 +53,17 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
           any(!is.finite(coefficients)) || any(!is.finite(x_mean)) ||
           any(!is.finite(y_mean)))
         stop("n4m method returned an unsupported regression model", call. = FALSE)
-      list(coefficients = coefficients, x_mean = x_mean, y_mean = y_mean)
+      list(coefficients = coefficients, x_mean = x_mean, y_mean = y_mean,
+           source_training_samples = nrow(X))
     },
-    predict = function(state, X) as.numeric(
-      sweep(X, 2L, state$x_mean, "-") %*% state$coefficients + state$y_mean),
+    predict = function(state, X) {
+      if (!is.null(state$native_model))
+        return(as.numeric(n4m::n4m_predict(state$native_model, X)))
+      as.numeric(sweep(X, 2L, state$x_mean, "-") %*%
+                   state$coefficients + state$y_mean)
+    },
     name = paste0("n4m:", method))
+  controller$format <- "n4mm_affine"
   controller$spec <- list(learner = "n4m_method", method = method,
                           n_components = as.integer(n_components), params = params)
   controller
