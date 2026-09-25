@@ -25,7 +25,8 @@
 #'   Named vectors must have names identical to `sample_ids`. When supplied,
 #'   whole groups, not individual samples, are assigned to validation folds.
 #' @param split_steps If `TRUE`, run each n4m preprocessing step as a separate
-#'   DAG transform node. Currently supported for one pipeline, not variants.
+#'   DAG transform node. Named variants must have the same number of steps;
+#'   their step methods and parameters may differ.
 #' @return Native DAG-ML outcome with an additional `workdir` path.
 #' @export
 nirs4all_dag_cv_refit_predict <- function(
@@ -56,8 +57,11 @@ nirs4all_dag_cv_refit_predict <- function(
          call. = FALSE)
   if (!is.logical(split_steps) || length(split_steps) != 1L || is.na(split_steps))
     stop("split_steps must be TRUE or FALSE", call. = FALSE)
-  if (split_steps && !is.null(variants))
-    stop("split_steps does not yet support pipeline variants", call. = FALSE)
+  if (split_steps && !is.null(variants) &&
+      length(unique(vapply(pipelines, function(value) length(value$steps),
+                           integer(1)))) != 1L)
+    stop("split_steps variants must have the same number of preprocessing steps",
+         call. = FALSE)
   if (inherits(X, "nirs4all_dataset")) {
     if (!is.null(y)) stop("y must come from the nirs4all_dataset", call. = FALSE)
     if (!is.null(sample_ids) && !identical(sample_ids, X$sample_ids))
@@ -196,10 +200,16 @@ nirs4all_dag_cv_refit_predict <- function(
     dsl$max_variants <- length(variants)
     dsl$generation_dimensions <- list(list(
       name = "nirs4all_r_pipeline",
-      choices = lapply(seq_along(variants), function(index) list(
-        label = variants[[index]],
-        param_overrides = list(list(node_id = "model:nirs4all-r",
-                                    params = model_params[[index]]))))))
+      choices = lapply(seq_along(variants), function(index) {
+        overrides <- if (split_steps) lapply(seq_along(pipelines[[index]]$steps),
+          function(step_index) list(
+            node_id = sprintf("transform:nirs4all-r:%03d", step_index),
+            params = list(preprocessing = list(
+              unclass(pipelines[[index]]$steps[[step_index]]))))) else list()
+        overrides[[length(overrides) + 1L]] <- list(
+          node_id = "model:nirs4all-r", params = model_params[[index]])
+        list(label = variants[[index]], param_overrides = overrides)
+      })))
   }
   port <- list(name = "oof", kind = "prediction", representation = NULL,
                cardinality = "one", description = "")
