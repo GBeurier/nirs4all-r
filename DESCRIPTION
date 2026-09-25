@@ -1,7 +1,7 @@
 Package: nirs4all
 Type: Package
 Title: Composable Near-Infrared Spectroscopy Pipelines for R
-Version: 0.4.0.9010
+Version: 0.4.0.9011
 Authors@R: c(person("Gregory", "Beurier", email = "gregory.beurier@cirad.fr", role = c("aut", "cre")), person("nirs4all", "contributors", role = "ctb"))
 Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     Composes portable preprocessing (including local and robust normalization,
