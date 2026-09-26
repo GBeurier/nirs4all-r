@@ -338,7 +338,12 @@ concat_step_state <- function(spec) {
       artifact$states[[1L]]
     }))
   names(states) <- names(branches)
-  list(step = step, states = states)
+  first_widths <- vapply(spec$branches, function(branch)
+    readRDS(artifact_location(branch$steps[[1L]]$id))$n_features,
+    integer(1))
+  if (length(unique(first_widths)) != 1L)
+    stop("concat branches do not share the same input feature width")
+  list(step = step, states = states, n_features = first_widths[[1L]])
 }
 prediction_block <- function(node, partition, fold_id, ids, values) {
   list(producer_node = node, partition = partition, fold_id = fold_id,
@@ -418,7 +423,7 @@ record_result <- function(task, raw_line) {
       if (identical(phase, "REFIT")) {
         state <- concat_step_state(spec)
         saveRDS(list(steps = list(state$step), states = list(state$states),
-                     n_features = ncol(data$X)), artifact_path)
+                     n_features = state$n_features), artifact_path)
       }
     } else {
       steps <- steps_from_task(task)

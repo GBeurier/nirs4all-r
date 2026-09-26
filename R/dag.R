@@ -16,7 +16,7 @@ nirs4all_dag_step_spec <- function(step) {
 #' bytes in the DAG-ML bundle; other fitted states remain RDS sidecars. A named
 #' list of pipelines activates native parameter
 #' variant generation and OOF-based selection before one full-data refit. This
-#' bridge does not yet expose arbitrary DAG branches, nested CV, or adaptive
+#' bridge does not yet expose arbitrary model branches, nested CV, or adaptive
 #' host HPO from the high-level R API.
 #'
 #' @param pipeline A [nirs4all_pipeline()] using a built-in learner, or a named
@@ -37,9 +37,9 @@ nirs4all_dag_step_spec <- function(step) {
 #'   whole groups, not individual samples, are assigned to validation folds.
 #' @param split_steps If `TRUE`, run each n4m preprocessing step as a separate
 #'   DAG transform node. Named variants must have the same number of steps;
-#'   their step methods and parameters may differ. A single
-#'   [nirs4all_concat()] step is lowered to parallel branch transforms and a
-#'   feature-join node; it cannot yet be combined with variants or other steps.
+#'   their step methods and parameters may differ. [nirs4all_concat()] steps
+#'   are lowered to parallel branch transforms and feature-join nodes; they
+#'   cannot yet be combined with variants.
 #' @return Native DAG-ML outcome with an additional `workdir` path.
 #' @export
 nirs4all_dag_cv_refit_predict <- function(
@@ -85,13 +85,12 @@ nirs4all_dag_cv_refit_predict <- function(
   has_concat <- any(vapply(pipelines, function(value)
     any(vapply(value$steps, function(step) identical(step$kind, "concat"), logical(1))),
     logical(1)))
-  if (split_steps && has_concat &&
-      (!is.null(variants) || length(pipelines[[1L]]$steps) != 1L))
-    stop("split_steps concat currently requires one pipeline with concat as its sole step",
-         call. = FALSE)
-  if (split_steps && has_concat &&
-      !all(grepl("^[A-Za-z][A-Za-z0-9_]*$",
-                 names(pipelines[[1L]]$steps[[1L]]$branches))))
+  if (split_steps && has_concat && !is.null(variants))
+    stop("split_steps concat cannot yet be combined with variants", call. = FALSE)
+  concat_steps <- if (split_steps) Filter(function(step)
+    identical(step$kind, "concat"), pipelines[[1L]]$steps) else list()
+  if (length(concat_steps) && !all(vapply(concat_steps, function(step)
+      all(grepl("^[A-Za-z][A-Za-z0-9_]*$", names(step$branches))), logical(1))))
     stop("split_steps concat branch names must use letters, numbers and underscores",
          call. = FALSE)
   if (inherits(X, "nirs4all_dataset")) {
@@ -485,74 +484,65 @@ nirs4all_dag_predict <- function(outcome, X) {
                                  mustWork = FALSE)
   model_path <- checked_path(model_records[[1L]], "nirs4all_r_model",
                              "controller:nirs4all-r")
-  concat_records <- Filter(function(record)
-    identical(record$node_id, "transform:nirs4all-r:001") &&
-      identical(record$controller_id, "controller:nirs4all-r-concat"), records)
-  if (length(concat_records)) {
-    if (length(concat_records) != 1L)
-      stop("DAG bundle has duplicate concat artifacts", call. = FALSE)
-    path <- checked_path(concat_records[[1L]], "nirs4all_r_concat",
-                         "controller:nirs4all-r-concat")
-    state <- readRDS(path)
-    if (!is.list(state) || length(state$steps) != 1L ||
-        !identical(state$steps[[1L]]$kind, "concat") ||
-        length(state$states) != 1L ||
-        !identical(names(state$states[[1L]]),
-                   names(state$steps[[1L]]$branches)))
-      stop("DAG concat artifact state is invalid", call. = FALSE)
-    child_ids <- unlist(lapply(names(state$steps[[1L]]$branches), function(name)
-      sprintf("transform:nirs4all-r:001:%s:%03d", name,
-              seq_along(state$steps[[1L]]$branches[[name]]))),
-      use.names = FALSE)
-    record_ids <- vapply(records, `[[`, "", "node_id")
-    if (anyDuplicated(record_ids) ||
-        !setequal(record_ids, c("model:nirs4all-r",
-                                "transform:nirs4all-r:001", child_ids)))
-      stop("DAG concat branch artifacts are incomplete", call. = FALSE)
-    for (name in names(state$steps[[1L]]$branches)) {
-      for (position in seq_along(state$steps[[1L]]$branches[[name]])) {
-        child_id <- sprintf("transform:nirs4all-r:001:%s:%03d", name, position)
-        record <- records[[match(child_id, record_ids)]]
-        child_path <- checked_path(record, "nirs4all_r_transform",
-                                   "controller:nirs4all-r-transform")
-        child <- readRDS(child_path)
-        if (!identical(child$steps,
-                       list(state$steps[[1L]]$branches[[name]][[position]])) ||
-            !identical(child$states[[1L]],
-                       state$states[[1L]][[name]][[position]]))
-          stop("DAG concat branch state differs from its refit artifact",
-               call. = FALSE)
+  record_ids <- vapply(records, `[[`, "", "node_id")
+  if (anyDuplicated(record_ids))
+    stop("DAG bundle has duplicate refit artifacts", call. = FALSE)
+  top_ids <- record_ids[grepl("^transform:nirs4all-r:[0-9]{3}$", record_ids)]
+  expected_ids <- sprintf("transform:nirs4all-r:%03d", seq_along(top_ids))
+  if (!setequal(top_ids, expected_ids))
+    stop("DAG transform artifacts are incomplete", call. = FALSE)
+  expected_records <- c("model:nirs4all-r", top_ids)
+  if (inherits(X, "nirs4all_dataset")) X <- X$X
+  X <- nirs4all_matrix(X)
+  if (!is.null(outcome$feature_names) &&
+      !identical(colnames(X), outcome$feature_names))
+    stop("X feature names or order differ from training", call. = FALSE)
+  for (node_id in expected_ids) {
+    record <- records[[match(node_id, record_ids)]]
+    if (identical(record$controller_id, "controller:nirs4all-r-concat")) {
+      path <- checked_path(record, "nirs4all_r_concat",
+                           "controller:nirs4all-r-concat")
+      state <- readRDS(path)
+      if (!is.list(state) || length(state$steps) != 1L ||
+          !identical(state$steps[[1L]]$kind, "concat") ||
+          length(state$states) != 1L ||
+          !identical(state$n_features, ncol(X)) ||
+          !identical(names(state$states[[1L]]),
+                     names(state$steps[[1L]]$branches)))
+        stop("DAG concat artifact state is invalid", call. = FALSE)
+      for (name in names(state$steps[[1L]]$branches)) {
+        for (position in seq_along(state$steps[[1L]]$branches[[name]])) {
+          child_id <- sprintf("%s:%s:%03d", node_id, name, position)
+          if (!(child_id %in% record_ids))
+            stop("DAG concat branch artifacts are incomplete", call. = FALSE)
+          expected_records <- c(expected_records, child_id)
+          child_record <- records[[match(child_id, record_ids)]]
+          child_path <- checked_path(child_record, "nirs4all_r_transform",
+                                     "controller:nirs4all-r-transform")
+          child <- readRDS(child_path)
+          if (!is.list(child) || length(child$steps) != 1L ||
+              length(child$states) != 1L ||
+              !identical(child$steps[[1L]],
+                         state$steps[[1L]]$branches[[name]][[position]]) ||
+              !identical(child$states[[1L]],
+                         state$states[[1L]][[name]][[position]]))
+            stop("DAG concat branch state differs from its refit artifact",
+                 call. = FALSE)
+        }
       }
-    }
-    if (inherits(X, "nirs4all_dataset")) X <- X$X
-    X <- nirs4all_matrix(X, state$n_features)
-    transformed <- nirs4all_transform(X, state$steps, state$states)
-    return(nirs4all_predict(nirs4all_load(model_path), transformed))
-  }
-  transform_records <- Filter(function(record)
-    startsWith(record$node_id, "transform:nirs4all-r:"), records)
-  if (length(records) != length(transform_records) + 1L ||
-      anyDuplicated(vapply(transform_records, `[[`, "", "node_id")))
-    stop("DAG bundle has unexpected or duplicate refit artifacts", call. = FALSE)
-  if (length(transform_records)) {
-    expected_ids <- sprintf("transform:nirs4all-r:%03d",
-                            seq_along(transform_records))
-    ids <- vapply(transform_records, `[[`, "", "node_id")
-    if (!setequal(ids, expected_ids))
-      stop("DAG transform artifacts are incomplete", call. = FALSE)
-    transform_records <- transform_records[match(expected_ids, ids)]
-    if (inherits(X, "nirs4all_dataset")) X <- X$X
-    X <- nirs4all_matrix(X)
-    for (record in transform_records) {
+    } else {
       path <- checked_path(record, "nirs4all_r_transform",
                            "controller:nirs4all-r-transform")
       state <- readRDS(path)
       if (!is.list(state) || length(state$steps) != 1L ||
-          length(state$states) != 1L || !identical(state$n_features, ncol(X)))
+          length(state$states) != 1L || !identical(state$n_features, ncol(X)) ||
+          identical(state$steps[[1L]]$kind, "concat"))
         stop("DAG transform state does not match prediction features", call. = FALSE)
-      X <- nirs4all_transform(X, state$steps, state$states)
     }
+    X <- nirs4all_transform(X, state$steps, state$states)
   }
+  if (!setequal(record_ids, expected_records))
+    stop("DAG bundle has unexpected or missing refit artifacts", call. = FALSE)
   nirs4all_predict(nirs4all_load(model_path), X)
 }
 
