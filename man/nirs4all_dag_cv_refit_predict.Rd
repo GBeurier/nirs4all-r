@@ -6,7 +6,7 @@
 nirs4all_dag_cv_refit_predict(pipeline, X, y = NULL, folds = 5L,
   sample_ids = NULL, root_seed = 1L, cli = Sys.which("dag-ml-cli"),
   workdir = tempfile("nirs4all-dag-"), process_workers = 1L,
-  group_ids = NULL, split_steps = FALSE)
+  group_ids = NULL, split_steps = FALSE, splitter = NULL)
 }
 \arguments{
 \item{pipeline}{Pipeline definition with a built-in learner, or a named list
@@ -28,5 +28,8 @@ steps; their methods and parameters may differ. Each
 \code{nirs4all_concat()} step is lowered to parallel branch transforms and a
 feature-join node; concat steps may be composed with other preprocessing
 steps but cannot yet be combined with variants.}
+\item{splitter}{Optional \code{nirs4all_native_splitter()} specification
+for SPXY fold, grouped SPXY fold or binned stratified group fold. Its
+\code{n_splits} must equal \code{folds}; one-shot splits are refused.}
 }
 \value{Native DAG-ML outcome list with the persisted workdir path.}
