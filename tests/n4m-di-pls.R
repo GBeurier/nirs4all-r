@@ -47,6 +47,58 @@ stopifnot(max(abs(predict(nirs4all_load(path), held) - expected)) < 1e-10,
   max(abs(predict(nirs4all_retrain(fitted, source, y), held) - expected)) < 1e-10)
 unlink(path)
 
+# A target-domain cohort is raw input to the recipe. Fit source preprocessing
+# once, then apply those same learned states to the target cohort without
+# learning from target rows. A direct native oracle uses exactly those matrices.
+source_wide <- outer(seq_len(28L), seq_len(12L), function(i, j)
+  sin(i * j / 10) + cos(i / 3 + j / 8) + i * j / 110)
+colnames(source_wide) <- paste0("wl", seq_len(ncol(source_wide)))
+target_wide <- outer(seq_len(17L), seq_len(12L), function(i, j)
+  0.85 * sin((i + 2) * j / 10) + cos(i / 3 + j / 8) +
+    i * j / 110 + j / 70)
+colnames(target_wide) <- colnames(source_wide)
+held_wide <- source_wide[c(3L, 11L, 23L), , drop = FALSE] + 0.047
+y_wide <- 1.2 + 0.65 * source_wide[, 2L] - 0.3 * source_wide[, 6L]
+steps <- list(nirs4all_snv(), nirs4all_msc(), nirs4all_savgol(5L, 2L))
+di_recipe <- nirs4all_pipeline(steps, nirs4all_n4m_method(
+  "di_pls", 2L, list(X_target = target_wide, di_lambda = 0.7)))
+di_fit <- nirs4all_fit(di_recipe, source_wide, y_wide)
+source_fit <- nirs4all:::nirs4all_fit_transform(source_wide, steps)
+target_transformed <- nirs4all:::nirs4all_transform(target_wide, steps,
+  source_fit$states)
+held_transformed <- nirs4all:::nirs4all_transform(held_wide, steps,
+  source_fit$states)
+oracle <- n4m::n4m_affine_fit("di_pls", source_fit$X, y_wide, 2L,
+  list(X_target = target_transformed, di_lambda = 0.7))
+expected_wide <- as.numeric(n4m::n4m_predict(oracle$native_model,
+  held_transformed))
+stopifnot(max(abs(predict(di_fit, held_wide) - expected_wide)) < 1e-10,
+  max(abs(predict(nirs4all_retrain(di_fit, source_wide, y_wide), held_wide) -
+    expected_wide)) < 1e-10)
+# Passing raw target spectra beside transformed source spectra is not equivalent.
+mixed_domain <- n4m::n4m_affine_fit("di_pls", source_fit$X, y_wide, 2L,
+  list(X_target = target_wide, di_lambda = 0.7))
+stopifnot(max(abs(as.numeric(n4m::n4m_predict(mixed_domain$native_model,
+  held_transformed)) - expected_wide)) > 1e-3)
+di_path <- tempfile(fileext = ".rds")
+nirs4all_save(di_fit, di_path)
+stopifnot(max(abs(predict(nirs4all_load(di_path), held_wide) -
+  expected_wide)) < 1e-10)
+unlink(di_path)
+reordered_target <- target_wide[, rev(seq_len(ncol(target_wide))), drop = FALSE]
+stopifnot(inherits(try(nirs4all_fit(nirs4all_pipeline(steps,
+  nirs4all_n4m_method("di_pls", 2L, list(X_target = reordered_target))),
+  source_wide, y_wide), silent = TRUE), "try-error"))
+for (unsupported in list(nirs4all_spa(5L, 2L),
+                         nirs4all_concat(list(a = list(nirs4all_snv()),
+                                               b = list(nirs4all_msc())))))
+  stopifnot(inherits(try(nirs4all_fit(nirs4all_pipeline(list(unsupported),
+    nirs4all_n4m_method("di_pls", 2L,
+      list(X_target = target_wide, di_lambda = 0.7))),
+    source_wide, y_wide), silent = TRUE), "try-error"))
+stopifnot(inherits(try(nirs4all_fit(di_recipe, source_wide, y_wide,
+  preprocessing = "native_n4mp"), silent = TRUE), "try-error"))
+
 cli <- Sys.getenv("NIRS4ALL_DAGML_CLI", "")
 if (nzchar(cli) && requireNamespace("dagml", quietly = TRUE)) {
   graph <- nirs4all_dag_cv_refit_predict(pipeline, source, y,

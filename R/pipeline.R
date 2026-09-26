@@ -482,6 +482,25 @@ nirs4all_fit <- function(pipeline, X, y = NULL,
   if (!is.null(rownames(X)) && !is.null(names(y)) &&
       !identical(rownames(X), names(y)))
     stop("X row names and y sample names differ", call. = FALSE)
+  di_pls <- identical(pipeline$learner$spec$method, "di_pls")
+  if (di_pls && length(pipeline$steps)) {
+    if (!identical(preprocessing, "legacy"))
+      stop("DI-PLS with preprocessing requires the qualified legacy step path",
+           call. = FALSE)
+    allowed <- c("snv", "local_snv", "robust_snv", "area_normalization",
+                 "detrend", "msc", "emsc", "savgol")
+    if (!all(vapply(pipeline$steps, function(step)
+        inherits(step, "nirs4all_step") && step$kind %in% allowed,
+        logical(1))))
+      stop("DI-PLS target cohort cannot share selector or branch preprocessing state",
+           call. = FALSE)
+    target <- pipeline$learner$spec$params$X_target
+    if (ncol(target) != ncol(X) ||
+        (!is.null(colnames(target)) &&
+         !identical(colnames(target), colnames(X))))
+      stop("DI-PLS target cohort feature width, names or order differ from source X",
+           call. = FALSE)
+  }
   if (identical(preprocessing, "native_n4mp") &&
       (!identical(task, "regression") ||
        !(pipeline$learner$format %in% c("n4mm", "n4mm_affine"))))
@@ -504,7 +523,15 @@ nirs4all_fit <- function(pipeline, X, y = NULL,
     owner <- "embedded_methods"
   } else {
     transformed <- nirs4all_fit_transform(X, pipeline$steps, y)
-    state <- pipeline$learner$fit(transformed$X,
+    fit_learner <- pipeline$learner
+    if (di_pls && length(pipeline$steps)) {
+      fit_params <- fit_learner$spec$params
+      fit_params$X_target <- nirs4all_transform(target, pipeline$steps,
+                                                transformed$states)
+      fit_learner <- nirs4all_n4m_method("di_pls",
+        fit_learner$spec$n_components, fit_params)
+    }
+    state <- fit_learner$fit(transformed$X,
       if (identical(task, "classification")) y else as.numeric(y))
     states <- transformed$states
     owner <- "external_r"
