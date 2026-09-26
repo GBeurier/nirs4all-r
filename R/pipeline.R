@@ -269,6 +269,9 @@ nirs4all_concat <- function(branches) {
 #' @export
 nirs4all_pipeline <- function(steps = list(), learner = nirs4all_pls(),
                              augmentations = list()) {
+  # Older fitted portable bundles have no augmentation field. Treat their
+  # missing/NULL recipe as the pre-existing empty training policy.
+  if (is.null(augmentations)) augmentations <- list()
   if (!is.list(steps) || !all(vapply(steps, inherits, logical(1), "nirs4all_step")))
     stop("steps must be a list of nirs4all preprocessing steps", call. = FALSE)
   if (!inherits(learner, "nirs4all_controller"))
