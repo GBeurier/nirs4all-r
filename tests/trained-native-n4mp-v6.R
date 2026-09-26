@@ -21,12 +21,55 @@ profiles <- list(
        nirs4all_savgol(7L, 2L, 1L)))
 for (steps in profiles) {
   old <- nirs4all:::nirs4all_fit_transform(X, steps)
+  stopifnot(identical(colnames(old$X), colnames(X)))
   native <- n4m::n4m_preprocess_fit(X,
     nirs4all:::nirs4all_n4mp_steps(steps))
   stopifnot(max(abs(old$X - n4m::n4m_preprocess_transform(native, X))) < 1e-10,
     max(abs(nirs4all:::nirs4all_transform(held, steps, old$states) -
       n4m::n4m_preprocess_transform(native, held))) < 1e-10)
 }
+
+# Sweep the bounded polynomial and SG parameter space over a wider spectral
+# matrix, checking held-out values rather than only the fixture defaults.
+wide <- outer(seq_len(32L), seq_len(31L), function(s, b)
+  sin(s * b / 11) + cos(b / 3 + s / 7) + s * b / 200)
+colnames(wide) <- paste0("band", seq_len(ncol(wide)))
+wide_held <- wide[c(3L, 10L, 29L), , drop = FALSE] + 0.023
+audit_step <- function(step) {
+  old <- nirs4all:::nirs4all_fit_transform(wide, list(step))
+  native <- n4m::n4m_preprocess_fit(wide,
+    nirs4all:::nirs4all_n4mp_steps(list(step)))
+  stopifnot(identical(colnames(old$X), colnames(wide)),
+    max(abs(old$X - n4m::n4m_preprocess_transform(native, wide))) < 1e-10,
+    max(abs(nirs4all:::nirs4all_transform(wide_held, list(step), old$states) -
+      n4m::n4m_preprocess_transform(native, wide_held))) < 1e-10)
+}
+for (degree in 0:5) audit_step(nirs4all_detrend(degree))
+for (window in c(3L, 5L, 7L, 11L, 15L))
+  for (poly in 0:min(5L, window - 1L))
+    for (deriv in 0:min(2L, poly))
+      audit_step(nirs4all_savgol(window, poly, deriv))
+
+# Named per-feature groups must remain aligned after every width-preserving
+# step. Both the legacy and N4MP routes now retain input feature identity.
+groups <- stats::setNames(rep(0:2, length.out = ncol(X)), colnames(X))
+group_steps <- list(nirs4all_snv(), nirs4all_msc(),
+                    nirs4all_savgol(5L, 2L))
+group_pipeline <- nirs4all_pipeline(group_steps,
+  nirs4all_n4m_method("group_sparse_pls", 2L,
+    list(group_assignment = groups)))
+legacy_groups <- nirs4all_fit(group_pipeline, X, y)
+native_groups <- nirs4all_fit(group_pipeline, X, y,
+                              preprocessing = "native_n4mp")
+stopifnot(max(abs(predict(legacy_groups, held) -
+                  predict(native_groups, held))) < 1e-10)
+bad_groups <- groups[rev(seq_along(groups))]
+bad_pipeline <- nirs4all_pipeline(group_steps,
+  nirs4all_n4m_method("group_sparse_pls", 2L,
+    list(group_assignment = bad_groups)))
+reject(nirs4all_fit(bad_pipeline, X, y))
+reject(nirs4all_fit(bad_pipeline, X, y,
+                    preprocessing = "native_n4mp"))
 
 # Generic N4MP EMSC has an intercept and a normalized polynomial axis;
 # the legacy n4m EMSC uses powers of integer wavelength without intercept.
