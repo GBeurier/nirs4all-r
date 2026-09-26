@@ -261,15 +261,25 @@ nirs4all_concat <- function(branches) {
 
 #' Define an R pipeline
 #' @param steps List of preprocessing steps, applied in order.
+#' @param augmentations Optional ordered list of seeded
+#'   [nirs4all_native_augmentation()] specifications. Applied only to
+#'   training X during fit, before preprocessing; never to Y or prediction X.
 #' @param learner One controller from [nirs4all_pls()], [nirs4all_lm()],
 #'   [nirs4all_ranger()] or [nirs4all_controller()].
 #' @export
-nirs4all_pipeline <- function(steps = list(), learner = nirs4all_pls()) {
+nirs4all_pipeline <- function(steps = list(), learner = nirs4all_pls(),
+                             augmentations = list()) {
   if (!is.list(steps) || !all(vapply(steps, inherits, logical(1), "nirs4all_step")))
     stop("steps must be a list of nirs4all preprocessing steps", call. = FALSE)
   if (!inherits(learner, "nirs4all_controller"))
     stop("learner must be a nirs4all controller", call. = FALSE)
-  structure(list(steps = steps, learner = learner), class = "nirs4all_pipeline")
+  if (!is.list(augmentations) || !all(vapply(augmentations, inherits,
+                                           logical(1),
+                                           "nirs4all_native_augmentation")))
+    stop("augmentations must be native training-only augmentation specifications",
+         call. = FALSE)
+  structure(list(steps = steps, learner = learner,
+                 augmentations = augmentations), class = "nirs4all_pipeline")
 }
 
 nirs4all_matrix <- function(X, n_features = NULL) {
@@ -505,6 +515,11 @@ nirs4all_fit <- function(pipeline, X, y = NULL,
       (!identical(task, "regression") ||
        !(pipeline$learner$format %in% c("n4mm", "n4mm_affine"))))
     stop("native N4MP currently requires a portable regression learner", call. = FALSE)
+  if (di_pls && length(pipeline$augmentations))
+    stop("DI-PLS cannot augment source X without a qualified target-domain policy",
+         call. = FALSE)
+  if (length(pipeline$augmentations))
+    X <- nirs4all_augment_training(X, pipeline$augmentations)
   embedded <- if (identical(task, "regression") &&
                   identical(preprocessing, "legacy"))
     nirs4all_embedded_snv_savgol(pipeline) else NULL
@@ -537,6 +552,7 @@ nirs4all_fit <- function(pipeline, X, y = NULL,
     owner <- "external_r"
   }
   structure(list(steps = pipeline$steps, learner = pipeline$learner,
+                 augmentations = pipeline$augmentations,
                  state = state, step_states = states,
                  native_preprocessing = if (identical(owner, "native_n4mp"))
                    native_preprocessing else NULL,
@@ -567,7 +583,8 @@ nirs4all_retrain <- function(object, X, y = NULL) {
   if (!is.null(object$feature_names) &&
       !identical(colnames(input), object$feature_names))
     stop("X feature names or order differ from training", call. = FALSE)
-  nirs4all_fit(nirs4all_pipeline(object$steps, object$learner), X, y,
+  nirs4all_fit(nirs4all_pipeline(object$steps, object$learner,
+                                augmentations = object$augmentations), X, y,
     preprocessing = if (identical(object$preprocessing_owner, "native_n4mp"))
       "native_n4mp" else "legacy")
 }

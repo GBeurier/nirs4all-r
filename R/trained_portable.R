@@ -17,6 +17,9 @@
 #' @return JSON text, invisibly when `file` is supplied.
 #' @export
 nirs4all_export_trained_pipeline <- function(object, file = NULL) {
+  if (inherits(object, "nirs4all_fitted") && length(object$augmentations))
+    stop("trained portable export cannot encode train-only augmentations",
+         call. = FALSE)
   if (inherits(object, "nirs4all_fitted") &&
       identical(object$preprocessing_owner, "native_n4mp"))
     return(nirs4all_export_trained_n4mp(object, file))
