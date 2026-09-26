@@ -33,13 +33,21 @@
   robust_pls = "n4m.RobustPLS", cppls = "n4m.CPPLS",
   sparse_simpls = "n4m.SparseSIMPLS", ecr = "n4m.ECR",
   continuum_regression = "n4m.ContinuumRegression",
-  mir_pls = "n4m.MIRPLS")
+  mir_pls = "n4m.MIRPLS",
+  fused_sparse_pls = "n4m.FusedSparsePLS",
+  bagging_pls = "n4m.BaggingPLS",
+  boosting_pls = "n4m.BoostingPLS",
+  random_subspace_pls = "n4m.RandomSubspacePLS")
 
 .nirs4all_portable_affine_params <- list(
   ridge = "alpha", ridge_pls = "ridge_lambda",
   robust_pls = c("huber_k", "max_irls_iter"), cppls = "gamma",
   sparse_simpls = "sparsity_lambda", ecr = "alpha",
-  continuum_regression = "tau", mir_pls = character())
+  continuum_regression = "tau", mir_pls = character(),
+  fused_sparse_pls = c("l1_lambda", "fusion_lambda"),
+  bagging_pls = c("n_estimators", "seed"),
+  boosting_pls = c("n_estimators", "learning_rate"),
+  random_subspace_pls = c("n_estimators", "features_per_subspace", "seed"))
 
 nirs4all_portable_named <- function(value) {
   is.list(value) && !is.null(names(value)) && any(nzchar(names(value)))

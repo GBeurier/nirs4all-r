@@ -7,7 +7,9 @@ nirs4all_n4m_method(method, n_components = 2L, params = list())
 \arguments{
 \item{method}{One of \code{ridge}, \code{ridge_pls}, \code{robust_pls},
 \code{cppls}, \code{sparse_simpls}, \code{ecr},
-\code{continuum_regression}, or \code{mir_pls}.}
+\code{continuum_regression}, \code{mir_pls}, \code{fused_sparse_pls},
+\code{bagging_pls}, \code{boosting_pls}, or
+\code{random_subspace_pls}.}
 \item{n_components}{Positive component count; ignored by ridge's solver.}
 \item{params}{Named method-specific scalar parameter list.}
 }

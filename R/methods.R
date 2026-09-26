@@ -15,7 +15,11 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
     ridge = "ridge_lambda", ridge_pls = "ridge_lambda",
     robust_pls = c("huber_k", "max_irls_iter"), cppls = "gamma",
     sparse_simpls = "sparsity_lambda", ecr = "alpha",
-    continuum_regression = "tau", mir_pls = character())
+    continuum_regression = "tau", mir_pls = character(),
+    fused_sparse_pls = c("l1_lambda", "fusion_lambda"),
+    bagging_pls = c("n_estimators", "seed"),
+    boosting_pls = c("n_estimators", "learning_rate"),
+    random_subspace_pls = c("n_estimators", "features_per_subspace", "seed"))
   if (!is.character(method) || length(method) != 1L || is.na(method) ||
       !(method %in% names(allowed)))
     stop("unsupported n4m linear method", call. = FALSE)
@@ -34,15 +38,37 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
       !is.na(value) && is.finite(value), logical(1))))
     stop("method parameters must be finite numeric or logical scalars",
          call. = FALSE)
-  if ("max_irls_iter" %in% names(params)) {
-    value <- params$max_irls_iter
-    if (!is.numeric(value) || value < 1L || value != floor(value) ||
+  for (name in intersect(names(params),
+                         c("max_irls_iter", "n_estimators",
+                           "features_per_subspace", "seed"))) {
+    value <- params[[name]]
+    minimum <- if (identical(name, "seed")) 0L else 1L
+    if (!is.numeric(value) || value < minimum || value != floor(value) ||
         value > .Machine$integer.max)
-      stop("max_irls_iter must be a positive integer", call. = FALSE)
-    params$max_irls_iter <- as.integer(value)
+      stop(sprintf("%s must be a bounded %s integer", name,
+        if (identical(name, "seed")) "non-negative" else "positive"),
+        call. = FALSE)
+    params[[name]] <- as.integer(value)
+  }
+  for (name in intersect(names(params),
+                         c("l1_lambda", "fusion_lambda", "learning_rate"))) {
+    value <- params[[name]]
+    if (!is.numeric(value) || value < 0 ||
+        (identical(name, "learning_rate") &&
+         (value == 0 || value > 1)))
+      stop(sprintf("%s must be %s", name,
+        if (identical(name, "learning_rate")) "in (0, 1]" else "non-negative"),
+        call. = FALSE)
   }
   controller <- nirs4all_controller(
     fit = function(X, y) {
+      if (identical(method, "random_subspace_pls")) {
+        subspace <- if (is.null(params$features_per_subspace)) 10L else
+          params$features_per_subspace
+        if (subspace > ncol(X))
+          stop("features_per_subspace exceeds the input feature count",
+               call. = FALSE)
+      }
       result <- n4m::n4m_method(method, X, y, as.integer(n_components),
                                 params = params)
       coefficients <- as.matrix(result$coefficients)
