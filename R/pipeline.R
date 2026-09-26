@@ -567,6 +567,9 @@ nirs4all_retrain <- function(object, X, y = NULL) {
   if (!is.null(object$feature_names) &&
       !identical(colnames(input), object$feature_names))
     stop("X feature names or order differ from training", call. = FALSE)
+  if (identical(object$preprocessing_owner, "n4m_roles"))
+    return(nirs4all_fit_role_recipe(object$recipe, input,
+      if (is.null(y) && inherits(X, "nirs4all_dataset")) X$y else y))
   nirs4all_fit(nirs4all_pipeline(object$steps, object$learner), X, y,
     preprocessing = if (identical(object$preprocessing_owner, "native_n4mp"))
       "native_n4mp" else "legacy")
@@ -586,7 +589,9 @@ nirs4all_predict <- function(object, X) {
   transformed <- if (identical(object$preprocessing_owner, "embedded_methods"))
     X else if (identical(object$preprocessing_owner, "native_n4mp"))
       nirs4all_n4mp_transform(object$native_preprocessing, X) else
-        nirs4all_transform(X, object$steps, object$step_states)
+        if (identical(object$preprocessing_owner, "n4m_roles"))
+          nirs4all_role_transform(object$role_estimators, X) else
+            nirs4all_transform(X, object$steps, object$step_states)
   out <- object$learner$predict(object$state, transformed)
   if (identical(object$task, "classification")) {
     if (!is.factor(out) || length(out) != nrow(X) || anyNA(out) ||
