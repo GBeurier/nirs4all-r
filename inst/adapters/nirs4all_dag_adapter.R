@@ -220,6 +220,14 @@ steps_from_task <- function(task) {
       emsc = nirs4all_emsc(degree = as.integer(spec$degree)),
       spa = nirs4all_spa(top_k = as.integer(spec$top_k),
                         n_components = as.integer(spec$n_components)),
+      n4m_selector = {
+        params <- spec$params
+        if (is.null(params)) params <- list()
+        for (name in intersect(names(params), c("alpha_thresholds", "thresholds")))
+          params[[name]] <- as.numeric(unlist(params[[name]], use.names = FALSE))
+        nirs4all_n4m_selector(spec$method,
+          n_components = as.integer(spec$n_components), params = params)
+      },
       savgol = nirs4all_savgol(
         window_length = as.integer(spec$window_length),
         polyorder = as.integer(spec$polyorder), deriv = as.integer(spec$deriv),
