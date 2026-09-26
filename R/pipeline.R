@@ -117,6 +117,96 @@ nirs4all_spa <- function(top_k, n_components = 2L) {
             class = "nirs4all_step")
 }
 
+# The dispatcher currently exposes 25 names despite describing 24 selectors.
+# This is an input schema, not a claim of per-method cross-language parity.
+.nirs4all_selector_params <- list(
+  spa_select = "top_k", cars_select = c("n_iterations", "min_features"),
+  interval_select = c("interval_width", "step"), stability_select = "top_k",
+  uve_select = c("noise_features", "noise_seed"),
+  random_frog_select = c("n_iterations", "initial_size", "min_size",
+                         "max_size", "top_k", "seed"),
+  scars_select = c("n_iterations", "min_features", "sample_fraction", "seed"),
+  ga_select = c("n_generations", "population_size", "min_features",
+                "max_features", "mutation_rate", "seed"),
+  pso_select = c("n_swarm", "n_iterations", "w", "c1", "c2", "v_max", "seed"),
+  vissa_select = c("n_iterations", "n_submodels", "ratio_kept", "threshold",
+                   "floor_probability", "seed"),
+  shaving_select = c("n_steps", "min_features", "shave_fraction"),
+  bve_select = c("n_steps", "min_features"),
+  t2_select = c("alpha_thresholds", "min_selected"),
+  wvc_select = c("top_k", "normalize"),
+  wvc_threshold_select = c("normalize", "threshold", "threshold_factor",
+                           "min_selected"),
+  emcuve_select = c("noise_features", "noise_seed", "n_ensembles",
+                    "vote_threshold"),
+  randomization_select = c("n_permutations", "randomization_seed", "alpha"),
+  bipls_select = c("interval_width", "min_intervals"),
+  sipls_select = c("interval_width", "combination_size"),
+  rep_select = c("n_steps", "min_features", "remove_count"),
+  ipw_select = c("n_iterations", "top_k", "damping", "weight_floor"),
+  st_select = c("thresholds", "min_selected"),
+  iriv_select = c("max_rounds", "seed"),
+  irf_select = c("n_iterations", "window_size", "initial_intervals", "top_k", "seed"),
+  vip_spa_select = c("vip_threshold", "top_k"))
+
+#' Define a train-fitted native n4m variable selector
+#'
+#' The selector sees only the training matrix and target. Its returned
+#' `selected_indices` are checked, stored, and projected in original spectral
+#' order on every later matrix. Methods with internal validation use n4m's
+#' native validation plan. Availability here does not imply qualified portable
+#' parity for each algorithm.
+#' @param method One of the n4m dispatcher selector names ending in `_select`.
+#' @param n_components Positive native component count.
+#' @param params Named list of native method parameters.
+#' @export
+nirs4all_n4m_selector <- function(method, n_components = 2L, params = list()) {
+  if (!is.character(method) || length(method) != 1L || is.na(method) ||
+      !(method %in% names(.nirs4all_selector_params)))
+    stop("unsupported n4m selector", call. = FALSE)
+  positive_integer <- function(value) is.numeric(value) && length(value) == 1L &&
+    is.finite(value) && value >= 1L && value <= .Machine$integer.max &&
+    value == floor(value)
+  if (!positive_integer(n_components))
+    stop("n_components must be a positive integer", call. = FALSE)
+  allowed <- .nirs4all_selector_params[[method]]
+  if (!is.list(params) || (length(params) &&
+      (is.null(names(params)) || anyNA(names(params)) ||
+       any(!nzchar(names(params))) || anyDuplicated(names(params)) ||
+       !all(names(params) %in% allowed))))
+    stop("unsupported or duplicate n4m selector parameter", call. = FALSE)
+  vectors <- c("alpha_thresholds", "thresholds")
+  integers <- c("top_k", "n_iterations", "min_features", "interval_width",
+    "step", "noise_features", "noise_seed", "initial_size", "min_size",
+    "max_size", "seed", "n_generations", "population_size", "n_swarm",
+    "n_submodels", "n_steps", "min_selected", "normalize", "n_ensembles",
+    "n_permutations", "randomization_seed", "min_intervals", "combination_size",
+    "remove_count", "max_rounds", "window_size", "initial_intervals")
+  seeds <- c("seed", "noise_seed", "randomization_seed")
+  for (name in names(params)) {
+    value <- params[[name]]
+    if (!(is.numeric(value) || (identical(name, "normalize") && is.logical(value))) ||
+        !length(value) || anyNA(value) || any(!is.finite(value)) ||
+        (length(value) != 1L && !(name %in% vectors)))
+      stop(sprintf("invalid n4m selector parameter '%s'", name), call. = FALSE)
+    if (name %in% integers &&
+        (any(value != floor(value)) || any(value < if (name %in% c(seeds, "normalize")) 0 else 1) ||
+         any(value > .Machine$integer.max)))
+      stop(sprintf("invalid integer selector parameter '%s'", name), call. = FALSE)
+    if (identical(name, "normalize") && !(value %in% c(0, 1)))
+      stop("normalize must be TRUE or FALSE", call. = FALSE)
+    if (name %in% integers) params[[name]] <- as.integer(value)
+    if (name %in% vectors) params[[name]] <- as.numeric(value)
+  }
+  if (method %in% c("t2_select", "st_select") &&
+      is.null(params[[if (identical(method, "t2_select"))
+        "alpha_thresholds" else "thresholds"]]))
+    stop("selector requires a threshold vector", call. = FALSE)
+  structure(list(kind = "n4m_selector", method = method,
+                 n_components = as.integer(n_components), params = params),
+            class = "nirs4all_step")
+}
+
 #' Define a Savitzky-Golay step
 #' @param window_length Odd window length.
 #' @param polyorder Polynomial order below the window length.
@@ -250,6 +340,13 @@ nirs4all_transform <- function(X, steps, step_states = NULL) {
         # Python's SelectorMixin projects in original feature order.
         X[, sort(selected), drop = FALSE]
       },
+      n4m_selector = {
+        selected <- step_states[[index]]
+        if (!is.integer(selected) || !length(selected) || anyNA(selected) ||
+            anyDuplicated(selected) || any(selected < 1L | selected > ncol(X)))
+          stop("n4m selector requires valid fitted feature indices", call. = FALSE)
+        X[, sort(selected), drop = FALSE]
+      },
       concat = {
         branch_states <- step_states[[index]]
         if (!is.list(branch_states) ||
@@ -285,6 +382,24 @@ nirs4all_fit_transform <- function(X, steps, y = NULL) {
           step$n_components > min(nrow(X) - 1L, ncol(X)))
         stop("SPA parameters exceed the training matrix dimensions", call. = FALSE)
       selected <- n4m::spa_select(X, y, step$n_components, step$top_k)$selected_indices
+      states[[index]] <- as.integer(selected)
+    }
+    if (identical(steps[[index]]$kind, "n4m_selector")) {
+      step <- steps[[index]]
+      if (!is.numeric(y) || is.matrix(y) || length(y) != nrow(X) ||
+          anyNA(y) || any(!is.finite(y)))
+        stop("n4m selector requires a finite numeric training target", call. = FALSE)
+      if (step$n_components > min(nrow(X) - 1L, ncol(X)))
+        stop("selector n_components exceeds the training matrix rank", call. = FALSE)
+      if (!is.null(step$params$top_k) && step$params$top_k > ncol(X))
+        stop("selector top_k exceeds the input feature count", call. = FALSE)
+      result <- n4m::n4m_method(step$method, X, y,
+                                step$n_components, params = step$params)
+      selected <- result$selected_indices
+      if (!is.numeric(selected) || !length(selected) || anyNA(selected) ||
+          any(!is.finite(selected)) || any(selected != floor(selected)) ||
+          any(selected < 1L | selected > ncol(X)) || anyDuplicated(selected))
+        stop("n4m selector returned invalid selected_indices", call. = FALSE)
       states[[index]] <- as.integer(selected)
     }
     if (identical(steps[[index]]$kind, "concat")) {
