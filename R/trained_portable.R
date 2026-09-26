@@ -7,9 +7,10 @@
 #' Version 3 covers PLS regression with train-fitted external SPA selection.
 #' Version 4 covers PLS regression with external native `n4m.Selector` steps.
 #' Version 5 carries a prediction-only affine N4MM model plus an asserted
-#' recipe for refitting one of thirteen native MethodResult regressors; the
+#' recipe for refitting one of fourteen native MethodResult regressors; the
 #' N4MM payload does not attest which fitting method produced it.
-#' The JSON recipe also permits fitting the pipeline again in either language.
+#' The JSON recipe also permits fitting the pipeline again where its model
+#' alias is supported.
 #' @param object A fitted native n4m PLS, affine MethodResult or sparse
 #'   PLS-DA pipeline.
 #' @param file Optional output path. If omitted, returns JSON text.
@@ -78,6 +79,9 @@ nirs4all_export_trained_pipeline <- function(object, file = NULL) {
     manifest$fit_recipe_assertion <- list(kind = "affine_recipe",
       recipe_class = unname(.nirs4all_portable_affine[[
         object$learner$spec$method]]))
+  if (affine && identical(object$learner$spec$method, "mb_pls"))
+    manifest$fit_recipe_assertion$block_sizes <- unname(as.list(
+      object$learner$spec$params$block_sizes))
   manifest_json <- as.character(jsonlite::toJSON(manifest,
     auto_unbox = TRUE, null = "null", digits = 17L))
   document <- list(schema = if (classification)
@@ -195,9 +199,13 @@ nirs4all_import_trained_pipeline <- function(source) {
     if (is.null(expected_class) ||
         !identical(pipeline$learner$format, "n4mm_affine") ||
         !is.list(assertion) ||
-        !setequal(names(assertion), c("kind", "recipe_class")) ||
+        !setequal(names(assertion), c("kind", "recipe_class",
+          if (identical(method, "mb_pls")) "block_sizes" else character())) ||
         !identical(assertion$kind, "affine_recipe") ||
         !identical(assertion$recipe_class, expected_class) ||
+        (identical(method, "mb_pls") &&
+         !identical(assertion$block_sizes, unname(as.list(
+           pipeline$learner$spec$params$block_sizes)))) ||
         !identical(recipe_model$class, expected_class) ||
         (!identical(method, "ridge") &&
          is.null(recipe_model$params$n_components)))
@@ -408,6 +416,8 @@ nirs4all_portable_validate_model <- function(bytes, pipeline, input_width,
   if (identical(pipeline$learner$spec$learner, "n4m_method")) {
     spec <- pipeline$learner$spec
     if (embedded || !identical(pipeline$learner$format, "n4mm_affine") ||
+        (identical(spec$method, "mb_pls") &&
+         sum(as.double(spec$params$block_sizes)) != model_width) ||
         (identical(spec$method, "n_pls") &&
          as.double(spec$params$mode_j) * as.double(spec$params$mode_k) !=
            model_width) ||

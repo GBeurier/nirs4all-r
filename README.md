@@ -89,6 +89,19 @@ does not guarantee parity. These thirteen recipe aliases are **not yet** qualifi
 by the Core/WASM pipeline reader. Their trained-state transfer is separate
 from this level-1 recipe support and is not implied by this paragraph.
 
+R additionally supports `n4m.MBPLS` with required `block_sizes`, at least
+two positive integer block widths summing to the feature count after
+preprocessing. Its recipe uses the low-level Methods NIPALS kernel with
+centered X/Y and `scale_x = scale_y = FALSE`. The native fit returns
+original-scale coefficients and a separate intercept; held-out prediction
+is `X %*% coefficients + intercept`. The Python
+`pls4all.sklearn.MBPLSRegression` class defaults to scaling X/Y, so its
+default fit is a different recipe. The R JSON/YAML and v5 trained envelopes
+carry the block layout for refitting; the N4MM model carries affine prediction
+only and cannot attest the fit algorithm or block layout. Cross-language
+refitting requires a Python shared reader with the matching `n4m.MBPLS`
+alias and unscaled Methods configuration.
+
 For an R-specific JSON/YAML recipe, use `scope = "r_native"` and
 `nirs4all_r_pipeline_from_recipe()`. The closed model aliases cover regression
 and classification forests via `ranger`, Gaussian elastic-net via `glmnet`,
@@ -325,11 +338,13 @@ For the exported-recipe and trained-envelope R↔Python regression tests, set
 the shared n4m alias resolver; the Methods Python binding must also be on
 `PYTHONPATH` with a matching `N4M_LIB_PATH`.
 
-`nirs4all_n4m_method()` exposes thirteen native linear MethodResult regressors:
+`nirs4all_n4m_method()` exposes fourteen native linear MethodResult regressors:
 ridge, ridge-PLS, robust PLS, CPPLS, sparse SIMPLS, ECR, continuum regression
 MIR-PLS, fused sparse PLS, bagging PLS, boosting PLS, random-subspace PLS and
-N-PLS. N-PLS requires explicit positive `mode_j` and `mode_k` with
+N-PLS and MB-PLS. N-PLS requires explicit positive `mode_j` and `mode_k` with
 `mode_j * mode_k` equal to the feature width after preprocessing.
+MB-PLS requires an explicit positive integer `block_sizes` vector summing to
+that width.
 These use `n4m` for fitting. Their R bundles now contain a
 portable N4MM affine predictor, and a preprocessing-free fit can be exported
 as N4MM for Python/R inference. That artifact attests the fitted affine
