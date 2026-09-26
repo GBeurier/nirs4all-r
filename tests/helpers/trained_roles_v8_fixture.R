@@ -1,5 +1,5 @@
-# Emit a deterministic R-trained v7 envelope (n4m role recipe) and its held-out oracle.
-# Usage: Rscript tests/helpers/trained_roles_v7_fixture.R envelope.json oracle.json
+# Emit a deterministic R-trained v8 envelope (n4m role recipe) and its held-out oracle.
+# Usage: Rscript tests/helpers/trained_roles_v8_fixture.R envelope.json oracle.json
 library(nirs4all)
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 2L) stop("expected envelope and oracle paths")

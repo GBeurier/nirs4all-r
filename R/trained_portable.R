@@ -9,7 +9,7 @@
 #' Version 5 carries a prediction-only affine N4MM model plus an asserted
 #' recipe for refitting one of fourteen native MethodResult regressors; the
 #' N4MM payload does not attest which fitting method produced it.
-#' Version 7 covers any recipe of generic n4m role steps
+#' Version 8 covers any recipe of generic n4m role steps
 #' ([nirs4all_fit_role_recipe()]): each fitted step travels as its N4ME state.
 #' The JSON recipe also permits fitting the pipeline again where its model
 #' alias is supported.
