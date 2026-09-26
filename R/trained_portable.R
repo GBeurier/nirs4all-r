@@ -7,8 +7,13 @@
 #' Version 3 covers PLS regression with train-fitted external SPA selection.
 #' Version 4 covers PLS regression with external native `n4m.Selector` steps.
 #' Version 5 carries a prediction-only affine N4MM model plus an asserted
-#' recipe for refitting one of fourteen native MethodResult regressors; the
+#' recipe for refitting a qualified native MethodResult regressor; the
 #' N4MM payload does not attest which fitting method produced it.
+#' Version 6 combines qualified fitted N4MP preprocessing with N4MM.
+#' Version 7 adds an ordered train-only augmentation recipe to that native
+#' profile; prediction skips augmentation and retraining reapplies it before
+#' fitting preprocessing. The N4MM payload does not attest the augmentation
+#' history of the original fit.
 #' The JSON recipe also permits fitting the pipeline again where its model
 #' alias is supported.
 #' @param object A fitted native n4m PLS, affine MethodResult or sparse
@@ -17,12 +22,12 @@
 #' @return JSON text, invisibly when `file` is supplied.
 #' @export
 nirs4all_export_trained_pipeline <- function(object, file = NULL) {
-  if (inherits(object, "nirs4all_fitted") && length(object$augmentations))
-    stop("trained portable export cannot encode train-only augmentations",
-         call. = FALSE)
   if (inherits(object, "nirs4all_fitted") &&
       identical(object$preprocessing_owner, "native_n4mp"))
     return(nirs4all_export_trained_n4mp(object, file))
+  if (inherits(object, "nirs4all_fitted") && length(object$augmentations))
+    stop("trained portable augmentation requires native N4MP state",
+         call. = FALSE)
   classification <- inherits(object, "nirs4all_fitted") &&
     identical(object$learner$format, "n4mm_sparse_pls_da") &&
     identical(object$task, "classification")
@@ -129,7 +134,8 @@ nirs4all_import_trained_pipeline <- function(source) {
                                           collapse = "\n") else source
   document <- jsonlite::fromJSON(input, simplifyVector = FALSE)
   if (is.list(document) &&
-      identical(document$schema, "nirs4all.n4m.trained_pipeline.v6"))
+      (identical(document$schema, "nirs4all.n4m.trained_pipeline.v6") ||
+       identical(document$schema, "nirs4all.n4m.trained_pipeline.v7")))
     return(nirs4all_import_trained_n4mp(document))
   if (!is.list(document) ||
       !setequal(names(document), c("schema", "manifest_json",
@@ -193,6 +199,8 @@ nirs4all_import_trained_pipeline <- function(source) {
       stop("duplicate feature names", call. = FALSE)
   }
   pipeline <- nirs4all_pipeline_from_portable(manifest$recipe)
+  if (length(pipeline$augmentations))
+    stop("train augmentation requires trained schema v7", call. = FALSE)
   if (classification != identical(pipeline$learner$spec$learner,
                                   "sparse_pls_da"))
     stop("trained model task differs from recipe", call. = FALSE)
