@@ -341,25 +341,27 @@ For the exported-recipe and trained-envelope R↔Python regression tests, set
 the shared n4m alias resolver; the Methods Python binding must also be on
 `PYTHONPATH` with a matching `N4M_LIB_PATH`.
 
-`nirs4all_n4m_method()` exposes fourteen cross-language-qualified native
+`nirs4all_n4m_method()` exposes fifteen cross-language-qualified native
 linear MethodResult regressors:
 ridge, ridge-PLS, robust PLS, CPPLS, sparse SIMPLS, ECR, continuum regression,
 MIR-PLS, fused sparse PLS, bagging PLS, boosting PLS, random-subspace PLS,
-N-PLS, and MB-PLS. N-PLS requires explicit positive `mode_j` and `mode_k` with
+N-PLS, MB-PLS, and group-sparse PLS. N-PLS requires explicit positive `mode_j` and `mode_k` with
 `mode_j * mode_k` equal to the feature width after preprocessing.
 MB-PLS requires an explicit positive integer `block_sizes` vector summing to
 that width.
-Two further native regressors are available locally in R:
+One further native regressor is available locally in R:
 `nirs4all_n4m_method("di_pls", ..., params = list(X_target = ...))` for
-target-domain adaptation, and `nirs4all_group_sparse_pls()` for an explicit
-feature-group assignment and coefficient penalty. Group IDs refer to the
+target-domain adaptation. `nirs4all_group_sparse_pls()` takes an explicit
+feature-group assignment and coefficient penalty. Its JSON/YAML recipe uses
+`n4m.GroupSparsePLS` with `n_components`, positional `group_assignment`, and
+`group_lambda`. Group IDs refer to the
 columns reaching the learner, after preprocessing. Native transformations
 such as SNV may drop column names; use positional IDs in that case.
 Group-sparse PLS applies
 post-SIMPLS group shrinkage to predictive coefficients; it is not
 `sgPLS::gPLS`. For both methods, RDS and DAG-ML CV/OOF/refit/replay work;
-an N4MM affine export preserves prediction, but no qualified cross-language
-recipe or trained-pipeline transfer currently attests the fitting inputs.
+an N4MM affine export preserves prediction, but it does not attest the fitting
+inputs. DI-PLS has no qualified cross-language recipe.
 Because an earlier n4m development build exposed a no-op group penalty under
 the same package version, the first GroupSparsePLS fit checks the native
 coefficient-shrinkage behavior and refuses that defective build.

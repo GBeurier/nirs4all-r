@@ -36,10 +36,7 @@ stopifnot(max(abs(predict(nirs4all_load(path), held) - expected)) < 1e-10,
 unlink(path)
 bytes <- nirs4all_export_native_model(fitted)
 restored <- nirs4all_import_native_model(bytes, pipeline, colnames(train))
-stopifnot(max(abs(predict(restored, held) - expected)) < 1e-10,
-  inherits(try(nirs4all_export_pipeline(pipeline), silent = TRUE), "try-error"),
-  inherits(try(nirs4all_export_trained_pipeline(fitted), silent = TRUE),
-    "try-error"))
+stopifnot(max(abs(predict(restored, held) - expected)) < 1e-10)
 
 reordered <- held[, rev(seq_len(ncol(held))), drop = FALSE]
 stopifnot(inherits(try(predict(fitted, reordered), silent = TRUE), "try-error"),
