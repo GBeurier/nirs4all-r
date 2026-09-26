@@ -58,14 +58,17 @@ if (nzchar(python)) {
   model_file <- file.path(work, "model.n4mm")
   request_file <- file.path(work, "request.json")
   result_file <- file.path(work, "result.json")
+  ridge_intercept <- ridge$state$intercept
+  if (is.null(ridge_intercept))
+    ridge_intercept <- ridge$state$y_mean -
+      drop(ridge$state$x_mean %*% ridge$state$coefficients)
   request <- list(
     X = lapply(seq_len(nrow(X)), function(i) unname(as.numeric(X[i, ]))),
     predict_X = lapply(seq_len(nrow(X_test)), function(i)
       unname(as.numeric(X_test[i, ]))),
     coefficients = lapply(seq_len(ncol(X)), function(i)
       as.numeric(ridge$state$coefficients[i, 1L])),
-    intercept = unname(as.numeric(ridge$state$y_mean -
-      drop(ridge$state$x_mean %*% ridge$state$coefficients))))
+    intercept = unname(as.numeric(ridge_intercept)))
   writeLines(as.character(jsonlite::toJSON(request, auto_unbox = FALSE,
                                             digits = NA)), request_file)
   peer <- function(mode) {
