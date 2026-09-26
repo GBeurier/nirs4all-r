@@ -30,10 +30,16 @@ frozen matrix parity tests against Python `n4m` and are exercised in local
 and native DAG pipelines. MSC and EMSC learn a reference on each training fold,
 store only that vector in the fitted R bundle, and reuse it for validation or
 future samples. EMSC also records its polynomial degree in the step definition.
+SPA selects wavelengths from each training fold's predictors and targets via
+`n4m::spa_select()`; validation and prediction reuse its saved indices. The R
+fit keeps the native selection rank but projects columns in input order, as
+Python's selector does. The JSON/YAML reader and writer recognize `n4m.SPA`
+with `top_k` and
+`n_components`. R/Python selector and DAG fold parity are checked locally;
+Core/WASM recipe qualification remains open.
 Other train-fitted preprocessing such as baseline centering still needs an
 explicitly serialized fit state.
-This development branch requires `n4m >= 1.0.21.9002`, available on R-universe
-but not yet on CRAN.
+This development branch requires `n4m >= 1.0.21.9003` for SPA.
 
 The optional `nirs4allformats` reader can feed either path without reparsing
 spectra in this package. It accepts homogeneous one-dimensional signals and
@@ -69,6 +75,32 @@ and WASM readers; the additional n4m preprocessing below is checked by R and
 the full Python `nirs4all` parser, with Core/WASM qualification still open.
 Unsupported settings fail rather than being dropped. This exports a recipe,
 not a trained model.
+
+Thirteen native affine regressions have explicit R↔Python recipe aliases:
+`n4m.Ridge`, `n4m.RidgePLS`, `n4m.RobustPLS`, `n4m.CPPLS`,
+`n4m.SparseSIMPLS`, `n4m.ECR`, `n4m.ContinuumRegression`, `n4m.MIRPLS`,
+`n4m.FusedSparsePLS`, `n4m.BaggingPLS`, `n4m.BoostingPLS` and
+`n4m.RandomSubspacePLS` and `n4m.NPLS`.
+Their JSON/YAML definitions fit and predict on held-out samples through the
+same n4m kernels in both languages, with an independently frozen numerical
+oracle. The alias defaults make Ridge's X scaling and the robust/Ridge-PLS
+settings explicit; using similarly named host classes without these settings
+does not guarantee parity. These thirteen recipe aliases are **not yet** qualified
+by the Core/WASM pipeline reader. Their trained-state transfer is separate
+from this level-1 recipe support and is not implied by this paragraph.
+
+R additionally supports `n4m.MBPLS` with required `block_sizes`, at least
+two positive integer block widths summing to the feature count after
+preprocessing. Its recipe uses the low-level Methods NIPALS kernel with
+centered X/Y and `scale_x = scale_y = FALSE`. The native fit returns
+original-scale coefficients and a separate intercept; held-out prediction
+is `X %*% coefficients + intercept`. The Python
+`pls4all.sklearn.MBPLSRegression` class defaults to scaling X/Y, so its
+default fit is a different recipe. The R JSON/YAML and v5 trained envelopes
+carry the block layout for refitting; the N4MM model carries affine prediction
+only and cannot attest the fit algorithm or block layout. Cross-language
+refitting requires a Python shared reader with the matching `n4m.MBPLS`
+alias and unscaled Methods configuration.
 
 For an R-specific JSON/YAML recipe, use `scope = "r_native"` and
 `nirs4all_r_pipeline_from_recipe()`. The closed model aliases cover regression
@@ -264,15 +296,18 @@ Archive V2/V3 package. Other controllers remain RDS-backed.
 To combine two feature views, `nirs4all_concat()` fits each named branch on
 the same training rows, then concatenates its output columns before the
 learner. With `split_steps = TRUE`, DAG-ML runs each branch step and the join
-as separate nodes (currently for a single pipeline whose sole preprocessing
-step is the concat):
+as separate nodes. A concat can follow and precede other n4m preprocessing
+steps within one pipeline; fixed-candidate variants containing a concat are
+not yet supported:
 
 ```r
 pipeline <- nirs4all_pipeline(
-  list(nirs4all_concat(list(
-    derivative = list(nirs4all_snv(), nirs4all_savgol(5)),
-    scatter = list(nirs4all_msc(), nirs4all_detrend(1))
-  ))),
+  list(nirs4all_spa(top_k = 6),
+       nirs4all_concat(list(
+         scatter = list(nirs4all_msc(), nirs4all_detrend(1)),
+         normalized = list(nirs4all_snv())
+       )),
+       nirs4all_snv()),
   nirs4all_pls(2)
 )
 outcome <- nirs4all_dag_cv_refit_predict(pipeline, X, y,
@@ -306,9 +341,31 @@ For the exported-recipe and trained-envelope R↔Python regression tests, set
 the shared n4m alias resolver; the Methods Python binding must also be on
 `PYTHONPATH` with a matching `N4M_LIB_PATH`.
 
-`nirs4all_n4m_method()` exposes eight native linear MethodResult regressors:
-ridge, ridge-PLS, robust PLS, CPPLS, sparse SIMPLS, ECR, continuum regression
-and MIR-PLS. These use `n4m` for fitting. Their R bundles now contain a
+`nirs4all_n4m_method()` exposes fifteen cross-language-qualified native
+linear MethodResult regressors:
+ridge, ridge-PLS, robust PLS, CPPLS, sparse SIMPLS, ECR, continuum regression,
+MIR-PLS, fused sparse PLS, bagging PLS, boosting PLS, random-subspace PLS,
+N-PLS, MB-PLS, and group-sparse PLS. N-PLS requires explicit positive `mode_j` and `mode_k` with
+`mode_j * mode_k` equal to the feature width after preprocessing.
+MB-PLS requires an explicit positive integer `block_sizes` vector summing to
+that width.
+One further native regressor is available locally in R:
+`nirs4all_n4m_method("di_pls", ..., params = list(X_target = ...))` for
+target-domain adaptation. `nirs4all_group_sparse_pls()` takes an explicit
+feature-group assignment and coefficient penalty. Its JSON/YAML recipe uses
+`n4m.GroupSparsePLS` with `n_components`, positional `group_assignment`, and
+`group_lambda`. Group IDs refer to the
+columns reaching the learner, after preprocessing. Native transformations
+such as SNV may drop column names; use positional IDs in that case.
+Group-sparse PLS applies
+post-SIMPLS group shrinkage to predictive coefficients; it is not
+`sgPLS::gPLS`. For both methods, RDS and DAG-ML CV/OOF/refit/replay work;
+an N4MM affine export preserves prediction, but it does not attest the fitting
+inputs. DI-PLS has no qualified cross-language recipe.
+Because an earlier n4m development build exposed a no-op group penalty under
+the same package version, the first GroupSparsePLS fit checks the native
+coefficient-shrinkage behavior and refuses that defective build.
+These use `n4m` for fitting. Their R bundles now contain a
 portable N4MM affine predictor, and a preprocessing-free fit can be exported
 as N4MM for Python/R inference. That artifact attests the fitted affine
 prediction, not the original fitting method, its hyperparameters, or a
@@ -359,6 +416,25 @@ are tested. Torch modules are saved with `torch`'s own serializer inside the RDS
 they are R-specific and not ONNX exports or portable Python weights.
 Custom controllers may capture non-serializable R state; their bundles are
 only reliable when the controller author has tested a fresh-process load.
+
+The optional `nirs4all_xgboost()` and `nirs4all_xgboost_classifier()`
+controllers fit CPU XGBoost boosters per training fold. For example:
+
+```r
+pipeline <- nirs4all_pipeline(
+  list(nirs4all_snv()),
+  nirs4all_xgboost_classifier(nrounds = 80, max_depth = 3,
+                              eta = 0.1, seed = 7, nthread = 1)
+)
+fit <- nirs4all_fit(pipeline, X, factor(y))
+probabilities <- nirs4all_predict_proba(fit, X)
+outcome <- nirs4all_dag_cv_refit_predict(pipeline, X, factor(y), folds = 5)
+new_labels <- nirs4all_dag_predict(outcome, new_X)
+```
+
+The fitted booster is saved as XGBoost model bytes inside the R sidecar.
+This provides RDS replay with the XGBoost runtime installed; it does not add
+XGBoost to the cross-language N4MM or JSON/YAML recipe subset.
 When feature names exist, prediction requires their exact training order; when
 both row names and target names exist, fitting requires exact sample alignment.
 Unnamed data are treated positionally. The package test suite always compares

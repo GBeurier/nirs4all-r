@@ -8,6 +8,14 @@ nirs4all_save <- function(object, file) {
   if (!is.character(file) || length(file) != 1L || is.na(file) || !nzchar(file))
     stop("file must be a non-empty path", call. = FALSE)
   saved <- object
+  if (identical(saved$preprocessing_owner, "native_n4mp")) {
+    expected <- nirs4all_n4mp_steps(saved$steps)
+    if (!nirs4all_n4mp_equal_plan(
+        n4m::n4m_preprocess_plan(saved$native_preprocessing), expected))
+      stop("native preprocessing plan differs from recipe", call. = FALSE)
+    saved$native_preprocessing <-
+      n4m::n4m_preprocess_export(saved$native_preprocessing)
+  }
   if (identical(saved$learner$format, "n4mm"))
     saved$state <- n4m::n4m_model_export(object$state)
   if (identical(saved$learner$format, "n4mm_affine"))
@@ -36,13 +44,29 @@ nirs4all_load <- function(file) {
       !inherits(saved$fitted, "nirs4all_fitted"))
     stop("unsupported nirs4all model bundle", call. = FALSE)
   fitted <- saved$fitted
+  if (identical(fitted$preprocessing_owner, "native_n4mp")) {
+    if (!is.raw(fitted$native_preprocessing) ||
+        !(fitted$learner$format %in% c("n4mm", "n4mm_affine")))
+      stop("native preprocessing bundle lacks N4MP bytes", call. = FALSE)
+    fitted$native_preprocessing <-
+      n4m::n4m_preprocess_import(fitted$native_preprocessing)
+    if (!identical(fitted$native_preprocessing$n_features, fitted$n_features) ||
+        !nirs4all_n4mp_equal_plan(
+          n4m::n4m_preprocess_plan(fitted$native_preprocessing),
+          nirs4all_n4mp_steps(fitted$steps)))
+      stop("N4MP width or ordered plan differs from saved recipe", call. = FALSE)
+  }
   if (identical(fitted$learner$format, "n4mm")) {
     if (!is.raw(fitted$state)) stop("n4m model bundle lacks N4MM bytes", call. = FALSE)
     fitted$state <- n4m::n4m_model_import(fitted$state)
   }
   if (identical(fitted$learner$format, "n4mm_affine")) {
     if (!is.raw(fitted$state)) stop("affine model bundle lacks N4MM bytes", call. = FALSE)
-    nirs4all_affine_validate(fitted$state, fitted$n_features)
+    # RDS also supports R-only preprocessing. Its transformed width need not
+    # be expressible by the cross-language state validator; the native model
+    # checks that width at prediction time.
+    nirs4all_affine_validate(fitted$state,
+      if (!length(fitted$steps)) fitted$n_features else NULL)
     fitted$state <- list(native_model = n4m::n4m_model_import(fitted$state))
   }
   if (identical(fitted$learner$format, "n4mm_sparse_pls_da")) {

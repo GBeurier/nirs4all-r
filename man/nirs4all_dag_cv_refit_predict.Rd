@@ -1,7 +1,7 @@
 \name{nirs4all_dag_cv_refit_predict}
 \alias{nirs4all_dag_cv_refit_predict}
 \title{Run a native DAG-ML CV, refit and predict campaign from R matrices}
-\description{Builds an explicit fold campaign. DAG-ML owns phase scheduling, out-of-fold evidence, variant selection, refit and replay. Eligible native-only n4m refits carry N4MM bytes in the DAG bundle; other fitted states remain RDS sidecars. A named list of pipelines compares fixed candidates by OOF RMSE for regression or accuracy for classification, then refits the winner. With \code{split_steps = TRUE}, each preprocessing step is a separate DAG node. The replay cohort is the training cohort, not an independent test set. Arbitrary branch/merge graphs and adaptive HPO are not yet exposed.}
+\description{Builds an explicit fold campaign. DAG-ML owns phase scheduling, out-of-fold evidence, variant selection, refit and replay. Eligible native-only n4m refits carry N4MM bytes in the DAG bundle; other fitted states remain RDS sidecars. A named list of pipelines compares fixed candidates by OOF RMSE for regression or accuracy for classification, then refits the winner. With \code{split_steps = TRUE}, each preprocessing step is a separate DAG node; n4m feature branches and joins may be composed with sequential steps. The replay cohort is the training cohort, not an independent test set. Arbitrary model branching and adaptive HPO are not yet exposed.}
 \usage{
 nirs4all_dag_cv_refit_predict(pipeline, X, y = NULL, folds = 5L,
   sample_ids = NULL, root_seed = 1L, cli = Sys.which("dag-ml-cli"),
@@ -24,8 +24,9 @@ of at least two such pipelines to compare by native OOF score.}
 \code{sample_ids} exactly. Validation folds preserve whole groups.}
 \item{split_steps}{If \code{TRUE}, run each n4m preprocessing step as a
 separate DAG transform node. Named variants must have the same number of
-steps; their methods and parameters may differ. A single
+steps; their methods and parameters may differ. Each
 \code{nirs4all_concat()} step is lowered to parallel branch transforms and a
-feature-join node; it cannot yet be combined with variants or other steps.}
+feature-join node; concat steps may be composed with other preprocessing
+steps but cannot yet be combined with variants.}
 }
 \value{Native DAG-ML outcome list with the persisted workdir path.}

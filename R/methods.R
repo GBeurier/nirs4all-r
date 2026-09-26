@@ -1,21 +1,41 @@
 #' Native n4m linear-method controller
 #'
-#' Exposes MethodResult regressors whose fitted coefficients obey
-#' `(X - x_mean) %*% coefficients + y_mean`. Other n4m methods may need
-#' algorithm-specific prediction state and are deliberately excluded.
+#' Exposes MethodResult regressors whose fitted coefficients provide an
+#' affine prediction on new X. Most use
+#' `(X - x_mean) %*% coefficients + y_mean`; MB-PLS instead returns
+#' original-scale coefficients and an explicit intercept. Other n4m methods
+#' may need algorithm-specific prediction state and are deliberately excluded.
 #' MethodResult coefficients are wrapped as an affine N4MM predictor when
 #' serialized. The native bytes attest predictions, not the fitting algorithm.
 #'
 #' @param method Supported native regression method.
 #' @param n_components Positive component count; ignored by ridge's solver.
-#' @param params Named method-specific scalar parameter list.
+#' @param params Named method-specific parameter list. N-PLS requires
+#'   positive `mode_j` and `mode_k` whose product equals the fitted feature
+#'   width; MB-PLS requires a positive integer `block_sizes` vector summing
+#'   to the fitted feature width; boosting `learning_rate` must be in `(0, 1]`.
+#'   DI-PLS requires a finite target-domain matrix `X_target` in the same
+#'   feature space received by the learner. Target spectra are used in fitting;
+#'   avoid including evaluation samples unless transductive fitting is intended.
+#'   Group-sparse PLS requires non-negative integer `group_assignment` IDs,
+#'   one per transformed feature, and accepts a non-negative `group_lambda`.
+#'   If the IDs are named, those names must match the transformed feature
+#'   names in order. Its native penalty shrinks predictive coefficients after
+#'   SIMPLS; it is not the latent-direction estimator in `sgPLS::gPLS`.
 #' @export
 nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
   allowed <- list(
     ridge = "ridge_lambda", ridge_pls = "ridge_lambda",
     robust_pls = c("huber_k", "max_irls_iter"), cppls = "gamma",
     sparse_simpls = "sparsity_lambda", ecr = "alpha",
-    continuum_regression = "tau", mir_pls = character())
+    continuum_regression = "tau", mir_pls = character(),
+    fused_sparse_pls = c("l1_lambda", "fusion_lambda"),
+    bagging_pls = c("n_estimators", "seed"),
+    boosting_pls = c("n_estimators", "learning_rate"),
+    random_subspace_pls = c("n_estimators", "features_per_subspace", "seed"),
+    n_pls = c("mode_j", "mode_k"), mb_pls = "block_sizes",
+    di_pls = c("X_target", "di_lambda"),
+    group_sparse_pls = c("group_assignment", "group_lambda"))
   if (!is.character(method) || length(method) != 1L || is.na(method) ||
       !(method %in% names(allowed)))
     stop("unsupported n4m linear method", call. = FALSE)
@@ -29,35 +49,165 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
        !all(names(params) %in% allowed[[method]]))))
     stop("params must contain only named parameters supported by this method",
          call. = FALSE)
-  if (length(params) && !all(vapply(params, function(value)
+  if (identical(method, "mb_pls")) {
+    sizes <- params$block_sizes
+    if (is.list(sizes) && is.null(names(sizes)) && length(sizes) &&
+        all(vapply(sizes, function(value)
+          is.numeric(value) && length(value) == 1L, logical(1))))
+      sizes <- unlist(sizes, use.names = FALSE)
+    if (!is.numeric(sizes) || length(sizes) < 2L ||
+        anyNA(sizes) || any(!is.finite(sizes)) || any(sizes < 1L) ||
+        any(sizes != floor(sizes)) || any(sizes > .Machine$integer.max) ||
+        sum(as.double(sizes)) > .Machine$integer.max)
+      stop("mb_pls requires at least two positive integer block_sizes",
+           call. = FALSE)
+    params$block_sizes <- as.integer(sizes)
+  }
+  if (identical(method, "di_pls")) {
+    target <- params$X_target
+    if (!is.matrix(target) || !is.numeric(target) ||
+        nrow(target) < 2L || ncol(target) < 2L ||
+        anyNA(target) || any(!is.finite(target)))
+      stop("di_pls requires a finite numeric target-domain matrix",
+           call. = FALSE)
+    storage.mode(target) <- "double"
+    params$X_target <- target
+    if (!is.null(params$di_lambda) &&
+        (!is.numeric(params$di_lambda) ||
+         length(params$di_lambda) != 1L ||
+         !is.finite(params$di_lambda) || params$di_lambda < 0))
+      stop("di_lambda must be a finite non-negative number", call. = FALSE)
+  }
+  if (identical(method, "group_sparse_pls")) {
+    groups <- params$group_assignment
+    if (is.list(groups) && length(groups) &&
+        all(vapply(groups, function(value)
+          is.numeric(value) && length(value) == 1L, logical(1)))) {
+      group_names <- names(groups)
+      groups <- unlist(groups, use.names = FALSE)
+      if (!is.null(group_names)) names(groups) <- group_names
+    }
+    if (!is.numeric(groups) || length(groups) < 2L ||
+        anyNA(groups) || any(!is.finite(groups)) || any(groups < 0L) ||
+        any(groups != floor(groups)) ||
+        any(groups > .Machine$integer.max) ||
+        (!is.null(names(groups)) &&
+         (anyNA(names(groups)) || any(!nzchar(names(groups))) ||
+          anyDuplicated(names(groups)))))
+      stop("group_assignment must contain one non-negative integer ID per feature",
+           call. = FALSE)
+    group_names <- names(groups)
+    groups <- as.integer(groups)
+    if (!is.null(group_names)) names(groups) <- group_names
+    params$group_assignment <- groups
+    if (is.null(params$group_lambda)) params$group_lambda <- 0.05
+    if (!is.numeric(params$group_lambda) ||
+        length(params$group_lambda) != 1L ||
+        !is.finite(params$group_lambda) || params$group_lambda < 0)
+      stop("group_lambda must be finite and non-negative", call. = FALSE)
+  }
+  scalar_params <- params[setdiff(names(params),
+    c("block_sizes", "X_target", "group_assignment"))]
+  if (length(scalar_params) && !all(vapply(scalar_params, function(value)
       (is.numeric(value) || is.logical(value)) && length(value) == 1L &&
       !is.na(value) && is.finite(value), logical(1))))
     stop("method parameters must be finite numeric or logical scalars",
          call. = FALSE)
-  if ("max_irls_iter" %in% names(params)) {
-    value <- params$max_irls_iter
-    if (!is.numeric(value) || value < 1L || value != floor(value) ||
+  if (identical(method, "n_pls") &&
+      !setequal(names(params), c("mode_j", "mode_k")))
+    stop("n_pls requires mode_j and mode_k", call. = FALSE)
+  for (name in intersect(names(params),
+                         c("max_irls_iter", "n_estimators",
+                           "features_per_subspace", "seed",
+                           "mode_j", "mode_k"))) {
+    value <- params[[name]]
+    minimum <- if (identical(name, "seed")) 0L else 1L
+    if (!is.numeric(value) || value < minimum || value != floor(value) ||
         value > .Machine$integer.max)
-      stop("max_irls_iter must be a positive integer", call. = FALSE)
-    params$max_irls_iter <- as.integer(value)
+      stop(sprintf("%s must be a bounded %s integer", name,
+        if (identical(name, "seed")) "non-negative" else "positive"),
+        call. = FALSE)
+    params[[name]] <- as.integer(value)
+  }
+  for (name in intersect(names(params),
+                         c("l1_lambda", "fusion_lambda", "learning_rate"))) {
+    value <- params[[name]]
+    if (!is.numeric(value) || value < 0 ||
+        (identical(name, "learning_rate") &&
+         (value == 0 || value > 1)))
+      stop(sprintf("%s must be %s", name,
+        if (identical(name, "learning_rate")) "in (0, 1]" else "non-negative"),
+        call. = FALSE)
   }
   controller <- nirs4all_controller(
     fit = function(X, y) {
+      if (identical(method, "random_subspace_pls")) {
+        subspace <- if (is.null(params$features_per_subspace)) 10L else
+          params$features_per_subspace
+        if (subspace > ncol(X))
+          stop("features_per_subspace exceeds the input feature count",
+               call. = FALSE)
+      }
+      if (identical(method, "n_pls") &&
+          as.double(params$mode_j) * as.double(params$mode_k) != ncol(X))
+        stop("mode_j times mode_k must equal the input feature count",
+             call. = FALSE)
+      if (identical(method, "mb_pls") && sum(params$block_sizes) != ncol(X))
+        stop("sum(block_sizes) must equal the input feature count",
+             call. = FALSE)
+      if (identical(method, "di_pls") && ncol(params$X_target) != ncol(X))
+        stop("X_target width must equal transformed input feature count",
+             call. = FALSE)
+      if (identical(method, "di_pls") &&
+          !is.null(colnames(params$X_target)) &&
+          !identical(colnames(params$X_target), colnames(X)))
+        stop("X_target feature names or order differ from transformed X",
+             call. = FALSE)
+      if (identical(method, "group_sparse_pls") &&
+          length(params$group_assignment) != ncol(X))
+        stop("group_assignment length must equal transformed input feature count",
+             call. = FALSE)
+      if (identical(method, "group_sparse_pls") &&
+          !is.null(names(params$group_assignment)) &&
+          !identical(names(params$group_assignment), colnames(X)))
+        stop("group_assignment feature names or order differ from transformed X",
+             call. = FALSE)
+      if (identical(method, "group_sparse_pls"))
+        nirs4all_group_sparse_verify_kernel()
+      affine_api <- c("n4m_affine_supported_methods", "n4m_affine_fit")
+      use_affine_api <- all(affine_api %in% getNamespaceExports("n4m")) &&
+        method %in% getExportedValue("n4m",
+          "n4m_affine_supported_methods")()
+      if (use_affine_api) {
+        fitted <- getExportedValue("n4m", "n4m_affine_fit")(
+          method, X, y, as.integer(n_components), params)
+        return(list(coefficients = fitted$coefficients,
+          x_mean = fitted$x_mean, y_mean = fitted$y_mean,
+          intercept = fitted$intercept,
+          source_training_samples = nrow(X),
+          native_model = fitted$native_model))
+      }
       result <- n4m::n4m_method(method, X, y, as.integer(n_components),
                                 params = params)
       coefficients <- as.matrix(result$coefficients)
-      x_mean <- as.numeric(result$x_mean)
-      y_mean <- as.numeric(result$y_mean)
+      direct_intercept <- identical(method, "mb_pls")
+      x_mean <- if (direct_intercept) NULL else as.numeric(result$x_mean)
+      y_mean <- if (direct_intercept) NULL else as.numeric(result$y_mean)
+      intercept <- if (direct_intercept) as.numeric(result$intercept) else
+        as.numeric(y_mean - drop(x_mean %*% coefficients))
       if (!is.numeric(coefficients) || !identical(dim(coefficients), c(ncol(X), 1L)) ||
-          length(x_mean) != ncol(X) || length(y_mean) != 1L ||
-          any(!is.finite(coefficients)) || any(!is.finite(x_mean)) ||
-          any(!is.finite(y_mean)))
+          (!direct_intercept && (length(x_mean) != ncol(X) ||
+           length(y_mean) != 1L || any(!is.finite(x_mean)) ||
+           any(!is.finite(y_mean)))) || length(intercept) != 1L ||
+          any(!is.finite(coefficients)) || any(!is.finite(intercept)))
         stop("n4m method returned an unsupported regression model", call. = FALSE)
-      intercept <- as.numeric(y_mean - drop(x_mean %*% coefficients))
       native_model <- n4m::n4m_model_import_linear_predictor(
         coefficients, intercept, nrow(X))
-      list(coefficients = coefficients, x_mean = x_mean, y_mean = y_mean,
-           source_training_samples = nrow(X), native_model = native_model)
+      state <- list(coefficients = coefficients, x_mean = x_mean,
+        y_mean = y_mean, source_training_samples = nrow(X),
+        native_model = native_model)
+      if (direct_intercept) state$intercept <- intercept
+      state
     },
     predict = function(state, X) {
       if (is.null(state$native_model))
@@ -69,6 +219,63 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
   controller$spec <- list(learner = "n4m_method", method = method,
                           n_components = as.integer(n_components), params = params)
   controller
+}
+
+# The public n4m development version initially contained a kernel that
+# thresholded discarded loadings but left predictive coefficients unchanged.
+# Its ABI/version did not change, so a package-version constraint cannot
+# distinguish the corrected native library. Fail closed on first fit.
+nirs4all_group_sparse_verify_kernel <- local({
+  verified <- FALSE
+  function() {
+    if (verified) return(invisible(TRUE))
+    X <- matrix(c(1, 0, 2, 3, 2, 1, 0, 2, 3, 2, 1, 0,
+                  4, 1, 3, 1, 5, 3, 2, 4, 6, 2, 4, 2,
+                  7, 4, 1, 5, 8, 3, 5, 3), ncol = 4L, byrow = TRUE)
+    y <- 2 * X[, 1L] + 0.3 * X[, 2L] - X[, 3L] + 1
+    groups <- c(2L, 2L, 9L, 9L)
+    run <- function(lambda) n4m::n4m_method("group_sparse_pls", X, y, 2L,
+      params = list(group_assignment = groups, group_lambda = lambda))
+    zero <- tryCatch(run(0), error = function(error) NULL)
+    penalty <- tryCatch(run(0.2), error = function(error) NULL)
+    if (is.null(zero) || is.null(penalty) ||
+        !identical(dim(zero$coefficients), c(4L, 1L)) ||
+        !identical(dim(penalty$coefficients), c(4L, 1L)) ||
+        any(!is.finite(zero$coefficients)) ||
+        any(!is.finite(penalty$coefficients)) ||
+        max(abs(zero$coefficients - penalty$coefficients)) <= 1e-6 ||
+        max(abs(zero$predictions - penalty$predictions)) <= 1e-6)
+      stop("installed n4m GroupSparsePLS kernel is unavailable or ignores group_lambda; install a corrected n4m build",
+           call. = FALSE)
+    for (columns in list(1:2, 3:4)) {
+      norm <- sqrt(sum(zero$coefficients[columns, , drop = FALSE]^2))
+      shrink <- if (norm > 0.2) 1 - 0.2 / norm else 0
+      if (max(abs(penalty$coefficients[columns, , drop = FALSE] -
+                  zero$coefficients[columns, , drop = FALSE] * shrink)) > 1e-10)
+        stop("installed n4m GroupSparsePLS coefficient penalty is incompatible with this controller",
+             call. = FALSE)
+    }
+    verified <<- TRUE
+    invisible(TRUE)
+  }
+})
+
+#' Native group-sparse PLS regression controller
+#'
+#' Fits the n4m post-SIMPLS group-penalized coefficient model. This is a
+#' predictive-coefficient approximation, not `sgPLS::gPLS`. Group IDs must
+#' describe the columns *after* any preceding pipeline transformations.
+#' @param n_components Positive number of SIMPLS components.
+#' @param group_assignment Non-negative integer group ID for each transformed
+#'   feature; optional names must match transformed feature names in order.
+#' @param group_lambda Finite non-negative coefficient group penalty.
+#' @export
+nirs4all_group_sparse_pls <- function(n_components = 2L,
+                                      group_assignment,
+                                      group_lambda = 0.05) {
+  nirs4all_n4m_method("group_sparse_pls", n_components,
+    params = list(group_assignment = group_assignment,
+                  group_lambda = group_lambda))
 }
 
 #' Native n4m sparse PLS-DA classification controller

@@ -18,11 +18,39 @@
   detrend = c("n4m.Detrend", "preprocessing.detrend"),
   msc = c("n4m.MSC", "preprocessing.msc"),
   emsc = c("n4m.EMSC", "preprocessing.emsc"),
+  spa = "n4m.SPA",
+  selector = "n4m.Selector",
   pls = c("sklearn.cross_decomposition.PLSRegression",
           "sklearn.cross_decomposition._pls.PLSRegression",
           "n4m.PLS", "n4m.PLSRegression", "models.pls.pls_fit_simple"),
   sparse_pls_da = c("n4m.SparsePLSDA", "pls4all.sklearn.SparsePLSDAClassifier")
 )
+
+# Only affine MethodResult regressors with a qualified held-out prediction
+# path in both R and Python belong in the shared recipe vocabulary.
+.nirs4all_portable_affine_specs <- list(
+  ridge = list(class = "n4m.Ridge", params = "alpha"),
+  ridge_pls = list(class = "n4m.RidgePLS", params = "ridge_lambda"),
+  robust_pls = list(class = "n4m.RobustPLS", params = c("huber_k", "max_irls_iter")),
+  cppls = list(class = "n4m.CPPLS", params = "gamma"),
+  sparse_simpls = list(class = "n4m.SparseSIMPLS", params = "sparsity_lambda"),
+  ecr = list(class = "n4m.ECR", params = "alpha"),
+  continuum_regression = list(class = "n4m.ContinuumRegression", params = "tau"),
+  mir_pls = list(class = "n4m.MIRPLS", params = character()),
+  fused_sparse_pls = list(class = "n4m.FusedSparsePLS",
+    params = c("l1_lambda", "fusion_lambda")),
+  bagging_pls = list(class = "n4m.BaggingPLS", params = c("n_estimators", "seed")),
+  boosting_pls = list(class = "n4m.BoostingPLS",
+    params = c("n_estimators", "learning_rate")),
+  random_subspace_pls = list(class = "n4m.RandomSubspacePLS",
+    params = c("n_estimators", "features_per_subspace", "seed")),
+  n_pls = list(class = "n4m.NPLS", params = c("mode_j", "mode_k")),
+  mb_pls = list(class = "n4m.MBPLS", params = "block_sizes"),
+  group_sparse_pls = list(class = "n4m.GroupSparsePLS",
+    params = c("group_assignment", "group_lambda"),
+    positional = "group_assignment", strict_components = TRUE))
+.nirs4all_portable_affine <- vapply(.nirs4all_portable_affine_specs,
+  `[[`, character(1), "class")
 
 nirs4all_portable_named <- function(value) {
   is.list(value) && !is.null(names(value)) && any(nzchar(names(value)))
@@ -39,6 +67,40 @@ nirs4all_portable_allowed_params <- function(params, allowed, label) {
        !all(names(params) %in% allowed))))
     stop(sprintf("unsupported or duplicate %s parameter", label), call. = FALSE)
   params
+}
+
+nirs4all_portable_selector <- function(method, n_components, method_params) {
+  if (!is.numeric(n_components))
+    stop("selector n_components must be a numeric integer", call. = FALSE)
+  if (!is.list(method_params))
+    stop("selector method_params must be a mapping", call. = FALSE)
+  if (!length(method_params)) names(method_params) <- character()
+  for (name in intersect(names(method_params), c("alpha_thresholds", "thresholds"))) {
+    value <- method_params[[name]]
+    if (is.list(value)) {
+      if (!length(value) || !all(vapply(value, function(item)
+          is.numeric(item) && length(item) == 1L && is.finite(item),
+          logical(1))))
+        stop("selector threshold vector must contain finite numbers", call. = FALSE)
+      method_params[[name]] <- unlist(value, use.names = FALSE)
+    }
+  }
+  step <- nirs4all_n4m_selector(method, n_components, method_params)
+  required <- character()
+  if (method %in% c("spa_select", "wvc_select", "stability_select",
+                    "random_frog_select", "ipw_select", "irf_select",
+                    "vip_spa_select"))
+    required <- c(required, "top_k")
+  seed <- if (method %in% c("uve_select", "emcuve_select"))
+    "noise_seed" else if (identical(method, "randomization_select"))
+    "randomization_seed" else if (method %in% c("random_frog_select",
+      "scars_select", "ga_select", "pso_select", "vissa_select",
+      "iriv_select", "irf_select")) "seed" else character()
+  required <- c(required, seed)
+  if (!all(required %in% names(step$params)))
+    stop("portable selector requires explicit top_k and random seed when applicable",
+         call. = FALSE)
+  step
 }
 
 nirs4all_portable_branch_plan <- function(branch_value) {
@@ -159,8 +221,10 @@ nirs4all_load_pipeline <- function(source) {
 #' Writes n4m-backed preprocessing with named feature branches and
 #' `merge: features` syntax when needed. The default `cross_language` scope
 #' qualifies native PLS or sparse PLS-DA recipes; LSNV, RNV, area
-#' normalization, detrend, MSC and EMSC are tested against Python n4m but not
-#' yet Core/WASM. Non-default SNV is refused in that scope because Core/WASM
+#' normalization, detrend, MSC, EMSC and SPA are tested against Python n4m but not
+#' yet Core/WASM. The generic `n4m.Selector` alias transfers the native
+#' dispatcher method and parameters to R/Python n4m; method-specific parity is
+#' established separately. Non-default SNV is refused in that scope because Core/WASM
 #' ignores its parameters. The `r_native` scope permits selected ranger,
 #' glmnet and torch MLP learners under explicit R-only aliases. It does not
 #' transfer their trained binaries or assert Python/WASM equivalence.
@@ -224,6 +288,19 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
     if (identical(step$kind, "emsc"))
       return(list(class = "n4m.EMSC",
                   params = list(degree = step$degree)))
+    if (identical(step$kind, "spa"))
+      return(list(class = "n4m.SPA", params = list(
+        top_k = step$top_k, n_components = step$n_components)))
+    if (identical(step$kind, "n4m_selector")) {
+      step <- nirs4all_portable_selector(step$method, step$n_components,
+                                        step$params)
+      method_params <- step$params
+      if ("normalize" %in% names(method_params))
+        method_params$normalize <- as.logical(method_params$normalize)
+      return(list(class = "n4m.Selector", params = list(
+        method = step$method, n_components = step$n_components,
+        method_params = method_params)))
+    }
     stop(sprintf("cross-language recipe export does not support step '%s'",
                  step$kind), call. = FALSE)
   }
@@ -245,6 +322,21 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
       class = "n4m.SparsePLSDA",
       params = list(n_components = spec$n_components,
                     sparsity_lambda = spec$sparsity_lambda)))
+  } else if (is.list(spec) && identical(spec$learner, "n4m_method") &&
+             spec$method %in% names(.nirs4all_portable_affine)) {
+    params <- spec$params
+    for (name in .nirs4all_portable_affine_specs[[spec$method]]$positional)
+      params[[name]] <- unname(params[[name]])
+    if (identical(spec$method, "ridge") && !is.null(params$ridge_lambda)) {
+      params$alpha <- params$ridge_lambda
+      params$ridge_lambda <- NULL
+    }
+    component_params <- if (identical(spec$method, "ridge")) list() else
+      list(n_components = spec$n_components)
+    model <- list(class = unname(.nirs4all_portable_affine[[spec$method]]))
+    params <- c(component_params, params)
+    if (length(params)) model$params <- params
+    steps[[length(steps) + 1L]] <- list(model = model)
   } else if (identical(scope, "r_native") && is.list(spec) &&
              is.character(spec$learner) && length(spec$learner) == 1L &&
              spec$learner %in% c("ranger", "ranger_classifier", "glmnet",
@@ -256,7 +348,7 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
         !identical(spec$algo, "pls_simpls") ||
         !all(vapply(spec[c("center_x", "scale_x", "center_y", "scale_y")],
                     identical, logical(1), TRUE)))
-      stop("cross-language recipe export supports native n4m PLS or sparse PLS-DA only",
+      stop("cross-language recipe export supports qualified native n4m models only",
            call. = FALSE)
     steps[[length(steps) + 1L]] <- list(model = list(
       class = "n4m.PLS",
@@ -445,6 +537,39 @@ nirs4all_parse_execution_plan <- function(source) {
         do.call(nirs4all_emsc, values)
         preprocessing[[length(preprocessing) + 1L]] <-
           list(type = "ExtendedMultiplicativeScatterCorrection", params = values)
+      } else if (class_name %in% .nirs4all_portable_classes$spa) {
+        params <- nirs4all_portable_allowed_params(params,
+          c("top_k", "n_components"), "SPA")
+        if (!is.numeric(params$top_k) ||
+            (!is.null(params$n_components) && !is.numeric(params$n_components)))
+          stop("SPA parameters must be numeric integers", call. = FALSE)
+        values <- list(top_k = nirs4all_portable_number(params$top_k,
+          NULL, "top_k", integer = TRUE, minimum = 1L),
+          n_components = nirs4all_portable_number(params$n_components,
+            2L, "n_components", integer = TRUE, minimum = 1L))
+        do.call(nirs4all_spa, values)
+        preprocessing[[length(preprocessing) + 1L]] <-
+          list(type = "SuccessiveProjectionsAlgorithm", params = values)
+      } else if (class_name %in% .nirs4all_portable_classes$selector) {
+        params <- nirs4all_portable_allowed_params(params,
+          c("method", "n_components", "method_params"), "Selector")
+        if (is.null(params$method) || is.null(params$n_components) ||
+            is.null(params$method_params) ||
+            (is.list(params$method_params) &&
+             is.null(names(params$method_params))))
+          stop("Selector requires method, n_components and method_params",
+               call. = FALSE)
+        if (is.list(params$method_params) &&
+            "normalize" %in% names(params$method_params) &&
+            (!is.logical(params$method_params$normalize) ||
+             length(params$method_params$normalize) != 1L))
+          stop("portable selector normalize must be boolean", call. = FALSE)
+        selected <- nirs4all_portable_selector(params$method,
+          params$n_components, params$method_params)
+        preprocessing[[length(preprocessing) + 1L]] <- list(
+          type = "N4MSelector", params = list(method = selected$method,
+            n_components = selected$n_components,
+            method_params = selected$params))
       } else {
         stop(sprintf("unsupported portable class: %s", class_name), call. = FALSE)
       }
@@ -469,17 +594,51 @@ nirs4all_parse_execution_plan <- function(source) {
       model$params <- nirs4all_portable_allowed_params(
         nirs4all_portable_or(step$model$params, list()),
         c("n_components", "sparsity_lambda"), "sparse PLS-DA")
+    } else if (is.list(step$model) &&
+               is.character(step$model$class) &&
+               length(step$model$class) == 1L &&
+               step$model$class %in% .nirs4all_portable_affine) {
+      if (any(!names(step$model) %in% c("class", "params")))
+        stop("unsupported portable model field", call. = FALSE)
+      model <- step
+      method <- names(.nirs4all_portable_affine)[match(
+        step$model$class, .nirs4all_portable_affine)]
+      model$params <- nirs4all_portable_allowed_params(
+        nirs4all_portable_or(step$model$params, list()),
+        c(if (identical(method, "ridge")) character() else "n_components",
+          .nirs4all_portable_affine_specs[[method]]$params),
+        method)
+      for (name in .nirs4all_portable_affine_specs[[method]]$positional)
+        if (!is.null(names(model$params[[name]])))
+          stop(sprintf("%s must be a positional array", name), call. = FALSE)
+      if (isTRUE(.nirs4all_portable_affine_specs[[method]]$strict_components) &&
+          !is.null(model$params$n_components) &&
+          !is.numeric(model$params$n_components))
+        stop("n_components must be a numeric integer", call. = FALSE)
+      if (identical(method, "ridge") && "_range_" %in% names(step))
+        stop("ridge has no component sweep", call. = FALSE)
     } else {
-      stop("portable execution requires a native PLS or sparse PLS-DA model", call. = FALSE)
+      stop("portable execution requires a qualified native n4m model", call. = FALSE)
     }
   }
   if (!is.null(pending_branch))
     stop("portable feature branch is missing merge: features", call. = FALSE)
   if (is.null(model)) stop("portable execution requires a native model", call. = FALSE)
   classifier <- model$model$class %in% .nirs4all_portable_classes$sparse_pls_da
+  affine <- model$model$class %in% .nirs4all_portable_affine
   learner <- if (classifier) nirs4all_sparse_pls_da(
     sparsity_lambda = nirs4all_portable_number(
-      model$params$sparsity_lambda, 0.05, "sparsity_lambda", minimum = 0)) else
+      model$params$sparsity_lambda, 0.05, "sparsity_lambda", minimum = 0)) else if (affine) {
+    method <- names(.nirs4all_portable_affine)[match(
+      model$model$class, .nirs4all_portable_affine)]
+    params <- model$params[setdiff(names(model$params), "n_components")]
+    if (identical(method, "ridge") && !is.null(params$alpha)) {
+      params$ridge_lambda <- params$alpha
+      params$alpha <- NULL
+    }
+    if (!length(params)) params <- list()
+    nirs4all_n4m_method(method, params = params)
+  } else
     do.call(nirs4all_pls, c(list(n_components = 2L),
       model$params[intersect(names(model$params),
         c("algo", "center_x", "scale_x", "center_y", "scale_y"))]))
@@ -491,8 +650,10 @@ nirs4all_parse_execution_plan <- function(source) {
 #' Convert a portable JSON/YAML recipe into an R pipeline
 #'
 #' The bounded reader accepts native SNV, Savitzky-Golay, LSNV, RNV, area
-#' normalization, detrend, train-fitted MSC/EMSC, feature-only branches merged
-#' by concatenation, PLS regression and sparse PLS-DA classification.
+#' normalization, detrend, train-fitted MSC/EMSC/SPA, feature-only branches merged
+#' by concatenation, PLS regression, qualified affine n4m regressions (including
+#' explicit per-feature GroupSparsePLS assignments and penalty) and
+#' sparse PLS-DA classification.
 #' Splitters and component sweeps are refused because a single fitted pipeline
 #' cannot represent an entire selection experiment.
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
@@ -519,7 +680,9 @@ nirs4all_portable_steps <- function(preprocessing) {
       AreaNormalization = nirs4all_area_normalization,
       Detrend = nirs4all_detrend,
       MultiplicativeScatterCorrection = nirs4all_msc,
-      ExtendedMultiplicativeScatterCorrection = nirs4all_emsc)
+      ExtendedMultiplicativeScatterCorrection = nirs4all_emsc,
+      SuccessiveProjectionsAlgorithm = nirs4all_spa,
+      N4MSelector = nirs4all_portable_selector)
     constructor <- constructors[[step$type]]
     if (!is.null(constructor)) return(do.call(constructor, step$params))
     stop("unsupported portable preprocessing step", call. = FALSE)
@@ -534,7 +697,9 @@ nirs4all_pipeline_from_portable <- function(source) {
   steps <- nirs4all_portable_steps(plan$preprocessing)
   spec <- plan$learner
   learner <- if (identical(spec$learner, "sparse_pls_da"))
-    nirs4all_sparse_pls_da(plan$n_components[[1L]], spec$sparsity_lambda) else
+    nirs4all_sparse_pls_da(plan$n_components[[1L]], spec$sparsity_lambda) else if (
+      identical(spec$learner, "n4m_method"))
+    nirs4all_n4m_method(spec$method, plan$n_components[[1L]], spec$params) else
     nirs4all_pls(plan$n_components[[1L]], algo = spec$algo,
       center_x = spec$center_x, scale_x = spec$scale_x,
       center_y = spec$center_y, scale_y = spec$scale_y)
@@ -700,9 +865,11 @@ nirs4all_run_portable_pipeline <- function(source, dataset) {
   variants <- lapply(plan$n_components, function(n) {
     learner <- plan$learner
     learner$n_components <- n
-    constructor <- if (classification) nirs4all_sparse_pls_da else nirs4all_pls
-    pipeline <- nirs4all_pipeline(steps, do.call(constructor,
-      learner[setdiff(names(learner), "learner")] ))
+    controller <- if (classification) nirs4all_sparse_pls_da(
+      n, learner$sparsity_lambda) else if (identical(learner$learner, "n4m_method"))
+      nirs4all_n4m_method(learner$method, n, learner$params) else
+      do.call(nirs4all_pls, learner[setdiff(names(learner), "learner")])
+    pipeline <- nirs4all_pipeline(steps, controller)
     fitted <- nirs4all_fit(pipeline, data$X[train, , drop = FALSE], data$y[train])
     predictions <- nirs4all_predict(fitted, data$X[validation, , drop = FALSE])
     if (classification)

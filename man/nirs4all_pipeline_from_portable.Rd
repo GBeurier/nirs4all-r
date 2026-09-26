@@ -5,7 +5,8 @@
 \arguments{\item{source}{Definition accepted by \code{nirs4all_load_pipeline()}.}}
 \value{An unfitted \code{nirs4all_pipeline()}.}
 \description{The bounded reader accepts native SNV, Savitzky-Golay, LSNV, RNV,
-area normalization, detrend, train-fitted MSC/EMSC, feature-only branches
-merged by concatenation, and PLS components.
+area normalization, detrend, train-fitted MSC/EMSC/SPA, feature-only branches
+merged by concatenation, PLS components, fourteen qualified native affine
+n4m regressions and sparse PLS-DA classification.
 Splitters and component sweeps are refused because a single
 fitted pipeline cannot represent an entire selection experiment.}
