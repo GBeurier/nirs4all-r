@@ -101,6 +101,9 @@ stopifnot(inherits(try(nirs4all_fit(di_recipe, source_wide, y_wide,
 
 cli <- Sys.getenv("NIRS4ALL_DAGML_CLI", "")
 if (nzchar(cli) && requireNamespace("dagml", quietly = TRUE)) {
+  stopifnot(inherits(try(nirs4all_dag_cv_refit_predict(di_recipe,
+    source_wide, y_wide, folds = 3L, cli = cli, split_steps = TRUE),
+    silent = TRUE), "try-error"))
   graph <- nirs4all_dag_cv_refit_predict(pipeline, source, y,
     folds = 3L, cli = cli)
   stopifnot(identical(as.integer(graph$fit_cv_result_count), 3L),
