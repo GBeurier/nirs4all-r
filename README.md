@@ -296,15 +296,18 @@ Archive V2/V3 package. Other controllers remain RDS-backed.
 To combine two feature views, `nirs4all_concat()` fits each named branch on
 the same training rows, then concatenates its output columns before the
 learner. With `split_steps = TRUE`, DAG-ML runs each branch step and the join
-as separate nodes (currently for a single pipeline whose sole preprocessing
-step is the concat):
+as separate nodes. A concat can follow and precede other n4m preprocessing
+steps within one pipeline; fixed-candidate variants containing a concat are
+not yet supported:
 
 ```r
 pipeline <- nirs4all_pipeline(
-  list(nirs4all_concat(list(
-    derivative = list(nirs4all_snv(), nirs4all_savgol(5)),
-    scatter = list(nirs4all_msc(), nirs4all_detrend(1))
-  ))),
+  list(nirs4all_spa(top_k = 6),
+       nirs4all_concat(list(
+         scatter = list(nirs4all_msc(), nirs4all_detrend(1)),
+         normalized = list(nirs4all_snv())
+       )),
+       nirs4all_snv()),
   nirs4all_pls(2)
 )
 outcome <- nirs4all_dag_cv_refit_predict(pipeline, X, y,

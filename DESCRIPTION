@@ -17,7 +17,7 @@ Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     'dagml' cross-validation, fixed-candidate selection, refit and replay path
     for single-node pipelines and optional sequential n4m transform nodes,
     including fixed-candidate selection and parallel preprocessing branches
-    joined before a model.
+    joined and composed with sequential preprocessing before a model.
     Native-only n4m refit artifacts are detached into portable N4MM bytes in
     the DAG bundle; other persisted refit models and transform states remain
     R sidecars. Both can predict new R samples.
