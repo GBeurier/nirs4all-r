@@ -9,6 +9,8 @@
 #' Version 5 carries a prediction-only affine N4MM model plus an asserted
 #' recipe for refitting one of fourteen native MethodResult regressors; the
 #' N4MM payload does not attest which fitting method produced it.
+#' Version 7 covers any recipe of generic n4m role steps
+#' ([nirs4all_fit_role_recipe()]): each fitted step travels as its N4ME state.
 #' The JSON recipe also permits fitting the pipeline again where its model
 #' alias is supported.
 #' @param object A fitted native n4m PLS, affine MethodResult or sparse
@@ -20,6 +22,9 @@ nirs4all_export_trained_pipeline <- function(object, file = NULL) {
   if (inherits(object, "nirs4all_fitted") &&
       identical(object$preprocessing_owner, "native_n4mp"))
     return(nirs4all_export_trained_n4mp(object, file))
+  if (inherits(object, "nirs4all_fitted") &&
+      identical(object$preprocessing_owner, "n4m_roles"))
+    return(nirs4all_export_trained_roles(object, file))
   classification <- inherits(object, "nirs4all_fitted") &&
     identical(object$learner$format, "n4mm_sparse_pls_da") &&
     identical(object$task, "classification")
@@ -128,6 +133,8 @@ nirs4all_import_trained_pipeline <- function(source) {
   if (is.list(document) &&
       identical(document$schema, "nirs4all.n4m.trained_pipeline.v6"))
     return(nirs4all_import_trained_n4mp(document))
+  if (is.list(document) && identical(document$schema, .nirs4all_role_schema))
+    return(nirs4all_import_trained_roles(document))
   if (!is.list(document) ||
       !setequal(names(document), c("schema", "manifest_json",
         "manifest_sha256", "model")) ||
