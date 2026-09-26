@@ -79,12 +79,18 @@ not a trained model.
 Thirteen native affine regressions have explicit R↔Python recipe aliases:
 `n4m.Ridge`, `n4m.RidgePLS`, `n4m.RobustPLS`, `n4m.CPPLS`,
 `n4m.SparseSIMPLS`, `n4m.ECR`, `n4m.ContinuumRegression`, `n4m.MIRPLS`,
-`n4m.FusedSparsePLS`, `n4m.BaggingPLS`, `n4m.BoostingPLS` and
+`n4m.FusedSparsePLS`, `n4m.BaggingPLS`, `n4m.BoostingPLS`,
 `n4m.RandomSubspacePLS` and `n4m.NPLS`.
 Their JSON/YAML definitions fit and predict on held-out samples through the
-same n4m kernels in both languages, with an independently frozen numerical
-oracle. The alias defaults make Ridge's X scaling and the robust/Ridge-PLS
-settings explicit; using similarly named host classes without these settings
+same n4m kernels in both languages. Deterministic fits have independent
+frozen numerical oracles; seeded BaggingPLS and RandomSubspacePLS are checked
+for same-platform Python/R agreement and repeatability. Their C++
+`uniform_int_distribution`/`shuffle` draws can differ between standard
+libraries, so identical seeds do not yet promise identical *retraining*
+across operating systems. An exported trained N4MM model replays its fixed
+coefficients without drawing again. The alias defaults make Ridge's X scaling
+and the robust/Ridge-PLS settings explicit; using similarly named host classes
+without these settings
 does not guarantee parity. These thirteen recipe aliases are **not yet** qualified
 by the Core/WASM pipeline reader. Their trained-state transfer is separate
 from this level-1 recipe support and is not implied by this paragraph.
