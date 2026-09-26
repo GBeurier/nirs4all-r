@@ -183,6 +183,7 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
           method, X, y, as.integer(n_components), params)
         return(list(coefficients = fitted$coefficients,
           x_mean = fitted$x_mean, y_mean = fitted$y_mean,
+          intercept = fitted$intercept,
           source_training_samples = nrow(X),
           native_model = fitted$native_model))
       }
