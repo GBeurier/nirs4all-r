@@ -212,6 +212,7 @@ nirs4all_import_native_model <- function(bytes, pipeline, feature_names = NULL) 
 }
 
 nirs4all_native_model_profile <- function(pipeline) {
+  if (length(pipeline$augmentations)) return(NULL)
   spec <- pipeline$learner$spec
   if (is.list(spec) && identical(spec$learner, "n4m_method") &&
       identical(pipeline$learner$format, "n4mm_affine") &&
