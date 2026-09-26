@@ -76,16 +76,16 @@ the full Python `nirs4all` parser, with Core/WASM qualification still open.
 Unsupported settings fail rather than being dropped. This exports a recipe,
 not a trained model.
 
-Twelve native affine regressions have explicit R↔Python recipe aliases:
+Thirteen native affine regressions have explicit R↔Python recipe aliases:
 `n4m.Ridge`, `n4m.RidgePLS`, `n4m.RobustPLS`, `n4m.CPPLS`,
 `n4m.SparseSIMPLS`, `n4m.ECR`, `n4m.ContinuumRegression`, `n4m.MIRPLS`,
 `n4m.FusedSparsePLS`, `n4m.BaggingPLS`, `n4m.BoostingPLS` and
-`n4m.RandomSubspacePLS`.
+`n4m.RandomSubspacePLS` and `n4m.NPLS`.
 Their JSON/YAML definitions fit and predict on held-out samples through the
 same n4m kernels in both languages, with an independently frozen numerical
 oracle. The alias defaults make Ridge's X scaling and the robust/Ridge-PLS
 settings explicit; using similarly named host classes without these settings
-does not guarantee parity. These twelve recipe aliases are **not yet** qualified
+does not guarantee parity. These thirteen recipe aliases are **not yet** qualified
 by the Core/WASM pipeline reader. Their trained-state transfer is separate
 from this level-1 recipe support and is not implied by this paragraph.
 
@@ -325,9 +325,11 @@ For the exported-recipe and trained-envelope R↔Python regression tests, set
 the shared n4m alias resolver; the Methods Python binding must also be on
 `PYTHONPATH` with a matching `N4M_LIB_PATH`.
 
-`nirs4all_n4m_method()` exposes twelve native linear MethodResult regressors:
+`nirs4all_n4m_method()` exposes thirteen native linear MethodResult regressors:
 ridge, ridge-PLS, robust PLS, CPPLS, sparse SIMPLS, ECR, continuum regression
-MIR-PLS, fused sparse PLS, bagging PLS, boosting PLS and random-subspace PLS.
+MIR-PLS, fused sparse PLS, bagging PLS, boosting PLS, random-subspace PLS and
+N-PLS. N-PLS requires explicit positive `mode_j` and `mode_k` with
+`mode_j * mode_k` equal to the feature width after preprocessing.
 These use `n4m` for fitting. Their R bundles now contain a
 portable N4MM affine predictor, and a preprocessing-free fit can be exported
 as N4MM for Python/R inference. That artifact attests the fitted affine

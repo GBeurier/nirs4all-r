@@ -13,7 +13,8 @@ params <- list(
   bagging_pls = list(n_estimators = 7L, seed = 13L),
   boosting_pls = list(n_estimators = 7L, learning_rate = 0.3),
   random_subspace_pls = list(n_estimators = 7L,
-    features_per_subspace = 5L, seed = 13L))
+    features_per_subspace = 5L, seed = 13L),
+  n_pls = list(mode_j = 3L, mode_k = 4L))
 rows <- function(value) lapply(seq_len(nrow(value)), function(index)
   unname(as.list(as.numeric(value[index, ]))))
 python <- Sys.getenv("NIRS4ALL_METHODS_PYTHON")
@@ -104,7 +105,11 @@ profiles <- list(
       n_estimators = 7L, features_per_subspace = 5L, seed = 13L))),
   branch = nirs4all_pipeline(list(nirs4all_concat(list(
     baseline = list(nirs4all_snv()), native = list(nirs4all_msc())))),
-    nirs4all_n4m_method("ridge")))
+    nirs4all_n4m_method("ridge")),
+  npls_branch = nirs4all_pipeline(list(nirs4all_concat(list(
+    baseline = list(nirs4all_snv()), native = list(nirs4all_msc())))),
+    nirs4all_n4m_method("n_pls", params = list(
+      mode_j = 3L, mode_k = 8L))))
 for (profile in profiles) check(profile)
 
 original <- check(nirs4all_pipeline(learner = nirs4all_n4m_method(
@@ -140,6 +145,12 @@ bad <- document
 bad$schema <- "nirs4all.n4m.trained_pipeline.v1"
 stopifnot(inherits(try(nirs4all_import_trained_pipeline(emit(bad)),
   silent = TRUE), "try-error"))
+npls <- check(nirs4all_pipeline(learner = nirs4all_n4m_method(
+  "n_pls", params = list(mode_j = 3L, mode_k = 4L))))
+wrong_modes <- npls$manifest
+wrong_modes$recipe$pipeline[[1L]]$model$params$mode_k <- 5L
+stopifnot(inherits(try(nirs4all_import_trained_pipeline(emit(
+  rehash(npls$document, wrong_modes))), silent = TRUE), "try-error"))
 pls <- nirs4all_fit(nirs4all_pipeline(learner = nirs4all_pls(2L)), X, y)
 bad <- document
 bytes <- nirs4all_export_native_model(pls)

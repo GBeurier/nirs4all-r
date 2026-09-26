@@ -7,7 +7,7 @@
 #' Version 3 covers PLS regression with train-fitted external SPA selection.
 #' Version 4 covers PLS regression with external native `n4m.Selector` steps.
 #' Version 5 carries a prediction-only affine N4MM model plus an asserted
-#' recipe for refitting one of twelve native MethodResult regressors; the
+#' recipe for refitting one of thirteen native MethodResult regressors; the
 #' N4MM payload does not attest which fitting method produced it.
 #' The JSON recipe also permits fitting the pipeline again in either language.
 #' @param object A fitted native n4m PLS, affine MethodResult or sparse
@@ -406,7 +406,11 @@ nirs4all_portable_validate_model <- function(bytes, pipeline, input_width,
   descriptor <- n4m::n4m_model_descriptor(bytes)
   embedded <- identical(owner, "embedded_methods")
   if (identical(pipeline$learner$spec$learner, "n4m_method")) {
+    spec <- pipeline$learner$spec
     if (embedded || !identical(pipeline$learner$format, "n4mm_affine") ||
+        (identical(spec$method, "n_pls") &&
+         as.double(spec$params$mode_j) * as.double(spec$params$mode_k) !=
+           model_width) ||
         !identical(descriptor$format_version, 1L) ||
         !identical(descriptor$algorithm, 11L) ||
         !identical(descriptor$solver, 0L) ||
