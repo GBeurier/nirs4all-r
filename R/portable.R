@@ -367,8 +367,8 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
   } else if (is.list(spec) && identical(spec$learner, "n4m_method") &&
              spec$method %in% names(.nirs4all_portable_affine)) {
     params <- spec$params
-    for (name in .nirs4all_portable_affine_specs[[spec$method]]$positional)
-      params[[name]] <- unname(params[[name]])
+    for (parameter_name in .nirs4all_portable_affine_specs[[spec$method]]$positional)
+      params[[parameter_name]] <- unname(params[[parameter_name]])
     if (identical(spec$method, "ridge") && !is.null(params$ridge_lambda)) {
       params$alpha <- params$ridge_lambda
       params$ridge_lambda <- NULL
