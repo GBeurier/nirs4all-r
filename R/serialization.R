@@ -42,7 +42,11 @@ nirs4all_load <- function(file) {
   }
   if (identical(fitted$learner$format, "n4mm_affine")) {
     if (!is.raw(fitted$state)) stop("affine model bundle lacks N4MM bytes", call. = FALSE)
-    nirs4all_affine_validate(fitted$state, fitted$n_features)
+    # RDS also supports R-only preprocessing. Its transformed width need not
+    # be expressible by the cross-language state validator; the native model
+    # checks that width at prediction time.
+    nirs4all_affine_validate(fitted$state,
+      if (!length(fitted$steps)) fitted$n_features else NULL)
     fitted$state <- list(native_model = n4m::n4m_model_import(fitted$state))
   }
   if (identical(fitted$learner$format, "n4mm_sparse_pls_da")) {
