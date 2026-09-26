@@ -30,10 +30,16 @@ frozen matrix parity tests against Python `n4m` and are exercised in local
 and native DAG pipelines. MSC and EMSC learn a reference on each training fold,
 store only that vector in the fitted R bundle, and reuse it for validation or
 future samples. EMSC also records its polynomial degree in the step definition.
+SPA selects wavelengths from each training fold's predictors and targets via
+`n4m::spa_select()`; validation and prediction reuse its saved indices. The R
+fit keeps the native selection rank but projects columns in input order, as
+Python's selector does. The JSON/YAML reader and writer recognize `n4m.SPA`
+with `top_k` and
+`n_components`. R/Python selector and DAG fold parity are checked locally;
+Core/WASM recipe qualification remains open.
 Other train-fitted preprocessing such as baseline centering still needs an
 explicitly serialized fit state.
-This development branch requires `n4m >= 1.0.21.9002`, available on R-universe
-but not yet on CRAN.
+This development branch requires `n4m >= 1.0.21.9003` for SPA.
 
 The optional `nirs4allformats` reader can feed either path without reparsing
 spectra in this package. It accepts homogeneous one-dimensional signals and
