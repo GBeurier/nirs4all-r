@@ -68,6 +68,7 @@ nirs4all_n4mp_payload <- function(kind, encoding, bytes) {
 
 nirs4all_n4mp_decode_payload <- function(value, kind, encoding) {
   if (!is.list(value) ||
+      anyDuplicated(names(value)) ||
       !setequal(names(value), c("kind", "encoding", "sha256", "payload")) ||
       !identical(value$kind, kind) || !identical(value$encoding, encoding) ||
       !is.character(value$sha256) || length(value$sha256) != 1L ||
@@ -87,8 +88,10 @@ nirs4all_export_trained_n4mp <- function(object, file = NULL) {
       !identical(object$preprocessing_owner, "native_n4mp") ||
       !identical(object$task, "regression") ||
       !(object$learner$format %in% c("n4mm", "n4mm_affine")))
-    stop("v6 export requires a native N4MP regression fit", call. = FALSE)
-  pipeline <- structure(list(steps = object$steps, learner = object$learner),
+    stop("v6/v7 export requires a native N4MP regression fit", call. = FALSE)
+  augmented <- length(object$augmentations) > 0L
+  pipeline <- structure(list(steps = object$steps, learner = object$learner,
+                             augmentations = object$augmentations),
                         class = "nirs4all_pipeline")
   expected <- nirs4all_n4mp_steps(object$steps)
   if (!nirs4all_n4mp_equal_plan(
@@ -123,7 +126,9 @@ nirs4all_export_trained_n4mp <- function(object, file = NULL) {
   }
   manifest_json <- as.character(jsonlite::toJSON(manifest, auto_unbox = TRUE,
                                                 null = "null", digits = 17L))
-  document <- list(schema = "nirs4all.n4m.trained_pipeline.v6",
+  document <- list(schema = if (augmented)
+    "nirs4all.n4m.trained_pipeline.v7" else
+      "nirs4all.n4m.trained_pipeline.v6",
     manifest_json = manifest_json,
     manifest_sha256 = digest::digest(manifest_json, algo = "sha256",
                                      serialize = FALSE),
@@ -143,10 +148,14 @@ nirs4all_export_trained_n4mp <- function(object, file = NULL) {
 }
 
 nirs4all_import_trained_n4mp <- function(document) {
+  v7 <- is.list(document) &&
+    identical(document$schema, "nirs4all.n4m.trained_pipeline.v7")
   if (!is.list(document) ||
+      anyDuplicated(names(document)) ||
       !setequal(names(document), c("schema", "manifest_json", "manifest_sha256",
                                  "preprocessing", "model")) ||
-      !identical(document$schema, "nirs4all.n4m.trained_pipeline.v6") ||
+      !(v7 || identical(document$schema,
+                        "nirs4all.n4m.trained_pipeline.v6")) ||
       !is.character(document$manifest_json) ||
       length(document$manifest_json) != 1L ||
       !is.character(document$manifest_sha256) ||
@@ -154,16 +163,17 @@ nirs4all_import_trained_n4mp <- function(document) {
       !grepl("^[0-9a-f]{64}$", document$manifest_sha256) ||
       !identical(digest::digest(document$manifest_json, algo = "sha256",
                                 serialize = FALSE), document$manifest_sha256))
-    stop("invalid v6 trained pipeline envelope or manifest hash", call. = FALSE)
+    stop("invalid v6/v7 trained pipeline envelope or manifest hash", call. = FALSE)
   manifest <- jsonlite::fromJSON(document$manifest_json, simplifyVector = FALSE)
   affine <- "fit_recipe_assertion" %in% names(manifest)
   required <- c("recipe", "input_n_features", "feature_names",
                 "preprocessing_owner", "step_states",
                 if (affine) "fit_recipe_assertion")
-  if (!is.list(manifest) || !setequal(names(manifest), required) ||
+  if (!is.list(manifest) || anyDuplicated(names(manifest)) ||
+      !setequal(names(manifest), required) ||
       !identical(manifest$preprocessing_owner, "native_n4mp") ||
       !is.list(manifest$step_states) || length(manifest$step_states))
-    stop("invalid v6 trained pipeline manifest", call. = FALSE)
+    stop("invalid v6/v7 trained pipeline manifest", call. = FALSE)
   width <- manifest$input_n_features
   if (!is.numeric(width) || length(width) != 1L || is.na(width) ||
       !is.finite(width) || width != floor(width) || width < 2L ||
@@ -178,11 +188,26 @@ nirs4all_import_trained_n4mp <- function(document) {
     stop("invalid ordered feature names", call. = FALSE)
   feature_names <- if (is.null(names_in)) NULL else
     unlist(names_in, use.names = FALSE)
+  if (v7 && (!is.list(manifest$recipe) ||
+      anyDuplicated(names(manifest$recipe)) ||
+      !setequal(names(manifest$recipe), c("name", "pipeline")) ||
+      !is.character(manifest$recipe$name) ||
+      length(manifest$recipe$name) != 1L ||
+      is.na(manifest$recipe$name) || !nzchar(manifest$recipe$name)))
+    stop("v7 requires a closed named recipe", call. = FALSE)
   pipeline <- nirs4all_pipeline_from_portable(manifest$recipe)
+  if (v7 != (length(pipeline$augmentations) > 0L))
+    stop("train augmentation requires exactly trained schema v7", call. = FALSE)
+  if (v7) {
+    canonical <- jsonlite::fromJSON(nirs4all_export_pipeline(pipeline),
+                                    simplifyVector = FALSE)
+    if (!identical(manifest$recipe$pipeline, canonical$pipeline))
+      stop("v7 train augmentation recipe is not canonical", call. = FALSE)
+  }
   if (!identical(pipeline$learner$task, "regression") ||
       !(pipeline$learner$format %in% c("n4mm", "n4mm_affine")) ||
       affine != identical(pipeline$learner$format, "n4mm_affine"))
-    stop("v6 requires a portable regression recipe", call. = FALSE)
+    stop("v6/v7 requires a portable regression recipe", call. = FALSE)
   if (affine) {
     method <- pipeline$learner$spec$method
     assertion <- manifest$fit_recipe_assertion
@@ -207,6 +232,7 @@ nirs4all_import_trained_n4mp <- function(document) {
                                    "external_r")
   native_model <- n4m::n4m_model_import(model_bytes)
   structure(list(steps = pipeline$steps, learner = pipeline$learner,
+    augmentations = pipeline$augmentations,
     state = if (affine) list(native_model = native_model) else native_model,
     step_states = rep(list(NULL), length(pipeline$steps)),
     native_preprocessing = preprocessing, preprocessing_owner = "native_n4mp",

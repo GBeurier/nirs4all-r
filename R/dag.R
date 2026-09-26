@@ -40,12 +40,16 @@ nirs4all_dag_step_spec <- function(step) {
 #'   their step methods and parameters may differ. [nirs4all_concat()] steps
 #'   are lowered to parallel branch transforms and feature-join nodes; they
 #'   cannot yet be combined with variants.
+#' @param splitter Optional [nirs4all_native_splitter()] specification for a
+#'   native n4m fold splitter. Only SPXY fold, grouped SPXY fold and binned
+#'   stratified group fold are valid for CV; one-shot splits are not folds.
 #' @return Native DAG-ML outcome with an additional `workdir` path.
 #' @export
 nirs4all_dag_cv_refit_predict <- function(
     pipeline, X, y = NULL, folds = 5L, sample_ids = NULL, root_seed = 1L,
     cli = Sys.which("dag-ml-cli"), workdir = tempfile("nirs4all-dag-"),
-    process_workers = 1L, group_ids = NULL, split_steps = FALSE) {
+    process_workers = 1L, group_ids = NULL, split_steps = FALSE,
+    splitter = NULL) {
   if (!requireNamespace("dagml", quietly = TRUE) ||
       !requireNamespace("jsonlite", quietly = TRUE) ||
       !requireNamespace("digest", quietly = TRUE))
@@ -77,6 +81,10 @@ nirs4all_dag_cv_refit_predict <- function(
   classification <- identical(tasks[[1L]], "classification")
   if (!is.logical(split_steps) || length(split_steps) != 1L || is.na(split_steps))
     stop("split_steps must be TRUE or FALSE", call. = FALSE)
+  if (split_steps && any(vapply(pipelines, function(value)
+      length(value$augmentations) > 0L, logical(1))))
+    stop("train-only augmentations cannot be reordered after split_steps transforms",
+         call. = FALSE)
   if (split_steps && any(vapply(pipelines, function(value)
       identical(value$learner$spec$method, "di_pls") &&
         length(value$steps) > 0L, logical(1))))
@@ -124,6 +132,14 @@ nirs4all_dag_cv_refit_predict <- function(
   if (!is.numeric(folds) || length(folds) != 1L || !is.finite(folds) ||
       folds < 2L || folds > nrow(X) || folds != floor(folds))
     stop("folds must be an integer from two to the sample count", call. = FALSE)
+  if (!is.null(splitter)) {
+    if (!inherits(splitter, "nirs4all_native_splitter") ||
+        !(splitter$kind %in% .nirs4all_native_fold_kinds) ||
+        !is.list(splitter$params) ||
+        !identical(as.double(splitter$params$n_splits), as.double(folds)))
+      stop("native CV splitter must be a fold kind with n_splits equal to folds",
+           call. = FALSE)
+  }
   if (!is.numeric(root_seed) || length(root_seed) != 1L ||
       !is.finite(root_seed) || root_seed < 0 ||
       root_seed > .Machine$integer.max || root_seed != floor(root_seed))
@@ -155,6 +171,10 @@ nirs4all_dag_cv_refit_predict <- function(
            call. = FALSE)
     group_ids <- unname(group_ids)
   }
+  if (!is.null(splitter) &&
+      ((splitter$kind %in% .nirs4all_native_group_kinds) !=
+       !is.null(group_ids)))
+    stop("native CV group IDs must match the splitter kind", call. = FALSE)
   if (!is.character(cli) || length(cli) != 1L || is.na(cli) || !nzchar(cli))
     stop("dag-ml-cli is required for native DAG execution", call. = FALSE)
   if (!is.character(workdir) || length(workdir) != 1L || is.na(workdir) ||
@@ -171,7 +191,13 @@ nirs4all_dag_cv_refit_predict <- function(
                   allow_observation_split_with_shared_target = FALSE,
                   require_group_ids = !is.null(group_ids), unsafe_flags = list())
   indices <- seq_len(nrow(X))
-  fold_number <- if (is.null(group_ids)) {
+  native_cv <- if (is.null(splitter)) NULL else
+    .nirs4all_native_cv_assignment(splitter, X, y, sample_ids, group_ids,
+                                   folds)
+  native_splits <- if (is.null(native_cv)) NULL else native_cv$splits
+  fold_number <- if (!is.null(native_cv)) {
+    native_cv$fold_number
+  } else if (is.null(group_ids)) {
     (indices - 1L) %% as.integer(folds) + 1L
   } else {
     group_sizes <- table(group_ids)
@@ -190,12 +216,15 @@ nirs4all_dag_cv_refit_predict <- function(
       length(unique(y[fold_number != index])) != length(class_levels), logical(1))))
     stop("each classification training fold must contain every class", call. = FALSE)
   fold_set <- list(
-    id = "folds:nirs4all-r", sample_ids = as.list(sort(sample_ids)),
+    id = if (is.null(splitter)) "folds:nirs4all-r" else
+      paste0("folds:nirs4all-r:n4m:", splitter$kind),
+    sample_ids = as.list(sort(sample_ids)),
     sample_groups = if (is.null(group_ids)) empty else
       as.list(stats::setNames(group_ids, sample_ids)),
     folds = lapply(seq_len(as.integer(folds)), function(index) {
       validation_rows <- indices[fold_number == index]
-      train_rows <- indices[!indices %in% validation_rows]
+      train_rows <- if (is.null(native_splits)) indices[fold_number != index] else
+        native_splits[[index]]$train
       list(fold_id = paste0("fold:", index - 1L),
            train_sample_ids = as.list(sort(sample_ids[train_rows])),
            validation_sample_ids = as.list(sort(sample_ids[validation_rows])),
@@ -243,6 +272,7 @@ nirs4all_dag_cv_refit_predict <- function(
     }
     params$preprocessing <- if (split_steps) list() else
       lapply(value$steps, nirs4all_dag_step_spec)
+    params$augmentations <- lapply(value$augmentations, unclass)
     params
   })
   transform_steps <- if (split_steps) lapply(seq_along(pipelines[[1L]]$steps),
@@ -268,9 +298,11 @@ nirs4all_dag_cv_refit_predict <- function(
               root_seed = as.integer(root_seed), leakage_policy = leakage,
               split_invocation = list(id = "split:outer", controller_id = NULL,
                                       leakage_policy = leakage,
-                                      params = list(kind = "kfold",
-                                                    n_splits = as.integer(folds),
-                                                    shuffle = FALSE),
+                                      params = if (is.null(splitter))
+                                        list(kind = "kfold",
+                                             n_splits = as.integer(folds),
+                                             shuffle = FALSE) else
+                                        list(kind = "precomputed"),
                                       fold_set = fold_set),
               steps = c(transform_steps, list(list(kind = "model", id = "model:nirs4all-r",
                                 operator = list(type = "Nirs4allR"),
