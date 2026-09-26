@@ -14,6 +14,9 @@
 #'   positive `mode_j` and `mode_k` whose product equals the fitted feature
 #'   width; MB-PLS requires a positive integer `block_sizes` vector summing
 #'   to the fitted feature width; boosting `learning_rate` must be in `(0, 1]`.
+#'   DI-PLS requires a finite target-domain matrix `X_target` in the same
+#'   feature space received by the learner. Target spectra are used in fitting;
+#'   avoid including evaluation samples unless transductive fitting is intended.
 #' @export
 nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
   allowed <- list(
@@ -25,7 +28,8 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
     bagging_pls = c("n_estimators", "seed"),
     boosting_pls = c("n_estimators", "learning_rate"),
     random_subspace_pls = c("n_estimators", "features_per_subspace", "seed"),
-    n_pls = c("mode_j", "mode_k"), mb_pls = "block_sizes")
+    n_pls = c("mode_j", "mode_k"), mb_pls = "block_sizes",
+    di_pls = c("X_target", "di_lambda"))
   if (!is.character(method) || length(method) != 1L || is.na(method) ||
       !(method %in% names(allowed)))
     stop("unsupported n4m linear method", call. = FALSE)
@@ -53,7 +57,22 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
            call. = FALSE)
     params$block_sizes <- as.integer(sizes)
   }
-  scalar_params <- params[setdiff(names(params), "block_sizes")]
+  if (identical(method, "di_pls")) {
+    target <- params$X_target
+    if (!is.matrix(target) || !is.numeric(target) ||
+        nrow(target) < 2L || ncol(target) < 2L ||
+        anyNA(target) || any(!is.finite(target)))
+      stop("di_pls requires a finite numeric target-domain matrix",
+           call. = FALSE)
+    storage.mode(target) <- "double"
+    params$X_target <- target
+    if (!is.null(params$di_lambda) &&
+        (!is.numeric(params$di_lambda) ||
+         length(params$di_lambda) != 1L ||
+         !is.finite(params$di_lambda) || params$di_lambda < 0))
+      stop("di_lambda must be a finite non-negative number", call. = FALSE)
+  }
+  scalar_params <- params[setdiff(names(params), c("block_sizes", "X_target"))]
   if (length(scalar_params) && !all(vapply(scalar_params, function(value)
       (is.numeric(value) || is.logical(value)) && length(value) == 1L &&
       !is.na(value) && is.finite(value), logical(1))))
@@ -100,6 +119,14 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
              call. = FALSE)
       if (identical(method, "mb_pls") && sum(params$block_sizes) != ncol(X))
         stop("sum(block_sizes) must equal the input feature count",
+             call. = FALSE)
+      if (identical(method, "di_pls") && ncol(params$X_target) != ncol(X))
+        stop("X_target width must equal transformed input feature count",
+             call. = FALSE)
+      if (identical(method, "di_pls") &&
+          !is.null(colnames(params$X_target)) &&
+          !identical(colnames(params$X_target), colnames(X)))
+        stop("X_target feature names or order differ from transformed X",
              call. = FALSE)
       result <- n4m::n4m_method(method, X, y, as.integer(n_components),
                                 params = params)

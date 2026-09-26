@@ -216,6 +216,18 @@ nirs4all_dag_cv_refit_predict <- function(
   model_specs <- list()
   model_params <- lapply(pipelines, function(value) {
     params <- value$learner$spec
+    if (identical(params$learner, "n4m_method") &&
+        identical(params$method, "di_pls")) {
+      # JSON has no matrix identity or dimensions under simplifyVector=FALSE.
+      # Keep the target-domain spectra in the fingerprinted R sidecar instead
+      # of silently turning the matrix into nested lists in process workers.
+      target_bytes <- serialize(params$params$X_target, NULL, version = 3L)
+      target_key <- digest::digest(target_bytes, algo = "sha256",
+                                   serialize = FALSE)
+      model_specs[[target_key]] <<- target_bytes
+      params$params$X_target <- NULL
+      params$target_key <- target_key
+    }
     if (is.character(params$learner) && length(params$learner) == 1L &&
         params$learner %in% c("parsnip", "parsnip_classifier", "mlr3",
                              "mlr3_classifier", "torch_module",

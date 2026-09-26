@@ -126,9 +126,18 @@ learner_from_task <- function(task) {
                        scale_x = if (is.null(params$scale_x)) TRUE else params$scale_x,
                        center_y = if (is.null(params$center_y)) TRUE else params$center_y,
                        scale_y = if (is.null(params$scale_y)) TRUE else params$scale_y),
-    n4m_method = nirs4all_n4m_method(
-      method = params$method, n_components = as.integer(params$n_components),
-      params = if (is.null(params$params)) list() else params$params),
+    n4m_method = {
+      method_params <- if (is.null(params$params)) list() else params$params
+      if (identical(params$method, "di_pls")) {
+        target <- model_spec_from_task(list(spec_key = params$target_key))
+        if (!is.matrix(target) || !is.numeric(target))
+          stop("DI-PLS target-domain sidecar is not a numeric matrix")
+        method_params$X_target <- target
+      }
+      nirs4all_n4m_method(
+        method = params$method, n_components = as.integer(params$n_components),
+        params = method_params)
+    },
     sparse_pls_da = nirs4all_sparse_pls_da(
       n_components = as.integer(params$n_components),
       sparsity_lambda = as.numeric(params$sparsity_lambda)),
