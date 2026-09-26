@@ -77,6 +77,11 @@ nirs4all_dag_cv_refit_predict <- function(
   classification <- identical(tasks[[1L]], "classification")
   if (!is.logical(split_steps) || length(split_steps) != 1L || is.na(split_steps))
     stop("split_steps must be TRUE or FALSE", call. = FALSE)
+  if (split_steps && any(vapply(pipelines, function(value)
+      identical(value$learner$spec$method, "di_pls") &&
+        length(value$steps) > 0L, logical(1))))
+    stop("split_steps cannot apply source-fitted preprocessing to a DI-PLS target cohort",
+         call. = FALSE)
   if (split_steps && !is.null(variants) &&
       length(unique(vapply(pipelines, function(value) length(value$steps),
                            integer(1)))) != 1L)
