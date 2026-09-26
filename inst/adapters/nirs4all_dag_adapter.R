@@ -144,6 +144,14 @@ learner_from_task <- function(task) {
     glmnet = nirs4all_glmnet(lambda = as.numeric(params$lambda),
                             alpha = if (is.null(params$alpha)) 1 else as.numeric(params$alpha),
                             standardize = if (is.null(params$standardize)) TRUE else params$standardize),
+    xgboost = nirs4all_xgboost(
+      nrounds = as.integer(params$nrounds), max_depth = as.integer(params$max_depth),
+      eta = as.numeric(params$eta), seed = as.integer(params$seed),
+      nthread = as.integer(params$nthread)),
+    xgboost_classifier = nirs4all_xgboost_classifier(
+      nrounds = as.integer(params$nrounds), max_depth = as.integer(params$max_depth),
+      eta = as.numeric(params$eta), seed = as.integer(params$seed),
+      nthread = as.integer(params$nthread)),
     parsnip = {
       spec <- model_spec_from_task(params)
       if (!identical(spec$engine, params$engine))
