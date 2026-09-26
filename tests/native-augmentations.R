@@ -63,6 +63,10 @@ pipeline <- nirs4all_pipeline(learner = nirs4all_pls(2L),
 fitted <- nirs4all_fit(pipeline, X, y)
 manual <- nirs4all_fit(nirs4all_pipeline(learner = nirs4all_pls(2L)),
                       augmented, y)
+legacy <- nirs4all_fit(nirs4all_pipeline(learner = nirs4all_pls(2L)), X, y)
+legacy$augmentations <- NULL
+legacy_retrained <- nirs4all_retrain(legacy, X, y)
+stopifnot(max(abs(predict(legacy_retrained, X) - predict(legacy, X))) < 1e-12)
 heldout <- X[c(2L, 12L, 25L), , drop = FALSE] + .031
 stopifnot(max(abs(predict(fitted, heldout) - predict(manual, heldout))) < 1e-12,
           identical(fitted$augmentations, pipeline$augmentations),
