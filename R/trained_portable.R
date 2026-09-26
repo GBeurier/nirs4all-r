@@ -5,6 +5,7 @@
 #' code is included. Version 1 covers n4m PLS regression; version 2 adds
 #' sparse PLS-DA with ordered class labels and a native affine N4MM predictor.
 #' Version 3 covers PLS regression with train-fitted external SPA selection.
+#' Version 4 covers PLS regression with external native `n4m.Selector` steps.
 #' The JSON recipe also permits fitting the pipeline again in either language.
 #' @param object A fitted native n4m PLS or sparse PLS-DA pipeline.
 #' @param file Optional output path. If omitted, returns JSON text.
@@ -22,8 +23,11 @@ nirs4all_export_trained_pipeline <- function(object, file = NULL) {
   recipe_pipeline <- structure(list(steps = object$steps,
     learner = object$learner), class = "nirs4all_pipeline")
   selected <- nirs4all_portable_has_spa(object$steps)
-  if (classification && selected)
-    stop("trained SPA export requires PLS regression", call. = FALSE)
+  generic <- nirs4all_portable_has_selector(object$steps)
+  if (selected && generic)
+    stop("trained selector schemas cannot mix SPA and n4m.Selector", call. = FALSE)
+  if (classification && (selected || generic))
+    stop("trained selector export requires PLS regression", call. = FALSE)
   recipe <- jsonlite::fromJSON(nirs4all_export_pipeline(recipe_pipeline),
                               simplifyVector = FALSE)
   width <- as.integer(object$n_features)
@@ -45,7 +49,7 @@ nirs4all_export_trained_pipeline <- function(object, file = NULL) {
       !identical(object$classes, object$state$classes)))
     stop("invalid sparse PLS-DA class state", call. = FALSE)
   state <- nirs4all_portable_encode_states(object$steps, object$step_states,
-                                           width, owner, allow_selector = selected)
+    width, owner, allow_selector = selected, allow_generic = generic)
   bytes <- n4m::n4m_model_export(if (classification)
     object$state$native_model else object$state)
   nirs4all_portable_validate_model(bytes, recipe_pipeline, width,
@@ -64,7 +68,8 @@ nirs4all_export_trained_pipeline <- function(object, file = NULL) {
     auto_unbox = TRUE, null = "null", digits = 17L))
   document <- list(schema = if (classification)
     "nirs4all.n4m.trained_pipeline.v2" else if (selected)
-    "nirs4all.n4m.trained_pipeline.v3" else
+    "nirs4all.n4m.trained_pipeline.v3" else if (generic)
+    "nirs4all.n4m.trained_pipeline.v4" else
     "nirs4all.n4m.trained_pipeline.v1",
     manifest_json = manifest_json,
     manifest_sha256 = digest::digest(manifest_json, algo = "sha256",
@@ -104,11 +109,14 @@ nirs4all_import_trained_pipeline <- function(source) {
       !is.character(document$schema) || length(document$schema) != 1L ||
       !(document$schema %in% c("nirs4all.n4m.trained_pipeline.v1",
                                "nirs4all.n4m.trained_pipeline.v2",
-                               "nirs4all.n4m.trained_pipeline.v3")))
+                               "nirs4all.n4m.trained_pipeline.v3",
+                               "nirs4all.n4m.trained_pipeline.v4")))
     stop("unsupported trained pipeline envelope", call. = FALSE)
   classification <- identical(document$schema, "nirs4all.n4m.trained_pipeline.v2")
   selected_schema <- identical(document$schema,
                                "nirs4all.n4m.trained_pipeline.v3")
+  generic_schema <- identical(document$schema,
+                              "nirs4all.n4m.trained_pipeline.v4")
   if (!is.character(document$manifest_json) ||
       length(document$manifest_json) != 1L ||
       !is.character(document$manifest_sha256) ||
@@ -158,6 +166,8 @@ nirs4all_import_trained_pipeline <- function(source) {
     stop("trained model task differs from recipe", call. = FALSE)
   if (selected_schema != nirs4all_portable_has_spa(pipeline$steps))
     stop("trained selector schema differs from recipe", call. = FALSE)
+  if (generic_schema != nirs4all_portable_has_selector(pipeline$steps))
+    stop("trained generic selector schema differs from recipe", call. = FALSE)
   wire_owner <- manifest$preprocessing_owner
   if (!(is.character(wire_owner) && length(wire_owner) == 1L &&
         wire_owner %in% c("external", "embedded_methods")))
@@ -167,8 +177,11 @@ nirs4all_import_trained_pipeline <- function(source) {
     stop("sparse PLS-DA requires external preprocessing", call. = FALSE)
   if (selected_schema && !identical(owner, "external_r"))
     stop("trained SPA requires external preprocessing", call. = FALSE)
+  if (generic_schema && !identical(owner, "external_r"))
+    stop("trained n4m.Selector requires external preprocessing", call. = FALSE)
   state <- nirs4all_portable_decode_states(pipeline$steps,
-    manifest$step_states, width, owner, allow_selector = selected_schema)
+    manifest$step_states, width, owner, allow_selector = selected_schema,
+    allow_generic = generic_schema)
   model <- document$model
   if (!is.list(model) || !setequal(names(model), c("kind", "encoding",
       "sha256", "payload")) || !identical(model$kind, "n4m_model") ||
@@ -210,32 +223,44 @@ nirs4all_portable_has_spa <- function(steps) {
     logical(1)))
 }
 
+nirs4all_portable_has_selector <- function(steps) {
+  any(vapply(steps, function(step)
+    identical(step$kind, "n4m_selector") ||
+      (identical(step$kind, "concat") &&
+        any(vapply(step$branches, nirs4all_portable_has_selector, logical(1)))),
+    logical(1)))
+}
+
 nirs4all_portable_selector_state <- function(state, width, top_k, decode) {
   if (decode) {
     if (!is.list(state) ||
         !identical(sort(names(state)), sort(c("kind", "selected_indices"))) ||
         !identical(state$kind, "selector") ||
         !is.list(state$selected_indices) ||
-        length(state$selected_indices) != top_k ||
+        !length(state$selected_indices) ||
+        length(state$selected_indices) > width ||
+        (!is.null(top_k) && length(state$selected_indices) != top_k) ||
         !all(vapply(state$selected_indices, function(value)
           is.numeric(value) && length(value) == 1L &&
             is.finite(value) && value == floor(value), logical(1))))
-      stop("invalid fitted SPA selector state", call. = FALSE)
+      stop("invalid fitted selector state", call. = FALSE)
     indices <- unlist(state$selected_indices, use.names = FALSE)
     if (any(indices < 0 | indices >= width) || anyDuplicated(indices))
-      stop("invalid fitted SPA selected_indices", call. = FALSE)
+      stop("invalid fitted selector selected_indices", call. = FALSE)
     return(as.integer(indices) + 1L)
   }
-  if (!is.integer(state) || length(state) != top_k ||
+  if (!is.integer(state) || !length(state) || length(state) > width ||
+      (!is.null(top_k) && length(state) != top_k) ||
       anyNA(state) || any(state < 1L | state > width) ||
       anyDuplicated(state))
-    stop("invalid fitted SPA selected_indices", call. = FALSE)
+    stop("invalid fitted selector selected_indices", call. = FALSE)
   list(kind = "selector",
        selected_indices = unname(as.list(as.integer(state) - 1L)))
 }
 
 nirs4all_portable_states <- function(steps, states, width, decode = FALSE,
-                                    allow_selector = FALSE) {
+                                    allow_selector = FALSE,
+                                    allow_generic = FALSE) {
   if (!is.list(states) || length(states) != length(steps))
     stop("fitted preprocessing state does not match recipe", call. = FALSE)
   output <- vector("list", length(steps))
@@ -263,6 +288,13 @@ nirs4all_portable_states <- function(steps, states, width, decode = FALSE,
       output[[index]] <- nirs4all_portable_selector_state(state, width,
         step$top_k, decode)
       width <- step$top_k
+    } else if (identical(step$kind, "n4m_selector")) {
+      if (!allow_generic)
+        stop("trained n4m.Selector requires selector schema v4", call. = FALSE)
+      selected <- nirs4all_portable_selector_state(state, width,
+        NULL, decode)
+      output[[index]] <- selected
+      width <- if (decode) length(selected) else length(state)
     } else if (identical(step$kind, "concat")) {
       branches <- step$branches
       value <- if (decode) {
@@ -276,7 +308,8 @@ nirs4all_portable_states <- function(steps, states, width, decode = FALSE,
       branch_states <- lapply(names(branches), function(name)
         nirs4all_portable_states(branches[[name]], value[[name]], width,
                                 decode = decode,
-                                allow_selector = allow_selector))
+                                allow_selector = allow_selector,
+                                allow_generic = allow_generic))
       names(branch_states) <- names(branches)
       output[[index]] <- if (decode)
         lapply(branch_states, `[[`, "states") else
@@ -292,7 +325,8 @@ nirs4all_portable_states <- function(steps, states, width, decode = FALSE,
 }
 
 nirs4all_portable_encode_states <- function(steps, states, width, owner,
-                                           allow_selector = FALSE) {
+                                           allow_selector = FALSE,
+                                           allow_generic = FALSE) {
   if (identical(owner, "embedded_methods")) {
     if (!is.list(states) || length(states) != length(steps) ||
         !all(vapply(states, is.null, logical(1))))
@@ -300,11 +334,12 @@ nirs4all_portable_encode_states <- function(steps, states, width, owner,
     return(list(states = states, output_width = width))
   }
   nirs4all_portable_states(steps, states, width,
-                          allow_selector = allow_selector)
+    allow_selector = allow_selector, allow_generic = allow_generic)
 }
 
 nirs4all_portable_decode_states <- function(steps, states, width, owner,
-                                           allow_selector = FALSE) {
+                                           allow_selector = FALSE,
+                                           allow_generic = FALSE) {
   if (identical(owner, "embedded_methods")) {
     if (!is.list(states) || length(states) != length(steps) ||
         !all(vapply(states, is.null, logical(1))))
@@ -312,7 +347,7 @@ nirs4all_portable_decode_states <- function(steps, states, width, owner,
     return(list(states = states, output_width = width))
   }
   nirs4all_portable_states(steps, states, width, decode = TRUE,
-                          allow_selector = allow_selector)
+    allow_selector = allow_selector, allow_generic = allow_generic)
 }
 
 nirs4all_portable_validate_model <- function(bytes, pipeline, input_width,
