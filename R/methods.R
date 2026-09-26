@@ -174,6 +174,18 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
              call. = FALSE)
       if (identical(method, "group_sparse_pls"))
         nirs4all_group_sparse_verify_kernel()
+      affine_api <- c("n4m_affine_supported_methods", "n4m_affine_fit")
+      use_affine_api <- all(affine_api %in% getNamespaceExports("n4m")) &&
+        method %in% getExportedValue("n4m",
+          "n4m_affine_supported_methods")()
+      if (use_affine_api) {
+        fitted <- getExportedValue("n4m", "n4m_affine_fit")(
+          method, X, y, as.integer(n_components), params)
+        return(list(coefficients = fitted$coefficients,
+          x_mean = fitted$x_mean, y_mean = fitted$y_mean,
+          source_training_samples = nrow(X),
+          native_model = fitted$native_model))
+      }
       result <- n4m::n4m_method(method, X, y, as.integer(n_components),
                                 params = params)
       coefficients <- as.matrix(result$coefficients)
