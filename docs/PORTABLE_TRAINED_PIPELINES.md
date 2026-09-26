@@ -12,7 +12,7 @@ dimensions avant prédiction. Le même document est consommé par
 | `nirs4all.n4m.trained_pipeline.v2` | sparse PLS-DA, au moins deux classes texte | Recette, références MSC/EMSC, N4MM affine multiclasse et ordre des labels | Nouveau sparse PLS-DA ajusté sur les nouvelles lignes, sans réutiliser les poids |
 | `nirs4all.n4m.trained_pipeline.v3` | PLS SIMPLS avec SPA externe | Indices SPA classés, zéro-based sur le fil, et N4MM PLS | SPA et PLS refaits sur les nouvelles lignes |
 | `nirs4all.n4m.trained_pipeline.v4` | PLS SIMPLS avec sélecteur générique externe | Indices classés, zéro-based sur le fil, et N4MM PLS | Sélecteur et PLS refaits sur les nouvelles lignes |
-| `nirs4all.n4m.trained_pipeline.v5` | Douze régressions affines MethodResult, une cible numérique | Recette, états externes MSC/EMSC/sélecteurs/branches, assertion de recette, N4MM affine PREDICT-only | Méthode réajustée à partir de la recette sur les nouvelles lignes |
+| `nirs4all.n4m.trained_pipeline.v5` | Treize régressions affines MethodResult, dont N-PLS, une cible numérique | Recette, états externes MSC/EMSC/sélecteurs/branches, assertion de recette, N4MM affine PREDICT-only | Méthode réajustée à partir de la recette sur les nouvelles lignes |
 
 Pour v2, la sortie N4MM est une matrice `échantillons × classes` de *scores*.
 Le contrôleur choisit la première classe au score maximal et calcule, si

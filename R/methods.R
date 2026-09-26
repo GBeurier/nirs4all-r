@@ -8,7 +8,9 @@
 #'
 #' @param method Supported native regression method.
 #' @param n_components Positive component count; ignored by ridge's solver.
-#' @param params Named method-specific scalar parameter list.
+#' @param params Named method-specific scalar parameter list. N-PLS requires
+#'   positive `mode_j` and `mode_k` whose product equals the fitted feature
+#'   width; boosting `learning_rate` must be in `(0, 1]`.
 #' @export
 nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
   allowed <- list(
@@ -19,7 +21,8 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
     fused_sparse_pls = c("l1_lambda", "fusion_lambda"),
     bagging_pls = c("n_estimators", "seed"),
     boosting_pls = c("n_estimators", "learning_rate"),
-    random_subspace_pls = c("n_estimators", "features_per_subspace", "seed"))
+    random_subspace_pls = c("n_estimators", "features_per_subspace", "seed"),
+    n_pls = c("mode_j", "mode_k"))
   if (!is.character(method) || length(method) != 1L || is.na(method) ||
       !(method %in% names(allowed)))
     stop("unsupported n4m linear method", call. = FALSE)
@@ -38,9 +41,13 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
       !is.na(value) && is.finite(value), logical(1))))
     stop("method parameters must be finite numeric or logical scalars",
          call. = FALSE)
+  if (identical(method, "n_pls") &&
+      !setequal(names(params), c("mode_j", "mode_k")))
+    stop("n_pls requires mode_j and mode_k", call. = FALSE)
   for (name in intersect(names(params),
                          c("max_irls_iter", "n_estimators",
-                           "features_per_subspace", "seed"))) {
+                           "features_per_subspace", "seed",
+                           "mode_j", "mode_k"))) {
     value <- params[[name]]
     minimum <- if (identical(name, "seed")) 0L else 1L
     if (!is.numeric(value) || value < minimum || value != floor(value) ||
@@ -69,6 +76,10 @@ nirs4all_n4m_method <- function(method, n_components = 2L, params = list()) {
           stop("features_per_subspace exceeds the input feature count",
                call. = FALSE)
       }
+      if (identical(method, "n_pls") &&
+          as.double(params$mode_j) * as.double(params$mode_k) != ncol(X))
+        stop("mode_j times mode_k must equal the input feature count",
+             call. = FALSE)
       result <- n4m::n4m_method(method, X, y, as.integer(n_components),
                                 params = params)
       coefficients <- as.matrix(result$coefficients)

@@ -8,10 +8,12 @@ nirs4all_n4m_method(method, n_components = 2L, params = list())
 \item{method}{One of \code{ridge}, \code{ridge_pls}, \code{robust_pls},
 \code{cppls}, \code{sparse_simpls}, \code{ecr},
 \code{continuum_regression}, \code{mir_pls}, \code{fused_sparse_pls},
-\code{bagging_pls}, \code{boosting_pls}, or
-\code{random_subspace_pls}.}
+\code{bagging_pls}, \code{boosting_pls},
+\code{random_subspace_pls}, or \code{n_pls}.}
 \item{n_components}{Positive component count; ignored by ridge's solver.}
-\item{params}{Named method-specific scalar parameter list.}
+\item{params}{Named method-specific scalar parameter list. N-PLS requires
+positive \code{mode_j} and \code{mode_k} whose product equals the fitted feature
+width; boosting \code{learning_rate} must be in \code{(0, 1]}.}
 }
 \description{
 Exposes MethodResult regressors whose fitted coefficients obey
