@@ -396,6 +396,25 @@ are tested. Torch modules are saved with `torch`'s own serializer inside the RDS
 they are R-specific and not ONNX exports or portable Python weights.
 Custom controllers may capture non-serializable R state; their bundles are
 only reliable when the controller author has tested a fresh-process load.
+
+The optional `nirs4all_xgboost()` and `nirs4all_xgboost_classifier()`
+controllers fit CPU XGBoost boosters per training fold. For example:
+
+```r
+pipeline <- nirs4all_pipeline(
+  list(nirs4all_snv()),
+  nirs4all_xgboost_classifier(nrounds = 80, max_depth = 3,
+                              eta = 0.1, seed = 7, nthread = 1)
+)
+fit <- nirs4all_fit(pipeline, X, factor(y))
+probabilities <- nirs4all_predict_proba(fit, X)
+outcome <- nirs4all_dag_cv_refit_predict(pipeline, X, factor(y), folds = 5)
+new_labels <- nirs4all_dag_predict(outcome, new_X)
+```
+
+The fitted booster is saved as XGBoost model bytes inside the R sidecar.
+This provides RDS replay with the XGBoost runtime installed; it does not add
+XGBoost to the cross-language N4MM or JSON/YAML recipe subset.
 When feature names exist, prediction requires their exact training order; when
 both row names and target names exist, fitting requires exact sample alignment.
 Unnamed data are treated positionally. The package test suite always compares
