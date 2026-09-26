@@ -440,9 +440,14 @@ nirs4all_embedded_snv_savgol <- function(pipeline) {
 #' @param X Numeric samples-by-features matrix.
 #' @param y Finite numeric target vector for regression, or factor/character
 #'   class labels for classification.
+#' @param preprocessing `"legacy"` preserves the existing preprocessing path;
+#'   `"native_n4mp"` fits a bounded, linear native N4MP chain for portable
+#'   regression. Unsupported step semantics are rejected.
 #' @return Fitted pipeline. Use [nirs4all_predict()] or [nirs4all_save()].
 #' @export
-nirs4all_fit <- function(pipeline, X, y = NULL) {
+nirs4all_fit <- function(pipeline, X, y = NULL,
+                         preprocessing = c("legacy", "native_n4mp")) {
+  preprocessing <- match.arg(preprocessing)
   if (!inherits(pipeline, "nirs4all_pipeline"))
     stop("pipeline must be a nirs4all_pipeline", call. = FALSE)
   if (inherits(X, "nirs4all_dataset")) {
@@ -467,9 +472,21 @@ nirs4all_fit <- function(pipeline, X, y = NULL) {
   if (!is.null(rownames(X)) && !is.null(names(y)) &&
       !identical(rownames(X), names(y)))
     stop("X row names and y sample names differ", call. = FALSE)
-  embedded <- if (identical(task, "regression"))
+  if (identical(preprocessing, "native_n4mp") &&
+      (!identical(task, "regression") ||
+       !(pipeline$learner$format %in% c("n4mm", "n4mm_affine"))))
+    stop("native N4MP currently requires a portable regression learner", call. = FALSE)
+  embedded <- if (identical(task, "regression") &&
+                  identical(preprocessing, "legacy"))
     nirs4all_embedded_snv_savgol(pipeline) else NULL
-  if (!is.null(embedded)) {
+  if (identical(preprocessing, "native_n4mp")) {
+    native_steps <- nirs4all_n4mp_steps(pipeline$steps)
+    native_preprocessing <- n4m::n4m_preprocess_fit(X, native_steps)
+    transformed <- n4m::n4m_preprocess_transform(native_preprocessing, X)
+    state <- pipeline$learner$fit(transformed, as.numeric(y))
+    states <- rep(list(NULL), length(pipeline$steps))
+    owner <- "native_n4mp"
+  } else if (!is.null(embedded)) {
     state <- n4m::n4m_fit(X, as.numeric(y), algo = "pls_simpls",
       n_components = pipeline$learner$spec$n_components,
       embedded_snv_savgol = embedded)
@@ -484,6 +501,8 @@ nirs4all_fit <- function(pipeline, X, y = NULL) {
   }
   structure(list(steps = pipeline$steps, learner = pipeline$learner,
                  state = state, step_states = states,
+                 native_preprocessing = if (identical(owner, "native_n4mp"))
+                   native_preprocessing else NULL,
                  preprocessing_owner = owner,
                  task = task,
                  classes = if (identical(task, "classification")) levels(y) else NULL,
@@ -511,7 +530,9 @@ nirs4all_retrain <- function(object, X, y = NULL) {
   if (!is.null(object$feature_names) &&
       !identical(colnames(input), object$feature_names))
     stop("X feature names or order differ from training", call. = FALSE)
-  nirs4all_fit(nirs4all_pipeline(object$steps, object$learner), X, y)
+  nirs4all_fit(nirs4all_pipeline(object$steps, object$learner), X, y,
+    preprocessing = if (identical(object$preprocessing_owner, "native_n4mp"))
+      "native_n4mp" else "legacy")
 }
 
 #' Predict from a fitted pipeline
@@ -526,7 +547,9 @@ nirs4all_predict <- function(object, X) {
   if (!is.null(object$feature_names) && !identical(colnames(X), object$feature_names))
     stop("X feature names or order differ from training", call. = FALSE)
   transformed <- if (identical(object$preprocessing_owner, "embedded_methods"))
-    X else nirs4all_transform(X, object$steps, object$step_states)
+    X else if (identical(object$preprocessing_owner, "native_n4mp"))
+      n4m::n4m_preprocess_transform(object$native_preprocessing, X) else
+        nirs4all_transform(X, object$steps, object$step_states)
   out <- object$learner$predict(object$state, transformed)
   if (identical(object$task, "classification")) {
     if (!is.factor(out) || length(out) != nrow(X) || anyNA(out) ||
