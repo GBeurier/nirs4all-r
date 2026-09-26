@@ -126,9 +126,18 @@ learner_from_task <- function(task) {
                        scale_x = if (is.null(params$scale_x)) TRUE else params$scale_x,
                        center_y = if (is.null(params$center_y)) TRUE else params$center_y,
                        scale_y = if (is.null(params$scale_y)) TRUE else params$scale_y),
-    n4m_method = nirs4all_n4m_method(
-      method = params$method, n_components = as.integer(params$n_components),
-      params = if (is.null(params$params)) list() else params$params),
+    n4m_method = {
+      method_params <- if (is.null(params$params)) list() else params$params
+      if (identical(params$method, "di_pls")) {
+        target <- model_spec_from_task(list(spec_key = params$target_key))
+        if (!is.matrix(target) || !is.numeric(target))
+          stop("DI-PLS target-domain sidecar is not a numeric matrix")
+        method_params$X_target <- target
+      }
+      nirs4all_n4m_method(
+        method = params$method, n_components = as.integer(params$n_components),
+        params = method_params)
+    },
     sparse_pls_da = nirs4all_sparse_pls_da(
       n_components = as.integer(params$n_components),
       sparsity_lambda = as.numeric(params$sparsity_lambda)),
@@ -144,6 +153,14 @@ learner_from_task <- function(task) {
     glmnet = nirs4all_glmnet(lambda = as.numeric(params$lambda),
                             alpha = if (is.null(params$alpha)) 1 else as.numeric(params$alpha),
                             standardize = if (is.null(params$standardize)) TRUE else params$standardize),
+    xgboost = nirs4all_xgboost(
+      nrounds = as.integer(params$nrounds), max_depth = as.integer(params$max_depth),
+      eta = as.numeric(params$eta), seed = as.integer(params$seed),
+      nthread = as.integer(params$nthread)),
+    xgboost_classifier = nirs4all_xgboost_classifier(
+      nrounds = as.integer(params$nrounds), max_depth = as.integer(params$max_depth),
+      eta = as.numeric(params$eta), seed = as.integer(params$seed),
+      nthread = as.integer(params$nthread)),
     parsnip = {
       spec <- model_spec_from_task(params)
       if (!identical(spec$engine, params$engine))
@@ -218,6 +235,16 @@ steps_from_task <- function(task) {
       detrend = nirs4all_detrend(polyorder = as.integer(spec$polyorder)),
       msc = nirs4all_msc(),
       emsc = nirs4all_emsc(degree = as.integer(spec$degree)),
+      spa = nirs4all_spa(top_k = as.integer(spec$top_k),
+                        n_components = as.integer(spec$n_components)),
+      n4m_selector = {
+        params <- spec$params
+        if (is.null(params)) params <- list()
+        for (name in intersect(names(params), c("alpha_thresholds", "thresholds")))
+          params[[name]] <- as.numeric(unlist(params[[name]], use.names = FALSE))
+        nirs4all_n4m_selector(spec$method,
+          n_components = as.integer(spec$n_components), params = params)
+      },
       savgol = nirs4all_savgol(
         window_length = as.integer(spec$window_length),
         polyorder = as.integer(spec$polyorder), deriv = as.integer(spec$deriv),
@@ -311,7 +338,12 @@ concat_step_state <- function(spec) {
       artifact$states[[1L]]
     }))
   names(states) <- names(branches)
-  list(step = step, states = states)
+  first_widths <- vapply(spec$branches, function(branch)
+    readRDS(artifact_location(branch$steps[[1L]]$id))$n_features,
+    integer(1))
+  if (length(unique(first_widths)) != 1L)
+    stop("concat branches do not share the same input feature width")
+  list(step = step, states = states, n_features = first_widths[[1L]])
 }
 prediction_block <- function(node, partition, fold_id, ids, values) {
   list(producer_node = node, partition = partition, fold_id = fold_id,
@@ -391,13 +423,16 @@ record_result <- function(task, raw_line) {
       if (identical(phase, "REFIT")) {
         state <- concat_step_state(spec)
         saveRDS(list(steps = list(state$step), states = list(state$states),
-                     n_features = ncol(data$X)), artifact_path)
+                     n_features = state$n_features), artifact_path)
       }
     } else {
       steps <- steps_from_task(task)
       if (length(steps) != 1L) stop("transform node needs one n4m step")
       if (!identical(phase, "PREDICT")) {
-        transformed <- nirs4all:::nirs4all_fit_transform(matrices$train, steps)
+        train_y <- if (is.null(data$class_levels))
+          data$y[sample_rows(train_ids)] else NULL
+        transformed <- nirs4all:::nirs4all_fit_transform(
+          matrices$train, steps, train_y)
         prediction_matrix <- nirs4all:::nirs4all_transform(
           matrices$prediction, steps, transformed$states)
         if (identical(phase, "REFIT"))

@@ -15,8 +15,26 @@ def main(request_path: str, response_path: str) -> None:
     train = np.asarray(request["train"], dtype=np.float64)
     validation = np.asarray(request["validation"], dtype=np.float64)
     y = np.asarray(request["y"], dtype=np.float64)
+    if request.get("feature_names") is not None:
+        import pandas as pd
+
+        train = pd.DataFrame(train, columns=request["feature_names"])
+        validation = pd.DataFrame(validation, columns=request["feature_names"])
     with PortableN4MTrainedPipeline.from_json(request["bundle"]) as imported:
         predictions = imported.predict(validation)
+        rejected_reordered = None
+        rejected_unnamed = None
+        if request.get("feature_names") is not None:
+            try:
+                imported.predict(validation.iloc[:, ::-1])
+                rejected_reordered = False
+            except ValueError:
+                rejected_reordered = True
+            try:
+                imported.predict(validation.to_numpy())
+                rejected_unnamed = False
+            except ValueError:
+                rejected_unnamed = True
         retrained = imported.retrain(train, y)
         retrained_predictions = retrained.predict(validation)
         with PortableN4MTrainedPipeline.fit_recipe(imported.recipe, train, y) as python_fitted:
@@ -26,6 +44,8 @@ def main(request_path: str, response_path: str) -> None:
         "predictions": predictions.tolist(),
         "retrained_predictions": retrained_predictions.tolist(),
         "python_predictions": python_predictions.tolist(),
+        "rejected_reordered": rejected_reordered,
+        "rejected_unnamed": rejected_unnamed,
     }), encoding="utf-8")
 
 

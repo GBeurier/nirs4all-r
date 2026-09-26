@@ -98,6 +98,116 @@ nirs4all_emsc <- function(degree = 2L) {
             class = "nirs4all_step")
 }
 
+#' Define a train-fitted n4m SPA variable-selection step
+#'
+#' Successive Projections Algorithm selects wavelengths using the training
+#' predictors and target. The selected column indices are stored in the fitted
+#' pipeline and reused unchanged for validation and prediction.
+#' @param top_k Number of input features to retain.
+#' @param n_components Number of PLS components used by the n4m selector.
+#' @export
+nirs4all_spa <- function(top_k, n_components = 2L) {
+  positive_integer <- function(value) is.numeric(value) && length(value) == 1L &&
+    is.finite(value) && value >= 1L && value <= .Machine$integer.max &&
+    value == floor(value)
+  if (!positive_integer(top_k) || !positive_integer(n_components))
+    stop("top_k and n_components must be positive integers", call. = FALSE)
+  structure(list(kind = "spa", top_k = as.integer(top_k),
+                 n_components = as.integer(n_components)),
+            class = "nirs4all_step")
+}
+
+# The dispatcher currently exposes 25 names despite describing 24 selectors.
+# This is an input schema, not a claim of per-method cross-language parity.
+.nirs4all_selector_params <- list(
+  spa_select = "top_k", cars_select = c("n_iterations", "min_features"),
+  interval_select = c("interval_width", "step"), stability_select = "top_k",
+  uve_select = c("noise_features", "noise_seed"),
+  random_frog_select = c("n_iterations", "initial_size", "min_size",
+                         "max_size", "top_k", "seed"),
+  scars_select = c("n_iterations", "min_features", "sample_fraction", "seed"),
+  ga_select = c("n_generations", "population_size", "min_features",
+                "max_features", "mutation_rate", "seed"),
+  pso_select = c("n_swarm", "n_iterations", "w", "c1", "c2", "v_max", "seed"),
+  vissa_select = c("n_iterations", "n_submodels", "ratio_kept", "threshold",
+                   "floor_probability", "seed"),
+  shaving_select = c("n_steps", "min_features", "shave_fraction"),
+  bve_select = c("n_steps", "min_features"),
+  t2_select = c("alpha_thresholds", "min_selected"),
+  wvc_select = c("top_k", "normalize"),
+  wvc_threshold_select = c("normalize", "threshold", "threshold_factor",
+                           "min_selected"),
+  emcuve_select = c("noise_features", "noise_seed", "n_ensembles",
+                    "vote_threshold"),
+  randomization_select = c("n_permutations", "randomization_seed", "alpha"),
+  bipls_select = c("interval_width", "min_intervals"),
+  sipls_select = c("interval_width", "combination_size"),
+  rep_select = c("n_steps", "min_features", "remove_count"),
+  ipw_select = c("n_iterations", "top_k", "damping", "weight_floor"),
+  st_select = c("thresholds", "min_selected"),
+  iriv_select = c("max_rounds", "seed"),
+  irf_select = c("n_iterations", "window_size", "initial_intervals", "top_k", "seed"),
+  vip_spa_select = c("vip_threshold", "top_k"))
+
+#' Define a train-fitted native n4m variable selector
+#'
+#' The selector sees only the training matrix and target. Its returned
+#' `selected_indices` are checked, stored, and projected in original spectral
+#' order on every later matrix. Methods with internal validation use n4m's
+#' native validation plan. Availability here does not imply qualified portable
+#' parity for each algorithm.
+#' @param method One of the n4m dispatcher selector names ending in `_select`.
+#' @param n_components Positive native component count.
+#' @param params Named list of native method parameters.
+#' @export
+nirs4all_n4m_selector <- function(method, n_components = 2L, params = list()) {
+  if (!is.character(method) || length(method) != 1L || is.na(method) ||
+      !(method %in% names(.nirs4all_selector_params)))
+    stop("unsupported n4m selector", call. = FALSE)
+  positive_integer <- function(value) is.numeric(value) && length(value) == 1L &&
+    is.finite(value) && value >= 1L && value <= .Machine$integer.max &&
+    value == floor(value)
+  if (!positive_integer(n_components))
+    stop("n_components must be a positive integer", call. = FALSE)
+  allowed <- .nirs4all_selector_params[[method]]
+  if (!is.list(params) || (length(params) &&
+      (is.null(names(params)) || anyNA(names(params)) ||
+       any(!nzchar(names(params))) || anyDuplicated(names(params)) ||
+       !all(names(params) %in% allowed))))
+    stop("unsupported or duplicate n4m selector parameter", call. = FALSE)
+  if (!length(params)) names(params) <- character()
+  vectors <- c("alpha_thresholds", "thresholds")
+  integers <- c("top_k", "n_iterations", "min_features", "interval_width",
+    "step", "noise_features", "noise_seed", "initial_size", "min_size",
+    "max_size", "seed", "n_generations", "population_size", "n_swarm",
+    "n_submodels", "n_steps", "min_selected", "normalize", "n_ensembles",
+    "n_permutations", "randomization_seed", "min_intervals", "combination_size",
+    "remove_count", "max_rounds", "window_size", "initial_intervals")
+  seeds <- c("seed", "noise_seed", "randomization_seed")
+  for (name in names(params)) {
+    value <- params[[name]]
+    if (!(is.numeric(value) || (identical(name, "normalize") && is.logical(value))) ||
+        !length(value) || anyNA(value) || any(!is.finite(value)) ||
+        (length(value) != 1L && !(name %in% vectors)))
+      stop(sprintf("invalid n4m selector parameter '%s'", name), call. = FALSE)
+    if (name %in% integers &&
+        (any(value != floor(value)) || any(value < if (name %in% c(seeds, "normalize")) 0 else 1) ||
+         any(value > .Machine$integer.max)))
+      stop(sprintf("invalid integer selector parameter '%s'", name), call. = FALSE)
+    if (identical(name, "normalize") && !(value %in% c(0, 1)))
+      stop("normalize must be TRUE or FALSE", call. = FALSE)
+    if (name %in% integers) params[[name]] <- as.integer(value)
+    if (name %in% vectors) params[[name]] <- as.numeric(value)
+  }
+  if (method %in% c("t2_select", "st_select") &&
+      is.null(params[[if (identical(method, "t2_select"))
+        "alpha_thresholds" else "thresholds"]]))
+    stop("selector requires a threshold vector", call. = FALSE)
+  structure(list(kind = "n4m_selector", method = method,
+                 n_components = as.integer(n_components), params = params),
+            class = "nirs4all_step")
+}
+
 #' Define a Savitzky-Golay step
 #' @param window_length Odd window length.
 #' @param polyorder Polynomial order below the window length.
@@ -195,6 +305,8 @@ nirs4all_transform <- function(X, steps, step_states = NULL) {
     stop("fitted preprocessing state does not match pipeline steps", call. = FALSE)
   for (index in seq_along(steps)) {
     step <- steps[[index]]
+    input_dimnames <- dimnames(X)
+    input_dim <- dim(X)
     if (identical(step$kind, "snv") && step$ddof >= ncol(X))
       stop("SNV ddof must be smaller than the feature count", call. = FALSE)
     X <- switch(step$kind,
@@ -222,6 +334,22 @@ nirs4all_transform <- function(X, steps, step_states = NULL) {
           stop("EMSC requires a fitted training reference", call. = FALSE)
         n4m::emsc_transform(X, reference, step$degree)
       },
+      spa = {
+        selected <- step_states[[index]]
+        if (!is.integer(selected) || length(selected) != step$top_k ||
+            anyNA(selected) || anyDuplicated(selected) ||
+            any(selected < 1L | selected > ncol(X)))
+          stop("SPA requires valid fitted feature indices", call. = FALSE)
+        # Python's SelectorMixin projects in original feature order.
+        X[, sort(selected), drop = FALSE]
+      },
+      n4m_selector = {
+        selected <- step_states[[index]]
+        if (!is.integer(selected) || !length(selected) || anyNA(selected) ||
+            anyDuplicated(selected) || any(selected < 1L | selected > ncol(X)))
+          stop("n4m selector requires valid fitted feature indices", call. = FALSE)
+        X[, sort(selected), drop = FALSE]
+      },
       concat = {
         branch_states <- step_states[[index]]
         if (!is.list(branch_states) ||
@@ -237,20 +365,57 @@ nirs4all_transform <- function(X, steps, step_states = NULL) {
       stop("unknown preprocessing step", call. = FALSE))
     if (!is.matrix(X) || !is.numeric(X) || anyNA(X) || any(!is.finite(X)))
       stop("preprocessing produced non-finite or invalid data", call. = FALSE)
+    if (step$kind %in% c("snv", "local_snv", "robust_snv",
+                         "area_normalization", "detrend", "msc", "emsc",
+                         "savgol")) {
+      if (!identical(dim(X), input_dim))
+        stop("width-preserving preprocessing changed the feature shape",
+             call. = FALSE)
+      dimnames(X) <- input_dimnames
+    }
   }
   X
 }
 
-nirs4all_fit_transform <- function(X, steps) {
+nirs4all_fit_transform <- function(X, steps, y = NULL) {
   states <- rep(list(NULL), length(steps))
   for (index in seq_along(steps)) {
     if (identical(steps[[index]]$kind, "msc"))
       states[[index]] <- n4m::msc_fit(X)
     if (identical(steps[[index]]$kind, "emsc"))
       states[[index]] <- n4m::emsc_fit(X, steps[[index]]$degree)
+    if (identical(steps[[index]]$kind, "spa")) {
+      step <- steps[[index]]
+      if (!is.numeric(y) || is.matrix(y) || length(y) != nrow(X) ||
+          anyNA(y) || any(!is.finite(y)))
+        stop("SPA requires a finite numeric training target", call. = FALSE)
+      if (step$top_k > ncol(X) ||
+          step$n_components > min(nrow(X) - 1L, ncol(X)))
+        stop("SPA parameters exceed the training matrix dimensions", call. = FALSE)
+      selected <- n4m::spa_select(X, y, step$n_components, step$top_k)$selected_indices
+      states[[index]] <- as.integer(selected)
+    }
+    if (identical(steps[[index]]$kind, "n4m_selector")) {
+      step <- steps[[index]]
+      if (!is.numeric(y) || is.matrix(y) || length(y) != nrow(X) ||
+          anyNA(y) || any(!is.finite(y)))
+        stop("n4m selector requires a finite numeric training target", call. = FALSE)
+      if (step$n_components > min(nrow(X) - 1L, ncol(X)))
+        stop("selector n_components exceeds the training matrix rank", call. = FALSE)
+      if (!is.null(step$params$top_k) && step$params$top_k > ncol(X))
+        stop("selector top_k exceeds the input feature count", call. = FALSE)
+      result <- n4m::n4m_method(step$method, X, y,
+                                step$n_components, params = step$params)
+      selected <- result$selected_indices
+      if (!is.numeric(selected) || !length(selected) || anyNA(selected) ||
+          any(!is.finite(selected)) || any(selected != floor(selected)) ||
+          any(selected < 1L | selected > ncol(X)) || anyDuplicated(selected))
+        stop("n4m selector returned invalid selected_indices", call. = FALSE)
+      states[[index]] <- as.integer(selected)
+    }
     if (identical(steps[[index]]$kind, "concat")) {
       branch_fits <- lapply(steps[[index]]$branches, function(branch)
-        nirs4all_fit_transform(X, branch))
+        nirs4all_fit_transform(X, branch, y))
       states[[index]] <- lapply(branch_fits, `[[`, "states")
       X <- nirs4all_transform(X, list(steps[[index]]), list(states[[index]]))
       next
@@ -285,9 +450,14 @@ nirs4all_embedded_snv_savgol <- function(pipeline) {
 #' @param X Numeric samples-by-features matrix.
 #' @param y Finite numeric target vector for regression, or factor/character
 #'   class labels for classification.
+#' @param preprocessing `"legacy"` preserves the existing preprocessing path;
+#'   `"native_n4mp"` fits a bounded, linear native N4MP chain for portable
+#'   regression. Unsupported step semantics are rejected.
 #' @return Fitted pipeline. Use [nirs4all_predict()] or [nirs4all_save()].
 #' @export
-nirs4all_fit <- function(pipeline, X, y = NULL) {
+nirs4all_fit <- function(pipeline, X, y = NULL,
+                         preprocessing = c("legacy", "native_n4mp")) {
+  preprocessing <- match.arg(preprocessing)
   if (!inherits(pipeline, "nirs4all_pipeline"))
     stop("pipeline must be a nirs4all_pipeline", call. = FALSE)
   if (inherits(X, "nirs4all_dataset")) {
@@ -312,23 +482,64 @@ nirs4all_fit <- function(pipeline, X, y = NULL) {
   if (!is.null(rownames(X)) && !is.null(names(y)) &&
       !identical(rownames(X), names(y)))
     stop("X row names and y sample names differ", call. = FALSE)
-  embedded <- if (identical(task, "regression"))
+  di_pls <- identical(pipeline$learner$spec$method, "di_pls")
+  if (di_pls && length(pipeline$steps)) {
+    if (!identical(preprocessing, "legacy"))
+      stop("DI-PLS with preprocessing requires the qualified legacy step path",
+           call. = FALSE)
+    allowed <- c("snv", "local_snv", "robust_snv", "area_normalization",
+                 "detrend", "msc", "emsc", "savgol")
+    if (!all(vapply(pipeline$steps, function(step)
+        inherits(step, "nirs4all_step") && step$kind %in% allowed,
+        logical(1))))
+      stop("DI-PLS target cohort cannot share selector or branch preprocessing state",
+           call. = FALSE)
+    target <- pipeline$learner$spec$params$X_target
+    if (ncol(target) != ncol(X) ||
+        (!is.null(colnames(target)) &&
+         !identical(colnames(target), colnames(X))))
+      stop("DI-PLS target cohort feature width, names or order differ from source X",
+           call. = FALSE)
+  }
+  if (identical(preprocessing, "native_n4mp") &&
+      (!identical(task, "regression") ||
+       !(pipeline$learner$format %in% c("n4mm", "n4mm_affine"))))
+    stop("native N4MP currently requires a portable regression learner", call. = FALSE)
+  embedded <- if (identical(task, "regression") &&
+                  identical(preprocessing, "legacy"))
     nirs4all_embedded_snv_savgol(pipeline) else NULL
-  if (!is.null(embedded)) {
+  if (identical(preprocessing, "native_n4mp")) {
+    native_steps <- nirs4all_n4mp_steps(pipeline$steps)
+    native_preprocessing <- n4m::n4m_preprocess_fit(X, native_steps)
+    transformed <- nirs4all_n4mp_transform(native_preprocessing, X)
+    state <- pipeline$learner$fit(transformed, as.numeric(y))
+    states <- rep(list(NULL), length(pipeline$steps))
+    owner <- "native_n4mp"
+  } else if (!is.null(embedded)) {
     state <- n4m::n4m_fit(X, as.numeric(y), algo = "pls_simpls",
       n_components = pipeline$learner$spec$n_components,
       embedded_snv_savgol = embedded)
     states <- rep(list(NULL), length(pipeline$steps))
     owner <- "embedded_methods"
   } else {
-    transformed <- nirs4all_fit_transform(X, pipeline$steps)
-    state <- pipeline$learner$fit(transformed$X,
+    transformed <- nirs4all_fit_transform(X, pipeline$steps, y)
+    fit_learner <- pipeline$learner
+    if (di_pls && length(pipeline$steps)) {
+      fit_params <- fit_learner$spec$params
+      fit_params$X_target <- nirs4all_transform(target, pipeline$steps,
+                                                transformed$states)
+      fit_learner <- nirs4all_n4m_method("di_pls",
+        fit_learner$spec$n_components, fit_params)
+    }
+    state <- fit_learner$fit(transformed$X,
       if (identical(task, "classification")) y else as.numeric(y))
     states <- transformed$states
     owner <- "external_r"
   }
   structure(list(steps = pipeline$steps, learner = pipeline$learner,
                  state = state, step_states = states,
+                 native_preprocessing = if (identical(owner, "native_n4mp"))
+                   native_preprocessing else NULL,
                  preprocessing_owner = owner,
                  task = task,
                  classes = if (identical(task, "classification")) levels(y) else NULL,
@@ -356,7 +567,9 @@ nirs4all_retrain <- function(object, X, y = NULL) {
   if (!is.null(object$feature_names) &&
       !identical(colnames(input), object$feature_names))
     stop("X feature names or order differ from training", call. = FALSE)
-  nirs4all_fit(nirs4all_pipeline(object$steps, object$learner), X, y)
+  nirs4all_fit(nirs4all_pipeline(object$steps, object$learner), X, y,
+    preprocessing = if (identical(object$preprocessing_owner, "native_n4mp"))
+      "native_n4mp" else "legacy")
 }
 
 #' Predict from a fitted pipeline
@@ -371,7 +584,9 @@ nirs4all_predict <- function(object, X) {
   if (!is.null(object$feature_names) && !identical(colnames(X), object$feature_names))
     stop("X feature names or order differ from training", call. = FALSE)
   transformed <- if (identical(object$preprocessing_owner, "embedded_methods"))
-    X else nirs4all_transform(X, object$steps, object$step_states)
+    X else if (identical(object$preprocessing_owner, "native_n4mp"))
+      nirs4all_n4mp_transform(object$native_preprocessing, X) else
+        nirs4all_transform(X, object$steps, object$step_states)
   out <- object$learner$predict(object$state, transformed)
   if (identical(object$task, "classification")) {
     if (!is.factor(out) || length(out) != nrow(X) || anyNA(out) ||
