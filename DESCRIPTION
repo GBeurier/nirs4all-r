@@ -30,7 +30,7 @@ License: AGPL (>= 3)
 URL: https://github.com/GBeurier/nirs4all-r
 BugReports: https://github.com/GBeurier/nirs4all-r/issues
 Depends: R (>= 4.1)
-Imports: digest, jsonlite, n4m (>= 1.0.21.9004), stats, tools, yaml
+Imports: digest, jsonlite, n4m (>= 1.0.21.9005), stats, tools, yaml
 Suggests: dagml, dagmldata, glmnet, mlr3, nirs4alldatasets, nirs4allformats, nirs4allio, parsnip, ranger, rpart, torch, xgboost
 Additional_repositories: https://gbeurier.r-universe.dev
 Encoding: UTF-8
