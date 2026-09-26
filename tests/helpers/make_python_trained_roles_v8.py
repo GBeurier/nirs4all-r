@@ -1,7 +1,7 @@
-"""Write inst/extdata/python_trained_roles_v7.json: Python-trained v7 envelopes (L2 portability).
+"""Write inst/extdata/python_trained_roles_v8.json: Python-trained v8 envelopes (L2 portability).
 
 Run with the nirs4all Python package and n4m roles importable:
-    python tests/helpers/make_python_trained_roles_v7.py inst/extdata/python_trained_roles_v7.json
+    python tests/helpers/make_python_trained_roles_v8.py inst/extdata/python_trained_roles_v8.json
 """
 import json, sys
 import numpy as np

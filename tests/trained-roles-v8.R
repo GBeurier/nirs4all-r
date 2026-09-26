@@ -1,8 +1,8 @@
-# Generic n4m role recipes and trained envelope v7: R fit/export/import, and
+# Generic n4m role recipes and trained envelope v8: R fit/export/import, and
 # Python-trained envelopes replayed identically in R (L2 portability).
 library(nirs4all)
 
-fixture <- jsonlite::fromJSON(system.file("extdata", "python_trained_roles_v7.json",
+fixture <- jsonlite::fromJSON(system.file("extdata", "python_trained_roles_v8.json",
                                           package = "nirs4all", mustWork = TRUE),
                               simplifyVector = TRUE)
 x_train <- fixture$x_train
@@ -32,7 +32,7 @@ for (case in c("regression", "classification")) {
 recipe <- fixture$regression$envelope$recipe
 fitted <- nirs4all_fit_role_recipe(recipe, x_train, fixture$regression$y_train)
 envelope <- nirs4all_export_trained_pipeline(fitted)
-stopifnot(grepl("nirs4all.n4m.trained_pipeline.v7", envelope, fixed = TRUE))
+stopifnot(grepl("nirs4all.n4m.trained_pipeline.v8", envelope, fixed = TRUE))
 replayed <- nirs4all_import_trained_pipeline(envelope)
 stopifnot(identical(nirs4all_predict(replayed, x_test), nirs4all_predict(fitted, x_test)))
 

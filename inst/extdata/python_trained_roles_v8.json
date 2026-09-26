@@ -1565,7 +1565,7 @@
  ],
  "regression": {
   "envelope": {
-   "schema": "nirs4all.n4m.trained_pipeline.v7",
+   "schema": "nirs4all.n4m.trained_pipeline.v8",
    "recipe": {
     "pipeline": [
      {
@@ -1675,7 +1675,7 @@
  },
  "classification": {
   "envelope": {
-   "schema": "nirs4all.n4m.trained_pipeline.v7",
+   "schema": "nirs4all.n4m.trained_pipeline.v8",
    "recipe": {
     "pipeline": [
      "n4m:preprocessing.scatter.snv",

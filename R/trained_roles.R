@@ -1,10 +1,10 @@
 # Generic n4m role recipes (steps "n4m:<catalog method id>") and their trained
-# envelope, version 7: each fitted step travels as its native N4ME state, so a
+# envelope, version 8: each fitted step travels as its native N4ME state, so a
 # pipeline trained in Python, R, JS/WASM or Rust predicts identically in the
 # others. Numerics and parameter validation stay in n4m.
 
 .nirs4all_role_prefix <- "n4m:"
-.nirs4all_role_schema <- "nirs4all.n4m.trained_pipeline.v7"
+.nirs4all_role_schema <- "nirs4all.n4m.trained_pipeline.v8"
 
 # Fit-input requirements of every n4m method, read once from the manifest.
 .nirs4all_role_inputs <- local({
@@ -45,7 +45,7 @@ nirs4all_role_transform <- function(estimators, X) {
 #' params = list(...))`): sample filters (they drop training rows), then
 #' transformers and selectors, then one regressor or classifier. Every step is
 #' fitted by n4m; the result predicts with [nirs4all_predict()] and exports
-#' with [nirs4all_export_trained_pipeline()] as a version 7 envelope.
+#' with [nirs4all_export_trained_pipeline()] as a version 8 envelope.
 #' @param recipe A recipe list, or JSON/YAML text or file (see
 #'   [nirs4all_load_pipeline()]).
 #' @param X Numeric samples-by-features matrix.
