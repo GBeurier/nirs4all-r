@@ -46,6 +46,20 @@ nirs4all_n4mp_equal_plan <- function(actual, expected) {
                   as.numeric(expected[[i]]$params)), logical(1)))
 }
 
+nirs4all_n4mp_transform <- function(preprocessing, X) {
+  transformed <- n4m::n4m_preprocess_transform(preprocessing, X)
+  # Every qualified v6 operator preserves both feature count and spectral
+  # order. Reattach the input schema before controllers inspect named feature
+  # assignments (notably GroupSparsePLS). The native matrix API itself does
+  # not carry R dimnames.
+  if (!is.matrix(transformed) || !identical(dim(transformed), dim(X)) ||
+      anyNA(transformed) || any(!is.finite(transformed)))
+    stop("native N4MP changed the qualified feature shape or finiteness",
+         call. = FALSE)
+  dimnames(transformed) <- dimnames(X)
+  transformed
+}
+
 nirs4all_n4mp_payload <- function(kind, encoding, bytes) {
   list(kind = kind, encoding = encoding,
        sha256 = digest::digest(bytes, algo = "sha256", serialize = FALSE),

@@ -305,6 +305,8 @@ nirs4all_transform <- function(X, steps, step_states = NULL) {
     stop("fitted preprocessing state does not match pipeline steps", call. = FALSE)
   for (index in seq_along(steps)) {
     step <- steps[[index]]
+    input_dimnames <- dimnames(X)
+    input_dim <- dim(X)
     if (identical(step$kind, "snv") && step$ddof >= ncol(X))
       stop("SNV ddof must be smaller than the feature count", call. = FALSE)
     X <- switch(step$kind,
@@ -363,6 +365,14 @@ nirs4all_transform <- function(X, steps, step_states = NULL) {
       stop("unknown preprocessing step", call. = FALSE))
     if (!is.matrix(X) || !is.numeric(X) || anyNA(X) || any(!is.finite(X)))
       stop("preprocessing produced non-finite or invalid data", call. = FALSE)
+    if (step$kind %in% c("snv", "local_snv", "robust_snv",
+                         "area_normalization", "detrend", "msc", "emsc",
+                         "savgol")) {
+      if (!identical(dim(X), input_dim))
+        stop("width-preserving preprocessing changed the feature shape",
+             call. = FALSE)
+      dimnames(X) <- input_dimnames
+    }
   }
   X
 }
@@ -482,7 +492,7 @@ nirs4all_fit <- function(pipeline, X, y = NULL,
   if (identical(preprocessing, "native_n4mp")) {
     native_steps <- nirs4all_n4mp_steps(pipeline$steps)
     native_preprocessing <- n4m::n4m_preprocess_fit(X, native_steps)
-    transformed <- n4m::n4m_preprocess_transform(native_preprocessing, X)
+    transformed <- nirs4all_n4mp_transform(native_preprocessing, X)
     state <- pipeline$learner$fit(transformed, as.numeric(y))
     states <- rep(list(NULL), length(pipeline$steps))
     owner <- "native_n4mp"
@@ -548,7 +558,7 @@ nirs4all_predict <- function(object, X) {
     stop("X feature names or order differ from training", call. = FALSE)
   transformed <- if (identical(object$preprocessing_owner, "embedded_methods"))
     X else if (identical(object$preprocessing_owner, "native_n4mp"))
-      n4m::n4m_preprocess_transform(object$native_preprocessing, X) else
+      nirs4all_n4mp_transform(object$native_preprocessing, X) else
         nirs4all_transform(X, object$steps, object$step_states)
   out <- object$learner$predict(object$state, transformed)
   if (identical(object$task, "classification")) {
