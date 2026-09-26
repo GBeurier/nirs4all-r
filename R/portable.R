@@ -28,28 +28,29 @@
 
 # Only affine MethodResult regressors with a qualified held-out prediction
 # path in both R and Python belong in the shared recipe vocabulary.
-.nirs4all_portable_affine <- c(
-  ridge = "n4m.Ridge", ridge_pls = "n4m.RidgePLS",
-  robust_pls = "n4m.RobustPLS", cppls = "n4m.CPPLS",
-  sparse_simpls = "n4m.SparseSIMPLS", ecr = "n4m.ECR",
-  continuum_regression = "n4m.ContinuumRegression",
-  mir_pls = "n4m.MIRPLS",
-  fused_sparse_pls = "n4m.FusedSparsePLS",
-  bagging_pls = "n4m.BaggingPLS",
-  boosting_pls = "n4m.BoostingPLS",
-  random_subspace_pls = "n4m.RandomSubspacePLS",
-  n_pls = "n4m.NPLS", mb_pls = "n4m.MBPLS")
-
-.nirs4all_portable_affine_params <- list(
-  ridge = "alpha", ridge_pls = "ridge_lambda",
-  robust_pls = c("huber_k", "max_irls_iter"), cppls = "gamma",
-  sparse_simpls = "sparsity_lambda", ecr = "alpha",
-  continuum_regression = "tau", mir_pls = character(),
-  fused_sparse_pls = c("l1_lambda", "fusion_lambda"),
-  bagging_pls = c("n_estimators", "seed"),
-  boosting_pls = c("n_estimators", "learning_rate"),
-  random_subspace_pls = c("n_estimators", "features_per_subspace", "seed"),
-  n_pls = c("mode_j", "mode_k"), mb_pls = "block_sizes")
+.nirs4all_portable_affine_specs <- list(
+  ridge = list(class = "n4m.Ridge", params = "alpha"),
+  ridge_pls = list(class = "n4m.RidgePLS", params = "ridge_lambda"),
+  robust_pls = list(class = "n4m.RobustPLS", params = c("huber_k", "max_irls_iter")),
+  cppls = list(class = "n4m.CPPLS", params = "gamma"),
+  sparse_simpls = list(class = "n4m.SparseSIMPLS", params = "sparsity_lambda"),
+  ecr = list(class = "n4m.ECR", params = "alpha"),
+  continuum_regression = list(class = "n4m.ContinuumRegression", params = "tau"),
+  mir_pls = list(class = "n4m.MIRPLS", params = character()),
+  fused_sparse_pls = list(class = "n4m.FusedSparsePLS",
+    params = c("l1_lambda", "fusion_lambda")),
+  bagging_pls = list(class = "n4m.BaggingPLS", params = c("n_estimators", "seed")),
+  boosting_pls = list(class = "n4m.BoostingPLS",
+    params = c("n_estimators", "learning_rate")),
+  random_subspace_pls = list(class = "n4m.RandomSubspacePLS",
+    params = c("n_estimators", "features_per_subspace", "seed")),
+  n_pls = list(class = "n4m.NPLS", params = c("mode_j", "mode_k")),
+  mb_pls = list(class = "n4m.MBPLS", params = "block_sizes"),
+  group_sparse_pls = list(class = "n4m.GroupSparsePLS",
+    params = c("group_assignment", "group_lambda"),
+    positional = "group_assignment", strict_components = TRUE))
+.nirs4all_portable_affine <- vapply(.nirs4all_portable_affine_specs,
+  `[[`, character(1), "class")
 
 nirs4all_portable_named <- function(value) {
   is.list(value) && !is.null(names(value)) && any(nzchar(names(value)))
@@ -324,6 +325,8 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
   } else if (is.list(spec) && identical(spec$learner, "n4m_method") &&
              spec$method %in% names(.nirs4all_portable_affine)) {
     params <- spec$params
+    for (name in .nirs4all_portable_affine_specs[[spec$method]]$positional)
+      params[[name]] <- unname(params[[name]])
     if (identical(spec$method, "ridge") && !is.null(params$ridge_lambda)) {
       params$alpha <- params$ridge_lambda
       params$ridge_lambda <- NULL
@@ -603,8 +606,15 @@ nirs4all_parse_execution_plan <- function(source) {
       model$params <- nirs4all_portable_allowed_params(
         nirs4all_portable_or(step$model$params, list()),
         c(if (identical(method, "ridge")) character() else "n_components",
-          .nirs4all_portable_affine_params[[method]]),
+          .nirs4all_portable_affine_specs[[method]]$params),
         method)
+      for (name in .nirs4all_portable_affine_specs[[method]]$positional)
+        if (!is.null(names(model$params[[name]])))
+          stop(sprintf("%s must be a positional array", name), call. = FALSE)
+      if (isTRUE(.nirs4all_portable_affine_specs[[method]]$strict_components) &&
+          !is.null(model$params$n_components) &&
+          !is.numeric(model$params$n_components))
+        stop("n_components must be a numeric integer", call. = FALSE)
       if (identical(method, "ridge") && "_range_" %in% names(step))
         stop("ridge has no component sweep", call. = FALSE)
     } else {
@@ -641,7 +651,8 @@ nirs4all_parse_execution_plan <- function(source) {
 #'
 #' The bounded reader accepts native SNV, Savitzky-Golay, LSNV, RNV, area
 #' normalization, detrend, train-fitted MSC/EMSC/SPA, feature-only branches merged
-#' by concatenation, PLS regression, qualified affine n4m regressions and
+#' by concatenation, PLS regression, qualified affine n4m regressions (including
+#' explicit per-feature GroupSparsePLS assignments and penalty) and
 #' sparse PLS-DA classification.
 #' Splitters and component sweeps are refused because a single fitted pipeline
 #' cannot represent an entire selection experiment.
