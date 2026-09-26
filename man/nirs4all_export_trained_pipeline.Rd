@@ -9,4 +9,4 @@ nirs4all_export_trained_pipeline(object, file = NULL)
 \item{file}{Optional output path. If omitted, returns JSON text.}
 }
 \value{JSON text, invisibly when \code{file} is supplied.}
-\description{Serializes a portable n4m recipe, fitted MSC/EMSC references and the exact N4MM model payload in one JSON document. No RDS, Python pickle or executable code is included. Version 1 covers n4m PLS regression; version 2 adds sparse PLS-DA with ordered class labels and a native affine N4MM predictor. The JSON recipe also permits fitting the pipeline again in either language.}
+\description{Serializes a portable n4m recipe, fitted preprocessing state and the exact N4MM model payload in one JSON document. No RDS, Python pickle or executable code is included. Version 1 covers n4m PLS regression; version 2 adds sparse PLS-DA with ordered class labels and a native affine N4MM predictor. Version 3 covers PLS regression with external train-fitted SPA selection, including selected indices in native ranking order as zero-based values. The JSON recipe also permits fitting the pipeline again in either language.}
