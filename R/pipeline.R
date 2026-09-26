@@ -98,6 +98,25 @@ nirs4all_emsc <- function(degree = 2L) {
             class = "nirs4all_step")
 }
 
+#' Define a train-fitted n4m SPA variable-selection step
+#'
+#' Successive Projections Algorithm selects wavelengths using the training
+#' predictors and target. The selected column indices are stored in the fitted
+#' pipeline and reused unchanged for validation and prediction.
+#' @param top_k Number of input features to retain.
+#' @param n_components Number of PLS components used by the n4m selector.
+#' @export
+nirs4all_spa <- function(top_k, n_components = 2L) {
+  positive_integer <- function(value) is.numeric(value) && length(value) == 1L &&
+    is.finite(value) && value >= 1L && value <= .Machine$integer.max &&
+    value == floor(value)
+  if (!positive_integer(top_k) || !positive_integer(n_components))
+    stop("top_k and n_components must be positive integers", call. = FALSE)
+  structure(list(kind = "spa", top_k = as.integer(top_k),
+                 n_components = as.integer(n_components)),
+            class = "nirs4all_step")
+}
+
 #' Define a Savitzky-Golay step
 #' @param window_length Odd window length.
 #' @param polyorder Polynomial order below the window length.
@@ -222,6 +241,15 @@ nirs4all_transform <- function(X, steps, step_states = NULL) {
           stop("EMSC requires a fitted training reference", call. = FALSE)
         n4m::emsc_transform(X, reference, step$degree)
       },
+      spa = {
+        selected <- step_states[[index]]
+        if (!is.integer(selected) || length(selected) != step$top_k ||
+            anyNA(selected) || anyDuplicated(selected) ||
+            any(selected < 1L | selected > ncol(X)))
+          stop("SPA requires valid fitted feature indices", call. = FALSE)
+        # Python's SelectorMixin projects in original feature order.
+        X[, sort(selected), drop = FALSE]
+      },
       concat = {
         branch_states <- step_states[[index]]
         if (!is.list(branch_states) ||
@@ -241,16 +269,27 @@ nirs4all_transform <- function(X, steps, step_states = NULL) {
   X
 }
 
-nirs4all_fit_transform <- function(X, steps) {
+nirs4all_fit_transform <- function(X, steps, y = NULL) {
   states <- rep(list(NULL), length(steps))
   for (index in seq_along(steps)) {
     if (identical(steps[[index]]$kind, "msc"))
       states[[index]] <- n4m::msc_fit(X)
     if (identical(steps[[index]]$kind, "emsc"))
       states[[index]] <- n4m::emsc_fit(X, steps[[index]]$degree)
+    if (identical(steps[[index]]$kind, "spa")) {
+      step <- steps[[index]]
+      if (!is.numeric(y) || is.matrix(y) || length(y) != nrow(X) ||
+          anyNA(y) || any(!is.finite(y)))
+        stop("SPA requires a finite numeric training target", call. = FALSE)
+      if (step$top_k > ncol(X) ||
+          step$n_components > min(nrow(X) - 1L, ncol(X)))
+        stop("SPA parameters exceed the training matrix dimensions", call. = FALSE)
+      selected <- n4m::spa_select(X, y, step$n_components, step$top_k)$selected_indices
+      states[[index]] <- as.integer(selected)
+    }
     if (identical(steps[[index]]$kind, "concat")) {
       branch_fits <- lapply(steps[[index]]$branches, function(branch)
-        nirs4all_fit_transform(X, branch))
+        nirs4all_fit_transform(X, branch, y))
       states[[index]] <- lapply(branch_fits, `[[`, "states")
       X <- nirs4all_transform(X, list(steps[[index]]), list(states[[index]]))
       next
@@ -321,7 +360,7 @@ nirs4all_fit <- function(pipeline, X, y = NULL) {
     states <- rep(list(NULL), length(pipeline$steps))
     owner <- "embedded_methods"
   } else {
-    transformed <- nirs4all_fit_transform(X, pipeline$steps)
+    transformed <- nirs4all_fit_transform(X, pipeline$steps, y)
     state <- pipeline$learner$fit(transformed$X,
       if (identical(task, "classification")) y else as.numeric(y))
     states <- transformed$states

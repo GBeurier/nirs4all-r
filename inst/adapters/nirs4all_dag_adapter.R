@@ -218,6 +218,8 @@ steps_from_task <- function(task) {
       detrend = nirs4all_detrend(polyorder = as.integer(spec$polyorder)),
       msc = nirs4all_msc(),
       emsc = nirs4all_emsc(degree = as.integer(spec$degree)),
+      spa = nirs4all_spa(top_k = as.integer(spec$top_k),
+                        n_components = as.integer(spec$n_components)),
       savgol = nirs4all_savgol(
         window_length = as.integer(spec$window_length),
         polyorder = as.integer(spec$polyorder), deriv = as.integer(spec$deriv),
@@ -397,7 +399,10 @@ record_result <- function(task, raw_line) {
       steps <- steps_from_task(task)
       if (length(steps) != 1L) stop("transform node needs one n4m step")
       if (!identical(phase, "PREDICT")) {
-        transformed <- nirs4all:::nirs4all_fit_transform(matrices$train, steps)
+        train_y <- if (is.null(data$class_levels))
+          data$y[sample_rows(train_ids)] else NULL
+        transformed <- nirs4all:::nirs4all_fit_transform(
+          matrices$train, steps, train_y)
         prediction_matrix <- nirs4all:::nirs4all_transform(
           matrices$prediction, steps, transformed$states)
         if (identical(phase, "REFIT"))

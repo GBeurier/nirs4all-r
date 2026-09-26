@@ -18,6 +18,7 @@
   detrend = c("n4m.Detrend", "preprocessing.detrend"),
   msc = c("n4m.MSC", "preprocessing.msc"),
   emsc = c("n4m.EMSC", "preprocessing.emsc"),
+  spa = "n4m.SPA",
   pls = c("sklearn.cross_decomposition.PLSRegression",
           "sklearn.cross_decomposition._pls.PLSRegression",
           "n4m.PLS", "n4m.PLSRegression", "models.pls.pls_fit_simple"),
@@ -174,7 +175,7 @@ nirs4all_load_pipeline <- function(source) {
 #' Writes n4m-backed preprocessing with named feature branches and
 #' `merge: features` syntax when needed. The default `cross_language` scope
 #' qualifies native PLS or sparse PLS-DA recipes; LSNV, RNV, area
-#' normalization, detrend, MSC and EMSC are tested against Python n4m but not
+#' normalization, detrend, MSC, EMSC and SPA are tested against Python n4m but not
 #' yet Core/WASM. Non-default SNV is refused in that scope because Core/WASM
 #' ignores its parameters. The `r_native` scope permits selected ranger,
 #' glmnet and torch MLP learners under explicit R-only aliases. It does not
@@ -239,6 +240,9 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
     if (identical(step$kind, "emsc"))
       return(list(class = "n4m.EMSC",
                   params = list(degree = step$degree)))
+    if (identical(step$kind, "spa"))
+      return(list(class = "n4m.SPA", params = list(
+        top_k = step$top_k, n_components = step$n_components)))
     stop(sprintf("cross-language recipe export does not support step '%s'",
                  step$kind), call. = FALSE)
   }
@@ -473,6 +477,19 @@ nirs4all_parse_execution_plan <- function(source) {
         do.call(nirs4all_emsc, values)
         preprocessing[[length(preprocessing) + 1L]] <-
           list(type = "ExtendedMultiplicativeScatterCorrection", params = values)
+      } else if (class_name %in% .nirs4all_portable_classes$spa) {
+        params <- nirs4all_portable_allowed_params(params,
+          c("top_k", "n_components"), "SPA")
+        if (!is.numeric(params$top_k) ||
+            (!is.null(params$n_components) && !is.numeric(params$n_components)))
+          stop("SPA parameters must be numeric integers", call. = FALSE)
+        values <- list(top_k = nirs4all_portable_number(params$top_k,
+          NULL, "top_k", integer = TRUE, minimum = 1L),
+          n_components = nirs4all_portable_number(params$n_components,
+            2L, "n_components", integer = TRUE, minimum = 1L))
+        do.call(nirs4all_spa, values)
+        preprocessing[[length(preprocessing) + 1L]] <-
+          list(type = "SuccessiveProjectionsAlgorithm", params = values)
       } else {
         stop(sprintf("unsupported portable class: %s", class_name), call. = FALSE)
       }
@@ -546,7 +563,7 @@ nirs4all_parse_execution_plan <- function(source) {
 #' Convert a portable JSON/YAML recipe into an R pipeline
 #'
 #' The bounded reader accepts native SNV, Savitzky-Golay, LSNV, RNV, area
-#' normalization, detrend, train-fitted MSC/EMSC, feature-only branches merged
+#' normalization, detrend, train-fitted MSC/EMSC/SPA, feature-only branches merged
 #' by concatenation, PLS regression, qualified affine n4m regressions and
 #' sparse PLS-DA classification.
 #' Splitters and component sweeps are refused because a single fitted pipeline
@@ -575,7 +592,8 @@ nirs4all_portable_steps <- function(preprocessing) {
       AreaNormalization = nirs4all_area_normalization,
       Detrend = nirs4all_detrend,
       MultiplicativeScatterCorrection = nirs4all_msc,
-      ExtendedMultiplicativeScatterCorrection = nirs4all_emsc)
+      ExtendedMultiplicativeScatterCorrection = nirs4all_emsc,
+      SuccessiveProjectionsAlgorithm = nirs4all_spa)
     constructor <- constructors[[step$type]]
     if (!is.null(constructor)) return(do.call(constructor, step$params))
     stop("unsupported portable preprocessing step", call. = FALSE)
