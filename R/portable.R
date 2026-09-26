@@ -242,6 +242,9 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
                                     scope = c("cross_language", "r_native")) {
   if (!inherits(pipeline, "nirs4all_pipeline"))
     stop("pipeline must be an unfitted nirs4all_pipeline", call. = FALSE)
+  if (length(pipeline$augmentations))
+    stop("portable recipes cannot encode train-only native augmentations",
+         call. = FALSE)
   format <- match.arg(format)
   scope <- match.arg(scope)
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name))

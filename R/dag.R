@@ -82,6 +82,10 @@ nirs4all_dag_cv_refit_predict <- function(
   if (!is.logical(split_steps) || length(split_steps) != 1L || is.na(split_steps))
     stop("split_steps must be TRUE or FALSE", call. = FALSE)
   if (split_steps && any(vapply(pipelines, function(value)
+      length(value$augmentations) > 0L, logical(1))))
+    stop("train-only augmentations cannot be reordered after split_steps transforms",
+         call. = FALSE)
+  if (split_steps && any(vapply(pipelines, function(value)
       identical(value$learner$spec$method, "di_pls") &&
         length(value$steps) > 0L, logical(1))))
     stop("split_steps cannot apply source-fitted preprocessing to a DI-PLS target cohort",
@@ -268,6 +272,7 @@ nirs4all_dag_cv_refit_predict <- function(
     }
     params$preprocessing <- if (split_steps) list() else
       lapply(value$steps, nirs4all_dag_step_spec)
+    params$augmentations <- lapply(value$augmentations, unclass)
     params
   })
   transform_steps <- if (split_steps) lapply(seq_along(pipelines[[1L]]$steps),

@@ -256,6 +256,19 @@ steps_from_task <- function(task) {
   }
   lapply(specs, step_from_spec)
 }
+augmentations_from_task <- function(task) {
+  specs <- task$node_plan$params$augmentations
+  if (is.null(specs)) return(list())
+  if (!is.list(specs)) stop("DAG native augmentations must be a list")
+  lapply(specs, function(spec) {
+    if (!is.list(spec) ||
+        !identical(sort(names(spec)), c("kind", "params", "seed")))
+      stop("invalid DAG native augmentation specification")
+    values <- if (is.null(spec$params)) numeric() else
+      as.numeric(unlist(spec$params, use.names = FALSE))
+    nirs4all_native_augmentation(spec$kind, values, as.numeric(spec$seed))
+  })
+}
 fold_ids <- function(fold_id) {
   matches <- Filter(function(fold) identical(fold$fold_id, fold_id),
                     dsl$split_invocation$fold_set$folds)
@@ -515,7 +528,8 @@ record_result <- function(task, raw_line) {
                    !is.null(data$class_levels)))
       stop("DAG learner task differs from attested target kind")
     fitted <- nirs4all_fit(nirs4all_pipeline(steps = steps_from_task(task),
-                                            learner = learner),
+                                            learner = learner,
+                                            augmentations = augmentations_from_task(task)),
                           matrices$train,
                           if (identical(learner$task, "classification"))
                             factor(data$class_levels[data$y[train_rows] + 1L],
@@ -524,7 +538,8 @@ record_result <- function(task, raw_line) {
     if (identical(phase, "REFIT")) {
       has_external_transform <- any(vapply(dsl$steps, function(step)
         step$kind %in% c("transform", "concat_transform"), logical(1)))
-      recipe <- structure(list(steps = fitted$steps, learner = fitted$learner),
+      recipe <- structure(list(steps = fitted$steps, learner = fitted$learner,
+                               augmentations = fitted$augmentations),
                           class = "nirs4all_pipeline")
       native <- if (!has_external_transform &&
                     !is.null(nirs4all:::nirs4all_native_model_profile(recipe)))
@@ -583,7 +598,8 @@ record_result <- function(task, raw_line) {
           !identical(as.numeric(artifact$size_bytes), as.numeric(length(native))))
         stop("PREDICT native artifact content mismatch")
       fitted <- nirs4all_import_native_model(native,
-        nirs4all_pipeline(steps_from_task(task), learner_from_task(task)),
+        nirs4all_pipeline(steps_from_task(task), learner_from_task(task),
+                          augmentations = augmentations_from_task(task)),
         feature_names = colnames(matrices$prediction))
     } else {
       if (!identical(artifact$backend, "rds") ||

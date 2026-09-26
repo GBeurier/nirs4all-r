@@ -10,7 +10,8 @@ nirs4all_dag_cv_refit_predict(pipeline, X, y = NULL, folds = 5L,
 }
 \arguments{
 \item{pipeline}{Pipeline definition with a built-in learner, or a named list
-of at least two such pipelines to compare by native OOF score.}
+of at least two such pipelines to compare by native OOF score. Seeded native
+augmentations, when present, apply only to each training fold and refit X.}
 \item{X}{Finite numeric samples-by-features matrix or a
 \code{nirs4all_dataset} from \code{nirs4all_from_formats()}.}
 \item{y}{Finite numeric regression target or factor/character class labels; omit for a dataset.}
@@ -27,7 +28,9 @@ separate DAG transform node. Named variants must have the same number of
 steps; their methods and parameters may differ. Each
 \code{nirs4all_concat()} step is lowered to parallel branch transforms and a
 feature-join node; concat steps may be composed with other preprocessing
-steps but cannot yet be combined with variants.}
+steps but cannot yet be combined with variants. Train-only augmentations are
+refused with \code{split_steps} because that would change their position
+relative to preprocessing.}
 \item{splitter}{Optional \code{nirs4all_native_splitter()} specification
 for SPXY fold, grouped SPXY fold or binned stratified group fold. Its
 \code{n_splits} must equal \code{folds}; one-shot splits are refused.}
