@@ -17,6 +17,9 @@
 #' @return JSON text, invisibly when `file` is supplied.
 #' @export
 nirs4all_export_trained_pipeline <- function(object, file = NULL) {
+  if (inherits(object, "nirs4all_fitted") &&
+      identical(object$preprocessing_owner, "native_n4mp"))
+    return(nirs4all_export_trained_n4mp(object, file))
   classification <- inherits(object, "nirs4all_fitted") &&
     identical(object$learner$format, "n4mm_sparse_pls_da") &&
     identical(object$task, "classification")
@@ -122,6 +125,9 @@ nirs4all_import_trained_pipeline <- function(source) {
   input <- if (file.exists(source)) paste(readLines(source, warn = FALSE),
                                           collapse = "\n") else source
   document <- jsonlite::fromJSON(input, simplifyVector = FALSE)
+  if (is.list(document) &&
+      identical(document$schema, "nirs4all.n4m.trained_pipeline.v6"))
+    return(nirs4all_import_trained_n4mp(document))
   if (!is.list(document) ||
       !setequal(names(document), c("schema", "manifest_json",
         "manifest_sha256", "model")) ||
