@@ -1,6 +1,10 @@
 library(nirs4all)
 
 # Held-out predictions from the independent Python n4m/Methods oracle.
+# FusedSparsePLS is qualified against the corrected post-SIMPLS coefficient
+# penalty: its previous value was the l1_lambda = 0 prediction, because the
+# old native implementation thresholded discarded weights without changing
+# predictive coefficients. See n4m-fused-sparse-penalty.R for both oracles.
 X <- outer(seq_len(21L), seq_len(12L), function(s, b)
   sin(s * b / 9) + cos(s + b / 7) + s * b / 100)
 colnames(X) <- paste0("wl", seq_len(ncol(X)))
@@ -8,7 +12,8 @@ y <- 1.3 + 0.7 * X[, 2L] - 0.4 * X[, 6L]
 held <- X[c(2L, 8L, 17L), , drop = FALSE] + 0.031
 cases <- list(
   fused_sparse_pls = list(params = list(), class = "n4m.FusedSparsePLS",
-    expected = c(1.341067723610322, 2.011218914142026, 0.6903830575230807)),
+    expected = c(1.3373539467794613, 1.9377148952044154,
+                 0.7544322586932719)),
   bagging_pls = list(params = list(n_estimators = 7L, seed = 13L),
     class = "n4m.BaggingPLS",
     expected = c(1.340366231116839, 2.072160066869946, 0.8905637569136029)),
