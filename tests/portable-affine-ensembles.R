@@ -25,15 +25,32 @@ cases <- list(
     class = "n4m.RandomSubspacePLS",
     expected = c(1.393934040298960, 1.847198984652901, 0.8903822546307825)))
 
+# Keep diagnostics for all four families even when the first oracle fails on
+# a platform with a different C++ standard-library RNG implementation.
+for (method in names(cases)) {
+  case <- cases[[method]]
+  probe <- nirs4all_fit(nirs4all_pipeline(learner = nirs4all_n4m_method(
+    method, 2L, case$params)), X, y)
+  actual <- as.numeric(predict(probe, held))
+  message(sprintf("ensemble oracle %s max_abs=%.17g actual=%s",
+    method, max(abs(actual - case$expected)),
+    paste(format(actual, digits = 17L), collapse = ",")))
+}
+
 for (method in names(cases)) {
   case <- cases[[method]]
   pipeline <- nirs4all_pipeline(learner = nirs4all_n4m_method(
     method, 2L, case$params))
   fitted <- nirs4all_fit(pipeline, X, y)
   expected <- case$expected
-  stopifnot(max(abs(predict(fitted, held) - expected)) < 1e-10,
-    max(abs(as.numeric(n4m::n4m_predict(fitted$state$native_model,
-      held)) - expected)) < 1e-10)
+  actual <- as.numeric(predict(fitted, held))
+  max_error <- max(abs(actual - expected))
+  if (!is.finite(max_error) || max_error >= 1e-10)
+    stop(sprintf("%s native ensemble oracle max_abs=%.17g; actual=%s; expected=%s",
+      method, max_error, paste(format(actual, digits = 17L), collapse = ","),
+      paste(format(expected, digits = 17L), collapse = ",")))
+  stopifnot(max(abs(as.numeric(n4m::n4m_predict(fitted$state$native_model,
+    held)) - expected)) < 1e-10)
   bytes <- nirs4all_export_native_model(fitted)
   descriptor <- n4m::n4m_model_descriptor(bytes)
   stopifnot(identical(descriptor$algorithm, 11L),
