@@ -175,6 +175,7 @@ nirs4all_n4m_selector <- function(method, n_components = 2L, params = list()) {
        any(!nzchar(names(params))) || anyDuplicated(names(params)) ||
        !all(names(params) %in% allowed))))
     stop("unsupported or duplicate n4m selector parameter", call. = FALSE)
+  if (!length(params)) names(params) <- character()
   vectors <- c("alpha_thresholds", "thresholds")
   integers <- c("top_k", "n_iterations", "min_features", "interval_width",
     "step", "noise_features", "noise_seed", "initial_size", "min_size",

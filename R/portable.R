@@ -19,6 +19,7 @@
   msc = c("n4m.MSC", "preprocessing.msc"),
   emsc = c("n4m.EMSC", "preprocessing.emsc"),
   spa = "n4m.SPA",
+  selector = "n4m.Selector",
   pls = c("sklearn.cross_decomposition.PLSRegression",
           "sklearn.cross_decomposition._pls.PLSRegression",
           "n4m.PLS", "n4m.PLSRegression", "models.pls.pls_fit_simple"),
@@ -55,6 +56,40 @@ nirs4all_portable_allowed_params <- function(params, allowed, label) {
        !all(names(params) %in% allowed))))
     stop(sprintf("unsupported or duplicate %s parameter", label), call. = FALSE)
   params
+}
+
+nirs4all_portable_selector <- function(method, n_components, method_params) {
+  if (!is.numeric(n_components))
+    stop("selector n_components must be a numeric integer", call. = FALSE)
+  if (!is.list(method_params))
+    stop("selector method_params must be a mapping", call. = FALSE)
+  if (!length(method_params)) names(method_params) <- character()
+  for (name in intersect(names(method_params), c("alpha_thresholds", "thresholds"))) {
+    value <- method_params[[name]]
+    if (is.list(value)) {
+      if (!length(value) || !all(vapply(value, function(item)
+          is.numeric(item) && length(item) == 1L && is.finite(item),
+          logical(1))))
+        stop("selector threshold vector must contain finite numbers", call. = FALSE)
+      method_params[[name]] <- unlist(value, use.names = FALSE)
+    }
+  }
+  step <- nirs4all_n4m_selector(method, n_components, method_params)
+  required <- character()
+  if (method %in% c("spa_select", "wvc_select", "stability_select",
+                    "random_frog_select", "ipw_select", "irf_select",
+                    "vip_spa_select"))
+    required <- c(required, "top_k")
+  seed <- if (method %in% c("uve_select", "emcuve_select"))
+    "noise_seed" else if (identical(method, "randomization_select"))
+    "randomization_seed" else if (method %in% c("random_frog_select",
+      "scars_select", "ga_select", "pso_select", "vissa_select",
+      "iriv_select", "irf_select")) "seed" else character()
+  required <- c(required, seed)
+  if (!all(required %in% names(step$params)))
+    stop("portable selector requires explicit top_k and random seed when applicable",
+         call. = FALSE)
+  step
 }
 
 nirs4all_portable_branch_plan <- function(branch_value) {
@@ -176,7 +211,9 @@ nirs4all_load_pipeline <- function(source) {
 #' `merge: features` syntax when needed. The default `cross_language` scope
 #' qualifies native PLS or sparse PLS-DA recipes; LSNV, RNV, area
 #' normalization, detrend, MSC, EMSC and SPA are tested against Python n4m but not
-#' yet Core/WASM. Non-default SNV is refused in that scope because Core/WASM
+#' yet Core/WASM. The generic `n4m.Selector` alias transfers the native
+#' dispatcher method and parameters to R/Python n4m; method-specific parity is
+#' established separately. Non-default SNV is refused in that scope because Core/WASM
 #' ignores its parameters. The `r_native` scope permits selected ranger,
 #' glmnet and torch MLP learners under explicit R-only aliases. It does not
 #' transfer their trained binaries or assert Python/WASM equivalence.
@@ -243,6 +280,16 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
     if (identical(step$kind, "spa"))
       return(list(class = "n4m.SPA", params = list(
         top_k = step$top_k, n_components = step$n_components)))
+    if (identical(step$kind, "n4m_selector")) {
+      step <- nirs4all_portable_selector(step$method, step$n_components,
+                                        step$params)
+      method_params <- step$params
+      if ("normalize" %in% names(method_params))
+        method_params$normalize <- as.logical(method_params$normalize)
+      return(list(class = "n4m.Selector", params = list(
+        method = step$method, n_components = step$n_components,
+        method_params = method_params)))
+    }
     stop(sprintf("cross-language recipe export does not support step '%s'",
                  step$kind), call. = FALSE)
   }
@@ -490,6 +537,26 @@ nirs4all_parse_execution_plan <- function(source) {
         do.call(nirs4all_spa, values)
         preprocessing[[length(preprocessing) + 1L]] <-
           list(type = "SuccessiveProjectionsAlgorithm", params = values)
+      } else if (class_name %in% .nirs4all_portable_classes$selector) {
+        params <- nirs4all_portable_allowed_params(params,
+          c("method", "n_components", "method_params"), "Selector")
+        if (is.null(params$method) || is.null(params$n_components) ||
+            is.null(params$method_params) ||
+            (is.list(params$method_params) &&
+             is.null(names(params$method_params))))
+          stop("Selector requires method, n_components and method_params",
+               call. = FALSE)
+        if (is.list(params$method_params) &&
+            "normalize" %in% names(params$method_params) &&
+            (!is.logical(params$method_params$normalize) ||
+             length(params$method_params$normalize) != 1L))
+          stop("portable selector normalize must be boolean", call. = FALSE)
+        selected <- nirs4all_portable_selector(params$method,
+          params$n_components, params$method_params)
+        preprocessing[[length(preprocessing) + 1L]] <- list(
+          type = "N4MSelector", params = list(method = selected$method,
+            n_components = selected$n_components,
+            method_params = selected$params))
       } else {
         stop(sprintf("unsupported portable class: %s", class_name), call. = FALSE)
       }
@@ -593,7 +660,8 @@ nirs4all_portable_steps <- function(preprocessing) {
       Detrend = nirs4all_detrend,
       MultiplicativeScatterCorrection = nirs4all_msc,
       ExtendedMultiplicativeScatterCorrection = nirs4all_emsc,
-      SuccessiveProjectionsAlgorithm = nirs4all_spa)
+      SuccessiveProjectionsAlgorithm = nirs4all_spa,
+      N4MSelector = nirs4all_portable_selector)
     constructor <- constructors[[step$type]]
     if (!is.null(constructor)) return(do.call(constructor, step$params))
     stop("unsupported portable preprocessing step", call. = FALSE)
