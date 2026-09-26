@@ -147,5 +147,8 @@ nirs4all_r_pipeline_from_recipe <- function(source) {
   skeleton$pipeline[[length(stages)]] <- list(model = list(
     class = "n4m.PLS", params = list(n_components = 2L)))
   pipeline <- nirs4all_pipeline_from_portable(skeleton)
+  if (length(pipeline$augmentations))
+    stop("R-native recipes cannot encode train-only native augmentations",
+         call. = FALSE)
   nirs4all_pipeline(pipeline$steps, learner)
 }
