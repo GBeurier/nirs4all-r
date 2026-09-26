@@ -31,6 +31,12 @@ for (kind in names(cases)) {
   second <- nirs4all:::nirs4all_augment_training(X, list(spec))
   stopifnot(identical(first, second), identical(dim(first), dim(X)),
             identical(dimnames(first), dimnames(X)), all(is.finite(first)))
+  for (format in c("json", "yaml")) {
+    recipe <- nirs4all_export_pipeline(nirs4all_pipeline(
+      learner = nirs4all_pls(2L), augmentations = list(spec)), format)
+    imported <- nirs4all_pipeline_from_portable(recipe)
+    stopifnot(identical(imported$augmentations, list(spec)))
+  }
 }
 stopifnot(identical(X, original_X), identical(y, original_y),
           inherits(try(nirs4all_native_augmentation("mixup", .5),
@@ -82,8 +88,13 @@ loaded <- nirs4all_load(path)
 stopifnot(identical(loaded$augmentations, list(gaussian)),
           max(abs(predict(loaded, heldout) - predict(fitted, heldout))) < 1e-12)
 unlink(path)
-stopifnot(inherits(try(nirs4all_export_pipeline(pipeline), silent = TRUE),
-                   "try-error"),
-          inherits(try(nirs4all_export_trained_pipeline(fitted), silent = TRUE),
+for (format in c("json", "yaml")) {
+  recipe <- nirs4all_export_pipeline(pipeline, format)
+  imported <- nirs4all_pipeline_from_portable(recipe)
+  stopifnot(identical(imported$augmentations, list(gaussian)),
+            max(abs(predict(nirs4all_fit(imported, X, y), heldout) -
+                    predict(fitted, heldout))) < 1e-12)
+}
+stopifnot(inherits(try(nirs4all_export_trained_pipeline(fitted), silent = TRUE),
                    "try-error"))
 message("22 native X-only augmentations and train-only fit/retrain/predict passed")

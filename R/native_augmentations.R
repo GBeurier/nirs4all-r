@@ -39,6 +39,39 @@ nirs4all_native_augmentation <- function(kind, params = numeric(), seed = 0) {
             class = "nirs4all_native_augmentation")
 }
 
+# Closed Level-1 wire node. The positional values and explicit seed are shared
+# with n4m's C ABI; neither R defaults nor an R RNG state cross this boundary.
+nirs4all_portable_augmentation_node <- function(spec) {
+  verified <- nirs4all_native_augmentation(spec$kind, spec$params, spec$seed)
+  list(train_augmentation = list(class = "n4m.NativeXAugmentation",
+    params = list(kind = verified$kind, values = as.list(verified$params),
+                  seed = verified$seed)))
+}
+
+nirs4all_portable_augmentation_spec <- function(node) {
+  if (!is.list(node) || !identical(names(node), "train_augmentation"))
+    stop("train augmentation must be a closed pipeline node", call. = FALSE)
+  value <- node$train_augmentation
+  if (!is.list(value) || anyDuplicated(names(value)) ||
+      !setequal(names(value), c("class", "params")) ||
+      !identical(value$class, "n4m.NativeXAugmentation"))
+    stop("unsupported train augmentation alias or field", call. = FALSE)
+  params <- value$params
+  if (!is.list(params) || anyDuplicated(names(params)) ||
+      !setequal(names(params), c("kind", "values", "seed")))
+    stop("train augmentation requires kind, values and seed", call. = FALSE)
+  values <- params$values
+  if (!is.list(values) || !is.null(names(values)) ||
+      !all(vapply(values, function(item)
+        is.numeric(item) && !is.logical(item) && length(item) == 1L &&
+          !is.na(item) && is.finite(item), logical(1))))
+    stop("augmentation values must be a positional numeric array", call. = FALSE)
+  values <- if (length(values)) unlist(values, use.names = FALSE) else numeric()
+  if (!is.numeric(params$seed) || is.logical(params$seed))
+    stop("augmentation seed must be an exact numeric integer", call. = FALSE)
+  nirs4all_native_augmentation(params$kind, values, params$seed)
+}
+
 nirs4all_augment_training <- function(X, augmentations) {
   if (!length(augmentations)) return(X)
   if (!("n4m_augmentation_apply" %in% getNamespaceExports("n4m")))

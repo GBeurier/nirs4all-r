@@ -154,10 +154,39 @@ nirs4all_portable_parse_text <- function(value, extension = "") {
   if (identical(extension, "json"))
     return(jsonlite::fromJSON(value, simplifyVector = FALSE))
   if (extension %in% c("yaml", "yml"))
-    return(yaml::yaml.load(value, eval.expr = FALSE))
+    return(nirs4all_portable_parse_yaml(value))
   parsed <- tryCatch(jsonlite::fromJSON(value, simplifyVector = FALSE), error = identity)
   if (!inherits(parsed, "error")) return(parsed)
-  yaml::yaml.load(value, eval.expr = FALSE)
+  nirs4all_portable_parse_yaml(value)
+}
+
+nirs4all_portable_parse_yaml <- function(value) {
+  parsed <- yaml::yaml.load(value, eval.expr = FALSE)
+  # yaml normally collapses a one-element numeric sequence to a scalar. Keep
+  # only augmentation `values` as a list so a scalar cannot impersonate the
+  # required positional array; leave all historical recipe nodes unchanged.
+  if (!is.list(parsed)) return(parsed)
+  nodes <- if (nirs4all_portable_named(parsed))
+    nirs4all_portable_or(parsed$pipeline, parsed$steps) else parsed
+  if (!is.list(nodes) || !any(vapply(nodes, function(node)
+      is.list(node) && "train_augmentation" %in% names(node), logical(1))))
+    return(parsed)
+  shaped <- yaml::yaml.load(value, eval.expr = FALSE,
+                            handlers = list(seq = function(items) items))
+  shaped_nodes <- if (nirs4all_portable_named(shaped))
+    nirs4all_portable_or(shaped$pipeline, shaped$steps) else shaped
+  for (index in seq_along(nodes)) {
+    if (is.list(nodes[[index]]) &&
+        "train_augmentation" %in% names(nodes[[index]])) {
+      array <- shaped_nodes[[index]]$train_augmentation$params$values
+      if (is.list(array) && is.null(names(array)))
+        nodes[[index]]$train_augmentation$params$values <- array
+    }
+  }
+  if (nirs4all_portable_named(parsed)) {
+    if (!is.null(parsed$pipeline)) parsed$pipeline <- nodes else parsed$steps <- nodes
+  } else parsed <- nodes
+  parsed
 }
 
 nirs4all_portable_strip_comments <- function(value) {
@@ -228,6 +257,10 @@ nirs4all_load_pipeline <- function(source) {
 #' ignores its parameters. The `r_native` scope permits selected ranger,
 #' glmnet and torch MLP learners under explicit R-only aliases. It does not
 #' transfer their trained binaries or assert Python/WASM equivalence.
+#' A closed `train_augmentation` prefix uses the `n4m.NativeXAugmentation`
+#' alias, exact positional `values` and required `seed`. R applies it only
+#' after splitting to training X. Other consumers must implement that same
+#' phase contract before claiming recipe portability.
 #' @param pipeline An unfitted [nirs4all_pipeline()].
 #' @param format `"json"` or `"yaml"`.
 #' @param file Optional output path. If omitted, returns serialized text.
@@ -242,11 +275,17 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
                                     scope = c("cross_language", "r_native")) {
   if (!inherits(pipeline, "nirs4all_pipeline"))
     stop("pipeline must be an unfitted nirs4all_pipeline", call. = FALSE)
-  if (length(pipeline$augmentations))
-    stop("portable recipes cannot encode train-only native augmentations",
-         call. = FALSE)
   format <- match.arg(format)
   scope <- match.arg(scope)
+  if (length(pipeline$augmentations) && identical(scope, "r_native"))
+    stop("R-native recipes cannot encode train-only native augmentations",
+         call. = FALSE)
+  if (length(pipeline$augmentations) &&
+      (any(vapply(pipeline$steps, function(step)
+        step$kind %in% c("concat", "n4m_selector"), logical(1))) ||
+       identical(pipeline$learner$spec$method, "di_pls")))
+    stop("train augmentation with branches, selectors or DI-PLS is unqualified",
+         call. = FALSE)
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name))
     stop("name must be a non-empty string", call. = FALSE)
   if (!is.null(file) && (!is.character(file) || length(file) != 1L ||
@@ -307,7 +346,7 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
     stop(sprintf("cross-language recipe export does not support step '%s'",
                  step$kind), call. = FALSE)
   }
-  steps <- list()
+  steps <- lapply(pipeline$augmentations, nirs4all_portable_augmentation_node)
   for (step in pipeline$steps) {
     if (identical(step$kind, "concat")) {
       if (any(names(step$branches) %in% c("parallel", "n_jobs")))
@@ -358,9 +397,15 @@ nirs4all_export_pipeline <- function(pipeline, format = c("json", "yaml"),
       params = list(n_components = spec$n_components)))
   }
   definition <- list(name = name, pipeline = steps)
-  serialized <- if (identical(format, "json"))
-    as.character(jsonlite::toJSON(definition, auto_unbox = TRUE, pretty = TRUE))
-  else yaml::as.yaml(definition)
+  serialized <- if (identical(format, "json")) {
+    if (length(pipeline$augmentations))
+      as.character(jsonlite::toJSON(definition, auto_unbox = TRUE,
+                                    pretty = TRUE, digits = 17L))
+    else as.character(jsonlite::toJSON(definition, auto_unbox = TRUE,
+                                       pretty = TRUE))
+  } else if (length(pipeline$augmentations)) {
+    yaml::as.yaml(definition, precision = 17L)
+  } else yaml::as.yaml(definition)
   if (!is.null(file)) writeLines(serialized, file, useBytes = TRUE)
   if (is.null(file)) serialized else invisible(serialized)
 }
@@ -423,12 +468,21 @@ nirs4all_portable_components <- function(step) {
 nirs4all_parse_execution_plan <- function(source) {
   definition <- nirs4all_load_pipeline(source)
   splitter <- NULL
+  augmentations <- list()
   preprocessing <- list()
   model <- NULL
   pending_branch <- NULL
   for (step in definition$pipeline) {
     if (!nirs4all_portable_named(step) || !is.null(model))
       stop("portable steps must be mappings and the model must be final", call. = FALSE)
+    if ("train_augmentation" %in% names(step)) {
+      if (length(preprocessing) || !is.null(pending_branch))
+        stop("train augmentation must precede all preprocessing and branches",
+             call. = FALSE)
+      augmentations[[length(augmentations) + 1L]] <-
+        nirs4all_portable_augmentation_spec(step)
+      next
+    }
     if ("branch" %in% names(step)) {
       if (!identical(names(step), "branch") || !is.null(pending_branch))
         stop("unsupported portable feature branch structure", call. = FALSE)
@@ -456,7 +510,9 @@ nirs4all_parse_execution_plan <- function(source) {
       params <- nirs4all_portable_or(step$params, list())
       if (class_name %in% .nirs4all_portable_classes$kennard_stone) {
         params <- nirs4all_portable_allowed_params(params, "test_size", "Kennard-Stone")
-        if (!is.null(splitter)) stop("splitter may appear only once", call. = FALSE)
+        if (!is.null(splitter) || length(augmentations))
+          stop("splitter must precede train augmentation and appear only once",
+               call. = FALSE)
         size <- nirs4all_portable_number(params$test_size, 0.25, "test_size")
         if (size <= 0 || size >= 1) stop("test_size must be between zero and one", call. = FALSE)
         splitter <- list(type = "KennardStone", params = list(test_size = size))
@@ -627,6 +683,12 @@ nirs4all_parse_execution_plan <- function(source) {
   if (!is.null(pending_branch))
     stop("portable feature branch is missing merge: features", call. = FALSE)
   if (is.null(model)) stop("portable execution requires a native model", call. = FALSE)
+  if (length(augmentations) &&
+      (any(vapply(preprocessing, function(step)
+        step$type %in% c("FeatureConcat", "N4MSelector"), logical(1))) ||
+       identical(model$model$class, "n4m.DIPLS")))
+    stop("train augmentation with branches, selectors or DI-PLS is unqualified",
+         call. = FALSE)
   classifier <- model$model$class %in% .nirs4all_portable_classes$sparse_pls_da
   affine <- model$model$class %in% .nirs4all_portable_affine
   learner <- if (classifier) nirs4all_sparse_pls_da(
@@ -645,7 +707,8 @@ nirs4all_parse_execution_plan <- function(source) {
     do.call(nirs4all_pls, c(list(n_components = 2L),
       model$params[intersect(names(model$params),
         c("algo", "center_x", "scale_x", "center_y", "scale_y"))]))
-  list(splitter = splitter, preprocessing = preprocessing,
+  list(splitter = splitter, augmentations = augmentations,
+       preprocessing = preprocessing,
        n_components = nirs4all_portable_components(model),
        learner = learner$spec)
 }
@@ -656,7 +719,8 @@ nirs4all_parse_execution_plan <- function(source) {
 #' normalization, detrend, train-fitted MSC/EMSC/SPA, feature-only branches merged
 #' by concatenation, PLS regression, qualified affine n4m regressions (including
 #' explicit per-feature GroupSparsePLS assignments and penalty) and
-#' sparse PLS-DA classification.
+#' sparse PLS-DA classification. A closed prefix of native X-only training
+#' augmentations is applied after splitting and never to prediction X or Y.
 #' Splitters and component sweeps are refused because a single fitted pipeline
 #' cannot represent an entire selection experiment.
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
@@ -706,7 +770,7 @@ nirs4all_pipeline_from_portable <- function(source) {
     nirs4all_pls(plan$n_components[[1L]], algo = spec$algo,
       center_x = spec$center_x, scale_x = spec$scale_x,
       center_y = spec$center_y, scale_y = spec$scale_y)
-  nirs4all_pipeline(steps, learner)
+  nirs4all_pipeline(steps, learner, augmentations = plan$augmentations)
 }
 
 nirs4all_portable_generator_options <- function(node) {
@@ -872,7 +936,8 @@ nirs4all_run_portable_pipeline <- function(source, dataset) {
       n, learner$sparsity_lambda) else if (identical(learner$learner, "n4m_method"))
       nirs4all_n4m_method(learner$method, n, learner$params) else
       do.call(nirs4all_pls, learner[setdiff(names(learner), "learner")])
-    pipeline <- nirs4all_pipeline(steps, controller)
+    pipeline <- nirs4all_pipeline(steps, controller,
+                                 augmentations = plan$augmentations)
     fitted <- nirs4all_fit(pipeline, data$X[train, , drop = FALSE], data$y[train])
     predictions <- nirs4all_predict(fitted, data$X[validation, , drop = FALSE])
     if (classification)
