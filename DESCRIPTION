@@ -8,8 +8,8 @@ Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     area normalization, detrending, train-fitted MSC and Savitzky-Golay filtering) and partial
     least squares operations from 'n4m' with explicit R learner controllers,
     including native sparse PLS-DA, optional 'parsnip' and 'mlr3' regression and classification
-    adapters, 'ranger' probability-forest and optional 'xgboost' classification
-    controllers, and
+    adapters, 'ranger' probability-forest and optional 'xgboost' regression
+    and classification controllers, and
     optional CPU 'torch' regression and classification controllers.
     This development version offers
     local fit, predict, portable 'n4m' model and bounded trained-pipeline
