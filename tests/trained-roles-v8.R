@@ -225,7 +225,9 @@ refused(nirs4all_import_trained_pipeline(relabelled(list("only"))),
 refused(nirs4all_import_trained_pipeline(relabelled(list("same", "same"))),
         "envelope class_names repeat the label 'same'")
 refused(nirs4all_import_trained_pipeline(relabelled(list(1L, "1"))),
-        "envelope class_names repeat the label '1'")
+        "envelope class_names mixes strings and numbers")
+refused(nirs4all_import_trained_pipeline(relabelled(list("high", 2))),
+        "envelope class_names mixes strings and numbers")
 refused(nirs4all_import_trained_pipeline(relabelled(list("high", NULL))),
         "envelope class_names entry 2 is not a string or a finite number")
 refused(nirs4all_import_trained_pipeline(relabelled(list("high", TRUE))),

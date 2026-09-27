@@ -171,6 +171,8 @@ nirs4all_role_check_labels <- function(labels, ids) {
   if (!all(valid))
     stop(sprintf("envelope class_names entry %d is not a string or a finite number",
                  which(!valid)[1L]), call. = FALSE)
+  if (length(unique(vapply(labels, is.character, logical(1)))) > 1L)
+    stop("envelope class_names mixes strings and numbers", call. = FALSE)
   names <- vapply(labels, as.character, character(1))
   if (anyDuplicated(names))
     stop(sprintf("envelope class_names repeat the label '%s'", names[anyDuplicated(names)]),
