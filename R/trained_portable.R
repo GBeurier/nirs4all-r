@@ -15,21 +15,31 @@
 #' fitting preprocessing. The N4MM payload does not attest the augmentation
 #' history of the original fit.
 #' Version 8 covers any recipe of generic n4m role steps
-#' ([nirs4all_fit_role_recipe()]): each fitted step travels as its N4ME state.
+#' ([nirs4all_fit_role_recipe()]): each fitted step travels as its N4ME state,
+#' with a flag saying whether that state keeps training rows, and the input
+#' column names when the pipeline was fitted on a matrix with column names.
 #' The JSON recipe also permits fitting the pipeline again where its model
 #' alias is supported.
-#' @param object A fitted native n4m PLS, affine MethodResult or sparse
-#'   PLS-DA pipeline.
+#' @param object A fitted native n4m PLS, affine MethodResult, sparse PLS-DA
+#'   or generic n4m role pipeline.
 #' @param file Optional output path. If omitted, returns JSON text.
+#' @param allow_training_rows Some fitted role steps (kernel and local models,
+#'   for example) keep training rows in their state. Their export is refused
+#'   unless this is `TRUE`, which copies those rows into the envelope. Other
+#'   envelope versions carry no training rows.
 #' @return JSON text, invisibly when `file` is supplied.
 #' @export
-nirs4all_export_trained_pipeline <- function(object, file = NULL) {
+nirs4all_export_trained_pipeline <- function(object, file = NULL,
+                                             allow_training_rows = FALSE) {
+  if (!is.logical(allow_training_rows) || length(allow_training_rows) != 1L ||
+      is.na(allow_training_rows))
+    stop("allow_training_rows must be TRUE or FALSE", call. = FALSE)
   if (inherits(object, "nirs4all_fitted") &&
       identical(object$preprocessing_owner, "native_n4mp"))
     return(nirs4all_export_trained_n4mp(object, file))
   if (inherits(object, "nirs4all_fitted") &&
       identical(object$preprocessing_owner, "n4m_roles"))
-    return(nirs4all_export_trained_roles(object, file))
+    return(nirs4all_export_trained_roles(object, file, allow_training_rows))
   if (inherits(object, "nirs4all_fitted") && length(object$augmentations))
     stop("trained portable augmentation requires native N4MP state",
          call. = FALSE)

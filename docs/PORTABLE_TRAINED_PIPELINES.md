@@ -13,6 +13,7 @@ dimensions avant prédiction. Le même document est consommé par
 | `nirs4all.n4m.trained_pipeline.v3` | PLS SIMPLS avec SPA externe | Indices SPA classés, zéro-based sur le fil, et N4MM PLS | SPA et PLS refaits sur les nouvelles lignes |
 | `nirs4all.n4m.trained_pipeline.v4` | PLS SIMPLS avec sélecteur générique externe | Indices classés, zéro-based sur le fil, et N4MM PLS | Sélecteur et PLS refaits sur les nouvelles lignes |
 | `nirs4all.n4m.trained_pipeline.v5` | Treize régressions affines MethodResult, dont N-PLS, une cible numérique | Recette, états externes MSC/EMSC/sélecteurs/branches, assertion de recette, N4MM affine PREDICT-only | Méthode réajustée à partir de la recette sur les nouvelles lignes |
+| `nirs4all.n4m.trained_pipeline.v8` | Toute recette linéaire de rôles n4m (`n4m:<id>`) : filtres d'échantillons, transformeurs/sélecteurs, puis un régresseur (une ou plusieurs cibles) ou un classifieur | Recette, un état N4ME par étape ajustée (base64 + SHA-256), `class_names` du classifieur ; champs additifs `feature_names` et `contains_training_rows` par état | Recette réajustée par le pipeline de rôles natif de n4m |
 
 Pour v2, la sortie N4MM est une matrice `échantillons × classes` de *scores*.
 Le contrôleur choisit la première classe au score maximal et calcule, si
@@ -40,6 +41,19 @@ contient pas `training_samples`, contrairement à l'inspection Python : R ne
 peut donc pas en imposer une valeur positive à l'import, même si ses propres
 exports portent toujours le nombre de lignes d'ajustement. Cette asymétrie
 ne change pas la portée PREDICT-only du binaire.
+
+En v8, le pipeline lui-même est le pipeline de rôles natif de n4m (ABI 2.14) :
+n4m valide la recette (ordre des rôles, modèle terminal), achemine toutes les
+colonnes de `y` vers les étapes supervisées, filtre les seules lignes
+d'entraînement, et refuse à l'import tout état qui contredit la recette
+(méthode, paramètres résolus, largeurs). Le produit R n'écrit et ne lit que le
+JSON. Deux champs sont additifs : `feature_names` (noms des colonnes de `X`,
+écrits quand la matrice d'ajustement en porte ; la prédiction refuse alors une
+colonne renommée ou déplacée, une matrice sans noms restant positionnelle) et
+`contains_training_rows` par état. Un état qui conserve des lignes
+d'entraînement (modèles à noyau ou locaux) n'est exporté qu'avec
+`allow_training_rows = TRUE`. Les documents v8 antérieurs, sans ces champs,
+restent lisibles.
 
 Ce format borné n'est pas une archive DAG-ML V2/V3 : il ne transporte ni
 FoldSet, OOF, sélection, identités d'échantillons ou lineage d'entraînement.

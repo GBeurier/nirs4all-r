@@ -603,15 +603,16 @@ nirs4all_predict <- function(object, X) {
   if (!inherits(object, "nirs4all_fitted"))
     stop("object must be a fitted nirs4all pipeline", call. = FALSE)
   if (inherits(X, "nirs4all_dataset")) X <- X$X
+  # n4m checks the width and column names of a role pipeline.
+  if (identical(object$preprocessing_owner, "n4m_roles"))
+    return(nirs4all_role_predict(object, nirs4all_matrix(X)))
   X <- nirs4all_matrix(X, object$n_features)
   if (!is.null(object$feature_names) && !identical(colnames(X), object$feature_names))
     stop("X feature names or order differ from training", call. = FALSE)
   transformed <- if (identical(object$preprocessing_owner, "embedded_methods"))
     X else if (identical(object$preprocessing_owner, "native_n4mp"))
       nirs4all_n4mp_transform(object$native_preprocessing, X) else
-        if (identical(object$preprocessing_owner, "n4m_roles"))
-          nirs4all_role_transform(object$role_estimators, X) else
-            nirs4all_transform(X, object$steps, object$step_states)
+        nirs4all_transform(X, object$steps, object$step_states)
   out <- object$learner$predict(object$state, transformed)
   if (identical(object$task, "classification")) {
     if (!is.factor(out) || length(out) != nrow(X) || anyNA(out) ||
