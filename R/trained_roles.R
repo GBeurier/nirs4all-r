@@ -84,8 +84,8 @@ nirs4all_export_trained_roles <- function(object, file, allow_training_rows) {
     sha256 = digest::digest(state$n4me, algo = "sha256", serialize = FALSE),
     contains_training_rows = state$contains_training_rows))
   # Label names travel in the envelope (N4ME holds integer class ids only).
-  classes <- n4m::n4m_role_pipeline_info(object$role_pipeline)$classes
-  if (is.character(classes)) states[[length(states)]]$class_names <- as.list(classes)
+  labels <- n4m::n4m_role_pipeline_info(object$role_pipeline)$label_names
+  if (!is.null(labels)) states[[length(states)]]$class_names <- as.list(labels)
   document <- list(schema = .nirs4all_role_schema, recipe = object$recipe,
                    n_features = object$n_features)
   if (!is.null(object$feature_names)) document$feature_names <- as.list(object$feature_names)
