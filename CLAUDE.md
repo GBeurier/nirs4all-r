@@ -19,6 +19,7 @@ It must not reimplement numerics. When an `n4m` method lacks a fit/predict/expor
 - `R/dag.R`: native DAG-ML path (CLI/ABI).
 - `R/portable.R`, `R/r_native_recipe.R`: Level 1 JSON/YAML recipes shared with Python and Core/WASM (`n4m.*` aliases).
 - `R/trained_portable.R`, `R/trained_n4mp.R`: Level 2 trained envelopes `nirs4all.n4m.trained_pipeline.v*` (N4MP + N4MM).
+- `R/trained_roles.R`: generic role recipes and the v8 envelope, a JSON wrapper over the n4m native role pipeline (`n4m_role_pipeline*`); validation, fit routing, column checks and the training-row policy stay in n4m.
 - `tests/*.R`: plain R scripts run by `R CMD check` (no testthat). Cross-language oracles use fixtures produced by the Python package.
 
 ## Commands
