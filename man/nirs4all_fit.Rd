@@ -23,4 +23,4 @@ regression and rejects unsupported step semantics.}
 \item{newdata}{Prediction matrix or \code{nirs4all_dataset}.}
 \item{...}{Unused; retained for the S3 generic.}
 }
-\value{\code{nirs4all_fit} returns a fitted pipeline. Regression prediction returns a numeric vector (a samples-by-responses matrix for an n4m role pipeline fitted on several responses, see \code{\link{nirs4all_fit_role_recipe}}); classification prediction returns a factor, and \code{nirs4all_predict_proba} returns a samples-by-classes probability matrix.}
+\value{\code{nirs4all_fit} returns a fitted pipeline. Regression prediction returns a numeric vector (a samples-by-responses matrix for an n4m role pipeline fitted on several responses, see \code{\link{nirs4all_fit_role_recipe}}); classification prediction returns a factor, and \code{nirs4all_predict_proba} returns a samples-by-classes probability matrix whose columns follow the training class order and are named by the class labels (the label table of an n4m role pipeline ending with a classifier).}

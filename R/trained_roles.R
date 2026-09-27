@@ -85,7 +85,10 @@ nirs4all_export_trained_roles <- function(object, file, allow_training_rows) {
     contains_training_rows = state$contains_training_rows))
   # Label names travel in the envelope (N4ME holds integer class ids only).
   labels <- n4m::n4m_role_pipeline_info(object$role_pipeline)$label_names
-  if (!is.null(labels)) states[[length(states)]]$class_names <- as.list(labels)
+  if (!is.null(labels))
+    states[[length(states)]]$class_names <- as.list(nirs4all_role_check_labels(
+      as.list(labels), nirs4all_role_class_ids(nirs4all_role_steps(object$recipe$pipeline),
+                                               exported)))
   document <- list(schema = .nirs4all_role_schema, recipe = object$recipe,
                    n_features = object$n_features)
   if (!is.null(object$feature_names)) document$feature_names <- as.list(object$feature_names)
@@ -101,9 +104,12 @@ nirs4all_export_trained_roles <- function(object, file, allow_training_rows) {
 
 nirs4all_import_trained_roles <- function(document) {
   definition <- nirs4all_load_pipeline(document$recipe)
+  # A JSON integer (jsonlite reads it as an R integer): never a fraction, a
+  # string or a boolean, and compared exactly to the native width.
   n_features <- document$n_features
-  if (!is.numeric(n_features) || length(n_features) != 1L || !is.finite(n_features))
-    stop("a v8 envelope needs n_features", call. = FALSE)
+  if (!is.integer(n_features) || length(n_features) != 1L || is.na(n_features) ||
+      n_features < 1L)
+    stop("a v8 envelope needs n_features as a positive JSON integer", call. = FALSE)
   states <- document$states
   if (!is.list(states) || !length(states) || !all(vapply(states, is.list, logical(1))))
     stop("a v8 envelope lists one state per stateful recipe step", call. = FALSE)
@@ -119,10 +125,12 @@ nirs4all_import_trained_roles <- function(document) {
     if (!is.character(feature_names) || length(feature_names) != n_features)
       stop("envelope feature_names must name each of the n_features columns", call. = FALSE)
   }
+  steps <- nirs4all_role_steps(definition$pipeline)
   class_names <- states[[length(states)]]$class_names
-  if (!is.null(class_names)) class_names <- as.character(unlist(class_names))
-  pipeline <- n4m::n4m_role_pipeline_import(nirs4all_role_steps(definition$pipeline),
-                                            payloads, feature_names, class_names)
+  if (!is.null(class_names))
+    class_names <- nirs4all_role_check_labels(class_names,
+                                              nirs4all_role_class_ids(steps, payloads))
+  pipeline <- n4m::n4m_role_pipeline_import(steps, payloads, feature_names, class_names)
   # The native import checks the states against the recipe; the envelope's own
   # fields must describe those states too.
   steps <- n4m::n4m_role_pipeline_steps(pipeline)
@@ -137,9 +145,39 @@ nirs4all_import_trained_roles <- function(document) {
                    stateful$method_id[k]), call. = FALSE)
   }
   info <- n4m::n4m_role_pipeline_info(pipeline)
-  if (!identical(as.integer(n_features), info$n_features))
+  if (!identical(n_features, info$n_features))
     stop("envelope n_features differs from its states", call. = FALSE)
-  if (!is.null(class_names) && length(class_names) != length(info$classes))
-    stop("envelope class_names do not match the classifier classes", call. = FALSE)
   nirs4all_role_fitted(definition, pipeline)
+}
+
+# The native class IDs of a fitted classifier pipeline (NULL for a regressor):
+# its states imported without a label table report them unmapped.
+nirs4all_role_class_ids <- function(steps, states)
+  n4m::n4m_role_pipeline_info(n4m::n4m_role_pipeline_import(steps, states))$classes
+
+# The class label table of a v8 envelope, checked on import and export (shared
+# label contract): a non-empty list of unique strings or finite numbers indexed
+# by the native class IDs, every one of which names a slot. The table may hold
+# more labels than the fitted classes (labels whose rows a filter removed).
+nirs4all_role_check_labels <- function(labels, ids) {
+  if (is.null(ids))
+    stop("envelope class_names label a pipeline that does not end with a classifier",
+         call. = FALSE)
+  if (!is.list(labels) || !length(labels))
+    stop("envelope class_names must be a non-empty list of labels", call. = FALSE)
+  valid <- vapply(labels, function(label) length(label) == 1L &&
+    ((is.character(label) && !is.na(label)) || (is.numeric(label) && is.finite(label))),
+    logical(1))
+  if (!all(valid))
+    stop(sprintf("envelope class_names entry %d is not a string or a finite number",
+                 which(!valid)[1L]), call. = FALSE)
+  names <- vapply(labels, as.character, character(1))
+  if (anyDuplicated(names))
+    stop(sprintf("envelope class_names repeat the label '%s'", names[anyDuplicated(names)]),
+         call. = FALSE)
+  outside <- ids[ids < 0 | ids >= length(names) | ids != floor(ids)]
+  if (length(outside))
+    stop(sprintf("the classifier has class id %s but envelope class_names has %d labels",
+                 format(outside[1L]), length(names)), call. = FALSE)
+  names
 }

@@ -137,8 +137,12 @@ nirs4all_export_trained_pipeline <- function(object, file = NULL,
 #' Import a trained native pipeline from R or Python
 #'
 #' Validates the closed portable envelope, recipe, fitted references, payload
-#' hash and native N4MM descriptor before returning a predictor. The source
-#' must be trusted as model data; no host-language code is deserialized.
+#' hash and native N4MM descriptor before returning a predictor. Version 8
+#' requires `n_features` to be a positive JSON integer equal to the width of
+#' the fitted states, and a classifier label table (`class_names`) to be a
+#' non-empty list of unique strings or finite numbers with a label for every
+#' native class ID. The source must be trusted as model data; no host-language
+#' code is deserialized.
 #' @param source JSON text or a path to a JSON document.
 #' @return A fitted pipeline accepted by [nirs4all_predict()].
 #' @export

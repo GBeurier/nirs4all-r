@@ -628,19 +628,28 @@ nirs4all_predict <- function(object, X) {
 #' Predict class probabilities from a fitted classifier
 #' @param object Fitted classification pipeline.
 #' @param X Numeric samples-by-features matrix.
-#' @return A samples-by-classes matrix with columns in training class order.
+#' @return A samples-by-classes matrix with columns in training class order,
+#'   named by the class labels (the label table of an n4m role pipeline).
 #' @export
 nirs4all_predict_proba <- function(object, X) {
+  roles <- inherits(object, "nirs4all_fitted") &&
+    identical(object$preprocessing_owner, "n4m_roles")
   if (!inherits(object, "nirs4all_fitted") ||
       !identical(object$task, "classification") ||
-      !is.function(object$learner$predict_proba))
+      !(roles || is.function(object$learner$predict_proba)))
     stop("object must be a fitted classifier with probabilities", call. = FALSE)
   if (inherits(X, "nirs4all_dataset")) X <- X$X
-  X <- nirs4all_matrix(X, object$n_features)
-  if (!is.null(object$feature_names) && !identical(colnames(X), object$feature_names))
-    stop("X feature names or order differ from training", call. = FALSE)
-  transformed <- nirs4all_transform(X, object$steps, object$step_states)
-  out <- object$learner$predict_proba(object$state, transformed)
+  if (roles) {
+    # n4m checks the width and column names of a role pipeline.
+    X <- nirs4all_matrix(X)
+    out <- stats::predict(object$role_pipeline, X, type = "prob")
+  } else {
+    X <- nirs4all_matrix(X, object$n_features)
+    if (!is.null(object$feature_names) && !identical(colnames(X), object$feature_names))
+      stop("X feature names or order differ from training", call. = FALSE)
+    transformed <- nirs4all_transform(X, object$steps, object$step_states)
+    out <- object$learner$predict_proba(object$state, transformed)
+  }
   if (!is.matrix(out) || !is.numeric(out) ||
       !identical(dim(out), c(nrow(X), length(object$classes))) ||
       !identical(colnames(out), object$classes) || anyNA(out) ||
