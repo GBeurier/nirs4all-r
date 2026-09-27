@@ -275,3 +275,86 @@ for (value in c(sprintf("%d.9", ncol(x_train)), sprintf("%d.0", ncol(x_train)),
           "a v8 envelope needs n_features as a positive JSON integer")
 stopifnot(identical(nirs4all_import_trained_pipeline(width_as(ncol(x_train)))$n_features,
                     ncol(x_train)))
+
+# Numeric labels stay numbers, at full precision, through fit -> export ->
+# import -> predict -> export (shared label contract).
+exact_of <- function(document)
+  as.character(jsonlite::toJSON(document, auto_unbox = TRUE, null = "null", digits = I(17L)))
+class_recipe <- fixture$classification$envelope$recipe
+class_names_of <- function(envelope) {
+  document <- jsonlite::fromJSON(envelope, simplifyVector = FALSE)
+  document$states[[length(document$states)]]$class_names
+}
+for (levels in list(c(0.5, 1.5), c(1 / 3, 2 / 3))) {
+  numeric_fit <- nirs4all_fit_role_recipe(class_recipe, x_train,
+                                          ifelse(labels == "high", levels[1L], levels[2L]))
+  envelope <- nirs4all_export_trained_pipeline(numeric_fit)
+  written <- class_names_of(envelope)
+  stopifnot(all(vapply(written, is.double, logical(1))), identical(unlist(written), levels),
+            !grepl(sprintf("\"%s\"", levels[1L]), envelope, fixed = TRUE))
+  replayed <- nirs4all_import_trained_pipeline(envelope)
+  stopifnot(identical(n4m::n4m_role_pipeline_info(replayed$role_pipeline)$label_names, levels),
+            identical(replayed$classes, as.character(levels)),
+            identical(nirs4all_predict(replayed, x_test), nirs4all_predict(numeric_fit, x_test)),
+            identical(colnames(nirs4all_predict_proba(replayed, x_test)), as.character(levels)),
+            identical(class_names_of(nirs4all_export_trained_pipeline(replayed)), written))
+}
+stopifnot(identical(class_names_of(
+  "{\"states\": [{\"class_names\": [0.5, 1.5]}]}"), list(0.5, 1.5)))
+
+# Uniqueness is by value: two close fractions (equal to 15 significant digits)
+# are two labels, on export and on import.
+close <- c(0.1234567890123456, 0.1234567890123457)
+close_fit <- nirs4all_fit_role_recipe(class_recipe, x_train,
+                                      ifelse(labels == "high", close[1L], close[2L]))
+envelope <- nirs4all_export_trained_pipeline(close_fit)
+stopifnot(identical(unlist(class_names_of(envelope)), close))
+stopifnot(identical(n4m::n4m_role_pipeline_info(
+  nirs4all_import_trained_pipeline(envelope)$role_pipeline)$label_names, close))
+close_document <- document
+close_document$states[[2L]]$class_names <- as.list(close)
+stopifnot(identical(n4m::n4m_role_pipeline_info(nirs4all_import_trained_pipeline(
+  exact_of(close_document))$role_pipeline)$label_names, close))
+refused(nirs4all_import_trained_pipeline(relabelled(list(0.25, 0.25))),
+        "envelope class_names repeat the label '0.25'")
+
+# An integer label beyond 2^53 is refused, never rounded: in the JSON text
+# (jsonlite would read 2^53 + 1 as 2^53) and as a value.
+with_table <- function(table)
+  sub("\"class_names\":[\"high\",\"low\"]", sprintf("\"class_names\":[%s]", table),
+      envelope_of(document), fixed = TRUE)
+stopifnot(grepl("\"class_names\":[\"high\",\"low\"]", envelope_of(document), fixed = TRUE))
+for (table in c("9007199254740993,1", "1,-9007199254740993", "0.5,18014398509481984"))
+  refused(nirs4all_import_trained_pipeline(with_table(table)),
+          "is an integer beyond 2^53, not exactly representable")
+beyond_document <- document
+beyond_document$states[[2L]]$class_names <- list(1, 2^53 + 2)
+refused(nirs4all_import_trained_pipeline(exact_of(beyond_document)),
+        "entry 2 (9007199254740994) is an integer beyond 2^53")
+at_limit <- nirs4all_import_trained_pipeline(with_table("9007199254740992,-9007199254740992"))
+stopifnot(identical(n4m::n4m_role_pipeline_info(at_limit$role_pipeline)$label_names,
+                    c(2^53, -2^53)))
+beyond_fit <- nirs4all_fit_role_recipe(class_recipe, x_train,
+                                       ifelse(labels == "high", 0.5, 2^53 + 2))
+refused(nirs4all_export_trained_pipeline(beyond_fit), "is an integer beyond 2^53")
+
+# jsonlite reads "a\u0000x" as "a": an envelope holding the escape \u0000 (or a
+# NUL byte in its file) is refused before parsing, including in a nested
+# manifest; an escaped backslash followed by "u0000" is ordinary text.
+named_classifier <- nirs4all_export_trained_pipeline(classifier)
+nul_text <- sub(sprintf("\"%s\"", names_train[1L]), "\"a\\u0000x\"", named_classifier, fixed = TRUE)
+stopifnot(!identical(nul_text, named_classifier))
+refused(nirs4all_import_trained_pipeline(nul_text), "contains the JSON escape \\u0000 (NUL)")
+refused(nirs4all_import_trained_pipeline(sub("\\u0000", "\\\\\\u0000", nul_text, fixed = TRUE)),
+        "contains the JSON escape \\u0000 (NUL)")
+literal <- nirs4all_import_trained_pipeline(sub("\\u0000", "\\\\u0000", nul_text, fixed = TRUE))
+stopifnot(identical(literal$feature_names[1L], "a\\u0000x"))
+path <- tempfile(fileext = ".json")
+writeBin(c(charToRaw(sub("\"high\"", "\"hi", named_classifier, fixed = TRUE)), as.raw(0L)), path)
+refused(nirs4all_import_trained_pipeline(path), "contains a NUL byte")
+unlink(path)
+manifest <- "{\"recipe\": \"a\\u0000x\"}"
+refused(nirs4all_import_trained_pipeline(as.character(jsonlite::toJSON(list(
+  schema = "nirs4all.n4m.trained_pipeline.v4", manifest_json = manifest,
+  manifest_sha256 = digest::digest(manifest, algo = "sha256", serialize = FALSE),
+  model = list()), auto_unbox = TRUE))), "contains the JSON escape \\u0000 (NUL)")

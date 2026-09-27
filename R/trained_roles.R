@@ -93,8 +93,10 @@ nirs4all_export_trained_roles <- function(object, file, allow_training_rows) {
                    n_features = object$n_features)
   if (!is.null(object$feature_names)) document$feature_names <- as.list(object$feature_names)
   document$states <- states
+  # 17 significant digits: every double (numeric labels, recipe parameters)
+  # reads back exactly.
   value <- as.character(jsonlite::toJSON(document, auto_unbox = TRUE,
-                                         null = "null", digits = NA, pretty = TRUE))
+                                         null = "null", digits = I(17L), pretty = TRUE))
   if (!is.null(file)) {
     writeLines(value, file, useBytes = TRUE)
     return(invisible(value))
@@ -102,7 +104,9 @@ nirs4all_export_trained_roles <- function(object, file, allow_training_rows) {
   value
 }
 
-nirs4all_import_trained_roles <- function(document) {
+# `exact` is the same envelope parsed with big integers kept as text: jsonlite
+# otherwise rounds an integer label beyond 2^53 to a neighbouring double.
+nirs4all_import_trained_roles <- function(document, exact) {
   definition <- nirs4all_load_pipeline(document$recipe)
   # A JSON integer (jsonlite reads it as an R integer): never a fraction, a
   # string or a boolean, and compared exactly to the native width.
@@ -127,9 +131,17 @@ nirs4all_import_trained_roles <- function(document) {
   }
   steps <- nirs4all_role_steps(definition$pipeline)
   class_names <- states[[length(states)]]$class_names
-  if (!is.null(class_names))
+  if (!is.null(class_names)) {
+    written <- exact$states[[length(states)]]$class_names
+    rounded <- which(vapply(seq_along(class_names), function(k)
+      is.numeric(class_names[[k]]) && is.character(written[[k]]), logical(1)))
+    if (length(rounded))
+      stop(sprintf(paste0("envelope class_names entry %d (%s) is an integer beyond 2^53, ",
+                          "not exactly representable as a number"),
+                   rounded[1L], written[[rounded[1L]]]), call. = FALSE)
     class_names <- nirs4all_role_check_labels(class_names,
                                               nirs4all_role_class_ids(steps, payloads))
+  }
   pipeline <- n4m::n4m_role_pipeline_import(steps, payloads, feature_names, class_names)
   # The native import checks the states against the recipe; the envelope's own
   # fields must describe those states too.
@@ -159,6 +171,9 @@ nirs4all_role_class_ids <- function(steps, states)
 # label contract): a non-empty list of unique strings or finite numbers indexed
 # by the native class IDs, every one of which names a slot. The table may hold
 # more labels than the fitted classes (labels whose rows a filter removed).
+# Numbers stay numbers, exactly representable (no integer beyond 2^53), and
+# are compared by value, never through a string form. Returns the typed table:
+# a character or a double vector.
 nirs4all_role_check_labels <- function(labels, ids) {
   if (is.null(ids))
     stop("envelope class_names label a pipeline that does not end with a classifier",
@@ -173,13 +188,19 @@ nirs4all_role_check_labels <- function(labels, ids) {
                  which(!valid)[1L]), call. = FALSE)
   if (length(unique(vapply(labels, is.character, logical(1)))) > 1L)
     stop("envelope class_names mixes strings and numbers", call. = FALSE)
-  names <- vapply(labels, as.character, character(1))
-  if (anyDuplicated(names))
-    stop(sprintf("envelope class_names repeat the label '%s'", names[anyDuplicated(names)]),
-         call. = FALSE)
-  outside <- ids[ids < 0 | ids >= length(names) | ids != floor(ids)]
+  table <- if (is.character(labels[[1L]])) unlist(labels) else
+    vapply(labels, as.double, double(1))
+  inexact <- if (is.double(table)) which(abs(table) > 2^53 & table == floor(table))
+  if (length(inexact))
+    stop(sprintf(paste0("envelope class_names entry %d (%s) is an integer beyond 2^53, ",
+                        "not exactly representable as a number"),
+                 inexact[1L], format(table[inexact[1L]], digits = 17L)), call. = FALSE)
+  if (anyDuplicated(table))
+    stop(sprintf("envelope class_names repeat the label '%s'",
+                 format(table[anyDuplicated(table)], digits = 17L)), call. = FALSE)
+  outside <- ids[ids < 0 | ids >= length(table) | ids != floor(ids)]
   if (length(outside))
     stop(sprintf("the classifier has class id %s but envelope class_names has %d labels",
-                 format(outside[1L]), length(names)), call. = FALSE)
-  names
+                 format(outside[1L]), length(table)), call. = FALSE)
+  table
 }
