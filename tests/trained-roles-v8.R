@@ -178,6 +178,98 @@ nirs4all_save(classifier, path)
 stopifnot(identical(nirs4all_predict(nirs4all_load(path), x_test),
                     nirs4all_predict(classifier, x_test)))
 unlink(path)
-wrong_classes <- document
-wrong_classes$states[[2L]]$class_names <- list("high", "low", "mid")
-refused(nirs4all_import_trained_pipeline(envelope_of(wrong_classes)), "class_names")
+
+# Class probabilities route to the native role pipeline, before and after an
+# envelope round trip, with columns named by the label table (R15).
+probabilities <- nirs4all_predict_proba(classifier, named(x_test))
+stopifnot(is.matrix(probabilities), identical(dim(probabilities), c(nrow(x_test), 2L)),
+          identical(colnames(probabilities), c("high", "low")),
+          identical(unname(probabilities),
+                    unname(stats::predict(classifier$role_pipeline, x_test, type = "prob"))),
+          max(abs(rowSums(probabilities) - 1)) <= 1e-12,
+          identical(colnames(probabilities)[max.col(probabilities, "first")],
+                    as.character(nirs4all_predict(classifier, x_test))))
+stopifnot(identical(nirs4all_predict_proba(replayed, named(x_test)), probabilities))
+refused(nirs4all_predict_proba(replayed, named(x_test)[, permutation]), "the columns are reordered")
+refused(nirs4all_predict_proba(replayed, x_test[, -1L]), "columns; the pipeline was fitted on")
+refused(nirs4all_predict_proba(nirs4all_fit_role_recipe(recipe, x_train, y_train), x_test),
+        "object must be a fitted classifier with probabilities")
+python_classifier <- nirs4all_import_trained_pipeline(as.character(jsonlite::toJSON(
+  fixture$classification$envelope, auto_unbox = TRUE, digits = NA)))
+python_probabilities <- nirs4all_predict_proba(python_classifier, x_test)
+stopifnot(identical(colnames(python_probabilities), python_classifier$classes),
+          identical(colnames(python_probabilities)[max.col(python_probabilities, "first")],
+                    fixture$classification$predict))
+
+# The label table follows the shared contract on import (R05): a non-empty
+# list of unique strings or finite numbers with a slot for every native class
+# ID. It may be longer than the fitted classes (labels a filter removed).
+relabelled <- function(labels) {
+  changed <- document
+  changed$states[[2L]]$class_names <- labels
+  envelope_of(changed)
+}
+longer <- nirs4all_import_trained_pipeline(relabelled(list("high", "low", "mid")))
+stopifnot(identical(longer$classes, c("high", "low")),
+          identical(nirs4all_predict(longer, x_test), nirs4all_predict(classifier, x_test)),
+          identical(nirs4all_predict_proba(longer, x_test), probabilities))
+numeric_labels <- nirs4all_import_trained_pipeline(relabelled(list(1.5, 7L)))
+stopifnot(identical(numeric_labels$classes, c("1.5", "7")),
+          identical(colnames(nirs4all_predict_proba(numeric_labels, x_test)), c("1.5", "7")))
+refused(nirs4all_import_trained_pipeline(relabelled(list())),
+        "class_names must be a non-empty list of labels")
+refused(nirs4all_import_trained_pipeline(relabelled("high")),
+        "class_names must be a non-empty list of labels")
+refused(nirs4all_import_trained_pipeline(relabelled(list("only"))),
+        "the classifier has class id 1 but envelope class_names has 1 labels")
+refused(nirs4all_import_trained_pipeline(relabelled(list("same", "same"))),
+        "envelope class_names repeat the label 'same'")
+refused(nirs4all_import_trained_pipeline(relabelled(list(1L, "1"))),
+        "envelope class_names repeat the label '1'")
+refused(nirs4all_import_trained_pipeline(relabelled(list("high", NULL))),
+        "envelope class_names entry 2 is not a string or a finite number")
+refused(nirs4all_import_trained_pipeline(relabelled(list("high", TRUE))),
+        "envelope class_names entry 2 is not a string or a finite number")
+refused(nirs4all_import_trained_pipeline(relabelled(list(list("high"), "low"))),
+        "envelope class_names entry 1 is not a string or a finite number")
+regression_document <- jsonlite::fromJSON(
+  nirs4all_export_trained_pipeline(nirs4all_fit_role_recipe(recipe, x_train, y_train)),
+  simplifyVector = FALSE)
+regression_document$states[[length(regression_document$states)]]$class_names <- list("a")
+refused(nirs4all_import_trained_pipeline(envelope_of(regression_document)),
+        "does not end with a classifier")
+
+# Numeric labels are the native class IDs (no label table); a table must then
+# cover those IDs, 10 and 20, not merely count them.
+by_id <- nirs4all_fit_role_recipe(fixture$classification$envelope$recipe, x_train,
+                                  ifelse(labels == "high", 10, 20))
+id_document <- jsonlite::fromJSON(nirs4all_export_trained_pipeline(by_id), simplifyVector = FALSE)
+stopifnot(is.null(id_document$states[[2L]]$class_names), identical(by_id$classes, c("10", "20")),
+          identical(colnames(nirs4all_predict_proba(by_id, x_test)), c("10", "20")))
+id_document$states[[2L]]$class_names <- list("high", "low")
+refused(nirs4all_import_trained_pipeline(envelope_of(id_document)),
+        "the classifier has class id 10 but envelope class_names has 2 labels")
+id_document$states[[2L]]$class_names <- as.list(sprintf("c%02d", 0:20))
+covered <- nirs4all_import_trained_pipeline(envelope_of(id_document))
+stopifnot(identical(covered$classes, c("c10", "c20")),
+          identical(as.character(nirs4all_predict(covered, x_test)),
+                    sprintf("c%s", as.character(nirs4all_predict(by_id, x_test)))),
+          identical(colnames(nirs4all_predict_proba(covered, x_test)), c("c10", "c20")))
+# The exporter re-checks the table it writes.
+stopifnot(identical(unlist(jsonlite::fromJSON(nirs4all_export_trained_pipeline(covered),
+                                              simplifyVector = FALSE)$states[[2L]]$class_names),
+                    sprintf("c%02d", 0:20)))
+
+# n_features is a positive JSON integer compared exactly, never truncated (R16).
+text <- envelope_of(document)
+stopifnot(grepl(sprintf("\"n_features\":%d,", ncol(x_train)), text, fixed = TRUE))
+width_as <- function(value)
+  sub(sprintf("\"n_features\":%d,", ncol(x_train)), sprintf("\"n_features\":%s,", value),
+      text, fixed = TRUE)
+for (value in c(sprintf("%d.9", ncol(x_train)), sprintf("%d.0", ncol(x_train)),
+                sprintf("%de0", ncol(x_train)), sprintf("\"%d\"", ncol(x_train)),
+                "true", "null", "0", "-1", "3000000000"))
+  refused(nirs4all_import_trained_pipeline(width_as(value)),
+          "a v8 envelope needs n_features as a positive JSON integer")
+stopifnot(identical(nirs4all_import_trained_pipeline(width_as(ncol(x_train)))$n_features,
+                    ncol(x_train)))
