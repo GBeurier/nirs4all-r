@@ -50,17 +50,15 @@ nirs4all_fit_role_recipe <- function(recipe, X, y) {
 nirs4all_role_fitted <- function(definition, pipeline) {
   steps <- n4m::n4m_role_pipeline_steps(pipeline)
   classification <- identical(steps$role[nrow(steps)], "classifier")
-  info <- pipeline$state$info
-  classes <- if (classification) {
-    if (is.null(pipeline$state$levels)) as.character(info$classes) else pipeline$state$levels
-  }
+  info <- n4m::n4m_role_pipeline_info(pipeline)
+  classes <- if (classification) as.character(info$classes)
   structure(list(
     recipe = list(pipeline = definition$pipeline), role_pipeline = pipeline,
     learner = NULL, state = NULL, steps = list(), step_states = list(),
     preprocessing_owner = "n4m_roles",
     task = if (classification) "classification" else "regression",
     classes = classes, n_features = as.integer(info$n_features),
-    feature_names = pipeline$state$feature_names),
+    feature_names = info$feature_names),
     class = "nirs4all_fitted")
 }
 
@@ -85,8 +83,9 @@ nirs4all_export_trained_roles <- function(object, file, allow_training_rows) {
     n4me_base64 = gsub("\n", "", jsonlite::base64_enc(state$n4me), fixed = TRUE),
     sha256 = digest::digest(state$n4me, algo = "sha256", serialize = FALSE),
     contains_training_rows = state$contains_training_rows))
-  levels <- object$role_pipeline$state$levels
-  if (!is.null(levels)) states[[length(states)]]$class_names <- as.list(levels)
+  # Label names travel in the envelope (N4ME holds integer class ids only).
+  classes <- n4m::n4m_role_pipeline_info(object$role_pipeline)$classes
+  if (is.character(classes)) states[[length(states)]]$class_names <- as.list(classes)
   document <- list(schema = .nirs4all_role_schema, recipe = object$recipe,
                    n_features = object$n_features)
   if (!is.null(object$feature_names)) document$feature_names <- as.list(object$feature_names)
@@ -137,9 +136,10 @@ nirs4all_import_trained_roles <- function(document) {
       stop(sprintf("envelope state %d (%s) misreports its training rows", k,
                    stateful$method_id[k]), call. = FALSE)
   }
-  if (!identical(as.integer(n_features), as.integer(pipeline$state$info$n_features)))
+  info <- n4m::n4m_role_pipeline_info(pipeline)
+  if (!identical(as.integer(n_features), info$n_features))
     stop("envelope n_features differs from its states", call. = FALSE)
-  if (!is.null(class_names) && length(class_names) != length(pipeline$state$info$classes))
+  if (!is.null(class_names) && length(class_names) != length(info$classes))
     stop("envelope class_names do not match the classifier classes", call. = FALSE)
   nirs4all_role_fitted(definition, pipeline)
 }
