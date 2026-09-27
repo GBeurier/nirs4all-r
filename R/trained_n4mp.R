@@ -164,7 +164,7 @@ nirs4all_import_trained_n4mp <- function(document) {
       !identical(digest::digest(document$manifest_json, algo = "sha256",
                                 serialize = FALSE), document$manifest_sha256))
     stop("invalid v6/v7 trained pipeline envelope or manifest hash", call. = FALSE)
-  manifest <- jsonlite::fromJSON(document$manifest_json, simplifyVector = FALSE)
+  manifest <- nirs4all_parse_envelope(document$manifest_json)
   affine <- "fit_recipe_assertion" %in% names(manifest)
   required <- c("recipe", "input_n_features", "feature_names",
                 "preprocessing_owner", "step_states",

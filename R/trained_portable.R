@@ -134,6 +134,15 @@ nirs4all_export_trained_pipeline <- function(object, file = NULL,
   value
 }
 
+# Parse envelope JSON text. jsonlite ends a string at the escape \u0000
+# ("a\u0000x" is read as "a"), so an envelope holding one (an odd run of
+# backslashes before u0000) is refused before parsing (shared label contract).
+nirs4all_parse_envelope <- function(text, ...) {
+  if (grepl("(?<!\\\\)(\\\\\\\\)*\\\\u0000", text, perl = TRUE))
+    stop("trained pipeline envelope contains the JSON escape \\u0000 (NUL)", call. = FALSE)
+  jsonlite::fromJSON(text, simplifyVector = FALSE, ...)
+}
+
 #' Import a trained native pipeline from R or Python
 #'
 #' Validates the closed portable envelope, recipe, fitted references, payload
@@ -141,23 +150,31 @@ nirs4all_export_trained_pipeline <- function(object, file = NULL,
 #' requires `n_features` to be a positive JSON integer equal to the width of
 #' the fitted states, and a classifier label table (`class_names`) to be a
 #' non-empty list of unique strings or finite numbers with a label for every
-#' native class ID. The source must be trusted as model data; no host-language
-#' code is deserialized.
+#' native class ID; numeric labels stay numbers, compared by value, and an
+#' integer beyond 2^53 is refused. An envelope holding a NUL character (the
+#' JSON escape `\u0000` or a NUL byte) is refused before parsing. The source
+#' must be trusted as model data; no host-language code is deserialized.
 #' @param source JSON text or a path to a JSON document.
 #' @return A fitted pipeline accepted by [nirs4all_predict()].
 #' @export
 nirs4all_import_trained_pipeline <- function(source) {
   if (!is.character(source) || length(source) != 1L || is.na(source))
     stop("source must be JSON text or a path", call. = FALSE)
-  input <- if (file.exists(source)) paste(readLines(source, warn = FALSE),
-                                          collapse = "\n") else source
-  document <- jsonlite::fromJSON(input, simplifyVector = FALSE)
+  input <- source
+  if (file.exists(source)) {
+    bytes <- readBin(source, "raw", file.size(source))
+    if (any(bytes == as.raw(0L)))
+      stop("trained pipeline envelope contains a NUL byte", call. = FALSE)
+    input <- rawToChar(bytes)
+  }
+  document <- nirs4all_parse_envelope(input)
   if (is.list(document) &&
       (identical(document$schema, "nirs4all.n4m.trained_pipeline.v6") ||
        identical(document$schema, "nirs4all.n4m.trained_pipeline.v7")))
     return(nirs4all_import_trained_n4mp(document))
   if (is.list(document) && identical(document$schema, .nirs4all_role_schema))
-    return(nirs4all_import_trained_roles(document))
+    return(nirs4all_import_trained_roles(
+      document, nirs4all_parse_envelope(input, bigint_as_char = TRUE)))
   if (!is.list(document) ||
       !setequal(names(document), c("schema", "manifest_json",
         "manifest_sha256", "model")) ||
@@ -183,7 +200,7 @@ nirs4all_import_trained_pipeline <- function(source) {
       !identical(digest::digest(document$manifest_json, algo = "sha256",
                                serialize = FALSE), document$manifest_sha256))
     stop("trained pipeline manifest hash mismatch", call. = FALSE)
-  manifest <- jsonlite::fromJSON(document$manifest_json, simplifyVector = FALSE)
+  manifest <- nirs4all_parse_envelope(document$manifest_json)
   required <- c("recipe", "input_n_features", "feature_names",
                 "preprocessing_owner", "step_states")
   if (classification) required <- c(required, "task", "classes")
