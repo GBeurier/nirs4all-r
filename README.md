@@ -22,6 +22,36 @@ adaptive HPO, native
 external-cohort replay and Python/R host-model conversion are not yet exposed
 by the high-level API.
 
+`nirs4all_dag_role_adapter()` prepares a persistent native Methods regression
+controller for an already compiled DAG with explicitly named numeric sources.
+The existing five-model numeric multimodal topology can use it through DAG-ML's
+process callbacks: four source RolePipelines and an OOF-trained meta-model.
+Each source supplies a finite matrix and unique sample IDs; independently
+permuted source rows are resolved by those IDs. Native upstream prediction
+blocks are joined by sample identity, with phase checks that require validation
+OOF for meta-model training. No fold, OOF or numerical algorithm is implemented
+in the R adapter.
+
+Pass the current compiled operator map, the native-derived R controller
+manifest (`controller:methods.r.regression`, version `1.0.0`) and a separate
+independently trusted installed manifest. Training requires explicit targets
+and `allow_fit = TRUE`; prepare a new target-free adapter with `allow_fit = FALSE`
+for loaded replay. The returned `adapter` executable uses published persistent
+JSONL frames and can be passed to the native `dagml` process APIs. Its
+`audit_path` records lifecycle operations and sample IDs for qualification.
+Native DAG-ML must validate signatures, plans, trust and complete artifact
+coverage before calling the adapter.
+
+REFIT exports the original native recipe and opaque N4ME states in the closed
+`dagml.methods.regression.v1` RAW wrapper, using the distinct
+`dagml.methods.r.regression` plugin identity. The adapter verifies artifact
+hash/size/URI, effective recipe and current ordered feature names before
+prediction. Recipes without one native state per step and states retaining
+training rows are refused at portable export. The R native finalizer releases
+states on worker close and errors as well as normal replay. This profile covers
+numeric regression projections; canonical U07 N-D encoding, Octave and R Core
+archive execution remain separate work.
+
 The built-in `n4m` preprocessing steps now include SNV (with centering/scaling
 flags), local SNV, robust SNV, area normalization, polynomial detrend and
 Savitzky–Golay. They use the upstream C ABI through the R `n4m` binding;
