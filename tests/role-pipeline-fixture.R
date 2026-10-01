@@ -12,7 +12,7 @@ named <- function(X, names = rp$feature_names) {
   colnames(X) <- names
   X
 }
-# Kernels may drift by a few ulps off Linux x86-64 (the exported bytes do not).
+# Kernels may drift by a few ulps off Linux x86-64.
 tolerance <- 1e-9
 
 state_entry <- function(state) {
@@ -39,15 +39,64 @@ refused <- function(expr, pattern, label) {
                  if (is.null(error)) "no error" else conditionMessage(error)))
 }
 
-# The fitted pipelines replay, re-export the same bytes and retrain identically.
+# N4ME stores its writer ABI (Methods docs/abi/estimator_roles_design.md D6;
+# cpp/src/core/estimator/n4me.cpp::encode_state). Embedded N4MM does likewise
+# (cpp/src/c_api/c_api_model.cpp::write_model_to_buffer). These are the three fixed
+# historical regression states, not a general state parser. Across writer ABIs
+# every byte except those ABI fields and their native checksums must stay exact.
+fixture_abi <- writeBin(c(2L, 14L, 0L), raw(), size = 4L, endian = "little")
+writer_abi <- writeBin(as.integer(n4m::n4m_abi_version()), raw(), size = 4L,
+                       endian = "little")
+stopifnot(length(writer_abi) == 12L)
+fixture_layout <- list(
+  list(method_id = "preprocessing.scatter.snv", size = 202L, n4mm_start = NULL),
+  list(method_id = "models.pls.pls_regression", size = 1677L, n4mm_start = 286L),
+  list(method_id = "models.regularized.ridge", size = 504L, n4mm_start = 217L))
+check_fixture_bytes <- function(original, current, layout) {
+  stopifnot(identical(original$method_id, layout$method_id),
+            identical(current$method_id, layout$method_id))
+  before <- jsonlite::base64_dec(original$n4me_base64)
+  after <- jsonlite::base64_dec(current$n4me_base64)
+  n <- layout$size
+  n4me_header <- c(charToRaw("N4ME"), writeBin(1L, raw(), size = 4L,
+                                             endian = "little"))
+  stopifnot(length(before) == n, length(after) == n,
+            identical(before[1:8], n4me_header), identical(after[1:8], n4me_header),
+            identical(before[9:20], fixture_abi), identical(after[9:20], writer_abi))
+  allowed <- c(9:20, seq.int(n - 7L, n))
+  if (!is.null(layout$n4mm_start)) {
+    start <- layout$n4mm_start
+    n4mm_header <- c(charToRaw("N4MM"), writeBin(1L, raw(), size = 4L,
+                                               endian = "little"))
+    header <- seq.int(start, start + 7L)
+    abi <- seq.int(start + 8L, start + 19L)
+    stopifnot(start > 20L, start + 19L < n - 15L,
+              identical(before[header], n4mm_header), identical(after[header], n4mm_header),
+              identical(before[abi], fixture_abi), identical(after[abi], writer_abi))
+    allowed <- c(allowed, abi, seq.int(n - 15L, n - 8L))
+  }
+  stopifnot(identical(before[-allowed], after[-allowed]))
+  if (identical(writer_abi, fixture_abi)) stopifnot(identical(before, after))
+}
+
+# The fitted pipelines replay, preserve their model bytes and retrain identically.
 reg <- rp$regression
 fitted <- nirs4all_import_trained_pipeline(envelope(reg$steps, reg$states))
 stopifnot(identical(fitted$feature_names, rp$feature_names),
           max(abs(nirs4all_predict(fitted, named(rp$x_test)) - reg$predict)) <= tolerance)
-exported <- jsonlite::fromJSON(nirs4all_export_trained_pipeline(fitted), simplifyVector = FALSE)
-stopifnot(identical(vapply(exported$states, `[[`, "", "n4me_base64"),
-                    vapply(reg$states, `[[`, "", "n4me_base64")),
+exported_text <- nirs4all_export_trained_pipeline(fitted)
+exported <- jsonlite::fromJSON(exported_text, simplifyVector = FALSE)
+stopifnot(length(reg$states) == 3L, length(exported$states) == 3L,
           identical(unlist(exported$feature_names), rp$feature_names))
+for (i in seq_along(fixture_layout))
+  check_fixture_bytes(reg$states[[i]], exported$states[[i]], fixture_layout[[i]])
+# Native import validates both checksums; a second export must be byte exact
+# under the current writer ABI, including the checksums and scientific output.
+reimported <- nirs4all_import_trained_pipeline(exported_text)
+second <- jsonlite::fromJSON(nirs4all_export_trained_pipeline(reimported), simplifyVector = FALSE)
+stopifnot(identical(vapply(second$states, `[[`, "", "n4me_base64"),
+                    vapply(exported$states, `[[`, "", "n4me_base64")),
+          max(abs(nirs4all_predict(reimported, named(rp$x_test)) - reg$predict)) <= tolerance)
 refit <- nirs4all_retrain(fitted, named(rp$x_train), rp$y_train)
 stopifnot(max(abs(nirs4all_predict(refit, named(rp$x_test)) - reg$predict)) <= tolerance)
 
