@@ -124,12 +124,16 @@ rehash <- function(doc, state) {
     algo = "sha256", serialize = FALSE)
   doc
 }
+different_sha256 <- function(value) paste0(
+  if (substring(value, 1L, 1L) == "0") "1" else "0", substring(value, 2L))
 bad <- document
-bad$manifest_sha256 <- paste0("0", substring(bad$manifest_sha256, 2L))
+bad$manifest_sha256 <- different_sha256(document$manifest_sha256)
+stopifnot(!identical(bad$manifest_sha256, document$manifest_sha256))
 stopifnot(inherits(try(nirs4all_import_trained_pipeline(emit(bad)),
   silent = TRUE), "try-error"))
 bad <- document
-bad$model$sha256 <- paste0("0", substring(bad$model$sha256, 2L))
+bad$model$sha256 <- different_sha256(document$model$sha256)
+stopifnot(!identical(bad$model$sha256, document$model$sha256))
 stopifnot(inherits(try(nirs4all_import_trained_pipeline(emit(bad)),
   silent = TRUE), "try-error"))
 for (alter in list(

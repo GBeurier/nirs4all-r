@@ -2,7 +2,13 @@
 # signatures and cross-language five-model qualification live in DAG-ML's gate.
 library(nirs4all)
 required <- identical(Sys.getenv("NIRS4ALL_REQUIRE_R_ROLE_ADAPTER"), "1")
-if (!all(c("n4m_role_pipeline", "n4m_role_pipeline_import") %in% getNamespaceExports("n4m"))) {
+if (.Platform$OS.type == "windows") {
+  refusal <- tryCatch(nirs4all_dag_role_adapter(list(), list(), list(), list()),
+    error = base::identity)
+  stopifnot(inherits(refusal, "error"), grepl("requires a POSIX shell",
+    conditionMessage(refusal), fixed = TRUE))
+  if (required) stop("The mandatory positive R role adapter gate requires a POSIX platform")
+} else if (!all(c("n4m_role_pipeline", "n4m_role_pipeline_import") %in% getNamespaceExports("n4m"))) {
   if (required) stop("The mandatory R role adapter gate requires the native Methods role binding")
 } else {
   role <- function(name) get(name, envir = asNamespace("nirs4all"))

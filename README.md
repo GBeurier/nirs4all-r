@@ -490,3 +490,46 @@ Neither test qualifies arbitrary n4m compositions or complex DAG graphs.
 
 Current missing product gates are documented in
 [`dag-ml/docs/R_BINDING_PARITY_AND_INTEROP.md`](https://github.com/GBeurier/dag-ml/blob/main/docs/R_BINDING_PARITY_AND_INTEROP.md).
+
+Core Archive V2/V3 ZIP replay is exposed through native executables:
+
+```r
+archive <- nirs4all_core_archive("trained.n4a")
+adapter <- nirs4all_core_multimodal_adapter(
+  current_sources, current_operators, current_node_params, source_ids,
+  expected_producer_manifest, independently_installed_manifest
+)
+prediction <- nirs4all_core_archive_predict(
+  archive, "signed-prediction-request.json", "current-prediction-envelopes.json",
+  adapter, "independently-installed-manifests.json"
+)
+```
+
+Install `nirs4all-core-archive`, `dag-ml-cli` and the R `n4m` binding. Core validates
+the ZIP and passes its original signed package bytes to DAG-ML; DAG-ML hydrates
+the state, schedules PREDICT and releases it through the persistent R process
+protocol. No Python interpreter is used. The installed raw adapter covers the
+closed U07 four-source scaler/tensor-PCA/mixed-column plus native Ridge profile
+with explicit fixed shapes. Other compatible installed process adapters can
+be supplied. Requests and current prediction envelopes are explicit native
+contracts; archive contents do not establish controller trust. This POSIX route
+refuses fitting, HPO, target access and host sidecars, and rechecks the opened
+archive's original SHA before replay. Historical Python joblib bundles are a
+different archive family and are not accepted by this API.
+
+For N4MM, N4ME and RolePipeline packages produced by native Methods controllers,
+use the direct route, with the independently verified library identity:
+
+```r
+prediction <- nirs4all_core_archive_predict_methods(
+  archive, "signed-prediction-request.json", "current-prediction-envelopes.json",
+  "current-methods-inputs.json", methods_library = "/installed/lib/libn4m.so",
+  methods_library_sha256 = verified_methods_sha256
+)
+```
+
+This calls the existing Core V2/V3 replay and native Methods controllers. It
+requires no user-written adapter and preserves the package's controller identity.
+Each numerical input declares its ordered sample IDs, matrix `x` and target names;
+target values `y` are refused. Core checks the exact loaded library snapshot and
+ABI, DAG-ML validates and schedules PREDICT, and Methods owns the numerical state.
