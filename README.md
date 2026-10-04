@@ -1,10 +1,11 @@
 # nirs4all for R (development)
 
-License: AGPL-3.0-or-later. R-universe serves this development package from
-`nirs4all-r`; version 0.4.0.9018 and its `n4m` dependency were installed and
-exercised from public source tarballs in a clean R library. Later versions
-must be checked after each repository synchronization. The package has not
-been submitted to CRAN.
+License: AGPL-3.0-or-later. R-universe builds this package from `nirs4all-r`.
+Version 0.6.0 requires the publicly distributed R binding `n4m >= 1.3.2`.
+Its optional ZIP replay route was checked with the installed public Core
+0.4.1 CLI and Methods 1.3.2, without a Python interpreter on PATH. See
+`NEWS.md` for the qualified archive profiles and their limits. The package
+has not been submitted to CRAN.
 
 This is the dedicated R product package named `nirs4all`. The former
 `nirs4all-core/bindings/r` package and release workflow were retired from
@@ -505,7 +506,8 @@ prediction <- nirs4all_core_archive_predict(
 )
 ```
 
-Install `nirs4all-core-archive`, `dag-ml-cli` and the R `n4m` binding. Core validates
+Install `nirs4all-core-archive` 0.4.1 or later, `dag-ml-cli` 0.3.33 or later and
+the R `n4m` binding 1.3.2 or later for this optional replay route. Core validates
 the ZIP and passes its original signed package bytes to DAG-ML; DAG-ML hydrates
 the state, schedules PREDICT and releases it through the persistent R process
 protocol. No Python interpreter is used. The installed raw adapter covers the
