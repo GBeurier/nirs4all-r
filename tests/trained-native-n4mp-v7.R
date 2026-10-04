@@ -57,6 +57,20 @@ reject(nirs4all_retrain(imported, unname(X), y))
 
 emit <- function(value) as.character(jsonlite::toJSON(value, auto_unbox = TRUE,
   null = "null", digits = 17L))
+# Change one hexadecimal nibble even when the digest already begins with zero.
+mutate_digest <- function(value) {
+  stopifnot(is.character(value), length(value) == 1L,
+            grepl("^[0-9a-f]{64}$", value))
+  changed <- paste0(if (substr(value, 1L, 1L) == "0") "1" else "0",
+                    substring(value, 2L))
+  stopifnot(!identical(changed, value), nchar(changed) == nchar(value),
+            identical(substring(changed, 2L), substring(value, 2L)))
+  changed
+}
+stopifnot(identical(mutate_digest(paste(rep("0", 64L), collapse = "")),
+                    paste0("1", paste(rep("0", 63L), collapse = ""))),
+          identical(mutate_digest(paste(rep("f", 64L), collapse = "")),
+                    paste0("0", paste(rep("f", 63L), collapse = ""))))
 with_manifest <- function(mutator, schema = document$schema) {
   doc <- document
   doc$schema <- schema
@@ -70,13 +84,13 @@ with_manifest <- function(mutator, schema = document$schema) {
 reject(nirs4all_import_trained_pipeline(with_manifest(identity,
   "nirs4all.n4m.trained_pipeline.v6")))
 bad <- document
-bad$manifest_sha256 <- paste0("0", substring(bad$manifest_sha256, 2L))
+bad$manifest_sha256 <- mutate_digest(bad$manifest_sha256)
 reject(nirs4all_import_trained_pipeline(emit(bad)))
 bad <- document
-bad$preprocessing$sha256 <- paste0("0", substring(bad$preprocessing$sha256, 2L))
+bad$preprocessing$sha256 <- mutate_digest(bad$preprocessing$sha256)
 reject(nirs4all_import_trained_pipeline(emit(bad)))
 bad <- document
-bad$model$sha256 <- paste0("0", substring(bad$model$sha256, 2L))
+bad$model$sha256 <- mutate_digest(bad$model$sha256)
 reject(nirs4all_import_trained_pipeline(emit(bad)))
 bad <- document
 reordered <- n4m::n4m_preprocess_fit(X, list(
