@@ -1,6 +1,9 @@
 # Core owns ZIP/container validation. DAG-ML owns signed package replay and
 # portable-artifact lifecycle. These R functions only transport native values.
 .nirs4all_core_path <- function(value, label, executable = FALSE) {
+  if (executable && is.character(value) && length(value) == 1L &&
+      !is.na(value) && nzchar(value) && !file.exists(value))
+    value <- unname(Sys.which(value))
   if (!is.character(value) || length(value) != 1L || is.na(value) ||
       !nzchar(value) || !file.exists(value) || dir.exists(value))
     stop(paste(label, "must identify an existing file"), call. = FALSE)
@@ -8,6 +11,13 @@
   if (executable && file.access(value, 1L) != 0L)
     stop(paste(label, "must be executable"), call. = FALSE)
   value
+}
+
+.nirs4all_native_cli <- function(cli) {
+  if (is.character(cli) && length(cli) == 1L && !is.na(cli) && !nzchar(cli))
+    cli <- Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")
+  if (identical(cli, "")) cli <- "nirs4all-core-archive"
+  .nirs4all_core_path(cli, "core_cli", executable = TRUE)
 }
 
 .nirs4all_core_run <- function(cli, args, workdir) {
@@ -60,7 +70,7 @@
 #' @return An immutable-by-contract archive reference and validated inventory.
 #' @export
 nirs4all_core_archive <- function(path, core_cli = Sys.which("nirs4all-core-archive")) {
-  core_cli <- .nirs4all_core_path(core_cli, "core_cli", executable = TRUE)
+  core_cli <- .nirs4all_native_cli(core_cli)
   path <- .nirs4all_core_path(path, "archive")
   directory <- tempfile("nirs4all-core-inspect-")
   dir.create(directory)
