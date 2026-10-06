@@ -1,11 +1,21 @@
-# nirs4all for R (development)
+# nirs4all for R
 
 License: AGPL-3.0-or-later. R-universe builds this package from `nirs4all-r`.
-Version 0.6.0 requires the publicly distributed R binding `n4m >= 1.3.2`.
-Its optional ZIP replay route was checked with the installed public Core
-0.4.1 CLI and Methods 1.3.2, without a Python interpreter on PATH. See
-`NEWS.md` for the qualified archive profiles and their limits. The package
-has not been submitted to CRAN.
+Version 0.7.0 requires the publicly distributed R binding `n4m >= 1.3.2`.
+The qualified native cohort is DAG-ML 0.3.37, DAG-ML-Data 0.2.13, IO 0.2.5,
+Formats 0.2.11 and Core 0.4.3. Install from
+<https://gbeurier.r-universe.dev>; the package has not been submitted to CRAN.
+See `NEWS.md` for the qualified profiles and their limits.
+
+The public native API now includes `nirs4all_run`, workflow prediction/export/
+reload/retraining, result views and experiment persistence, resumable tuning,
+split-conformal calibration and frozen robustness audits. These workflows use
+the bounded dense SNV/Savitzky–Golay/PLS regression profile. They require the
+optional Core CLI, and preserve explicit runtime paths through reload and resume.
+`nirs4all_dataset` and `nirs4all_multimodal_*` provide a separate raw multimodal
+predictor/state path. These additions do not establish general SDK parity,
+arbitrary host-model portability or support for every missing-source/ragged
+profile.
 
 This is the dedicated R product package named `nirs4all`. The former
 `nirs4all-core/bindings/r` package and release workflow were retired from
@@ -19,9 +29,9 @@ DAG-ML path are separate surfaces. The native path covers fixed candidate
 selection by CV → OOF → one winner refit → replay. The persisted R refit
 artifact can predict new samples locally; bounded parallel preprocessing
 branches can be concatenated before a model. General prediction stacking,
-adaptive HPO, native
-external-cohort replay and Python/R host-model conversion are not yet exposed
-by the high-level API.
+adaptive HPO for arbitrary R learner pipelines and Python/R host-model
+conversion remain outside that local API. The separate native workflow API
+supports bounded HPO and external-cohort prediction.
 
 `nirs4all_dag_role_adapter()` prepares a persistent native Methods regression
 controller for an already compiled DAG with explicitly named numeric sources.
@@ -50,8 +60,10 @@ hash/size/URI, effective recipe and current ordered feature names before
 prediction. Recipes without one native state per step and states retaining
 training rows are refused at portable export. The R native finalizer releases
 states on worker close and errors as well as normal replay. This profile covers
-numeric regression projections; canonical U07 N-D encoding, Octave and R Core
-archive execution remain separate work.
+numeric regression projections. Canonical U07 encoding and the product's
+Core archive replay are separate profiles, qualified independently; the new
+release does not turn arbitrary historical process captures into supported
+archives.
 
 The built-in `n4m` preprocessing steps now include SNV (with centering/scaling
 flags), local SNV, robust SNV, area normalization, polynomial detrend and
