@@ -28,8 +28,9 @@
   args <- c(operation, "--output", output)
   if (!is.null(record)) {
     input <- file.path(directory, "input.json")
-    writeLines(jsonlite::toJSON(record, auto_unbox = TRUE, null = "null",
-                               digits = I(17L), force = TRUE), input)
+    payload <- if (inherits(record, "nirs4all_native_json")) as.character(record) else
+      jsonlite::toJSON(record, auto_unbox = TRUE, null = "null", digits = I(17L), force = TRUE)
+    writeLines(payload, input)
     args <- c(args, "--input", input)
   }
   for (name in names(flags)) {
@@ -50,7 +51,7 @@
 
 #' Run the common native CV/OOF/refit Archive V2 profile
 nirs4all_native_run <- function(dataset, archive, source_id = "spectra",
-    components = c(1L, 2L), methods_library = Sys.getenv("N4M_LIBRARY_PATH", Sys.getenv("N4M_LIB_PATH")),
+    components = c(1L, 2L), preprocessing = "snv_savgol", methods_library = Sys.getenv("N4M_LIBRARY_PATH", Sys.getenv("N4M_LIB_PATH")),
     run_id = paste0("run:r:", basename(tempfile())),
     results_directory = paste0(archive, ".results"),
     cli = Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")) {
@@ -60,7 +61,7 @@ nirs4all_native_run <- function(dataset, archive, source_id = "spectra",
   }
   cli <- .nirs4all_native_cli(cli)
   outcome <- .nirs4all_workflow_native_call("workflow-run", list(
-    source_id = source_id, components = jsonlite::toJSON(as.list(unname(components)), auto_unbox = TRUE),
+    preprocessing = preprocessing, source_id = source_id, components = jsonlite::toJSON(as.list(unname(components)), auto_unbox = TRUE),
     methods_library = methods_library, archive = archive, run_id = run_id,
     results_directory = results_directory), dataset, cli)
   structure(list(archive = normalizePath(outcome$model_archive, mustWork = TRUE), outcome = outcome,
@@ -117,7 +118,7 @@ nirs4all_native_retrain <- function(object, dataset, archive, ...,
     cli = object$cli) {
   if (!inherits(object, "nirs4all_native_workflow")) stop("expected native workflow")
   nirs4all_native_run(dataset, archive, source_id = object$config$source_id,
-                     components = unlist(object$config$components), ..., cli = cli)
+                     components = unlist(object$config$components), preprocessing = object$config$preprocessing, ..., cli = cli)
 }
 
 #' Save native results and their optional portable model
