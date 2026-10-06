@@ -506,7 +506,7 @@ prediction <- nirs4all_core_archive_predict(
 )
 ```
 
-Install `nirs4all-core-archive` 0.4.1 or later, `dag-ml-cli` 0.3.33 or later and
+Install `nirs4all-core-archive` 0.4.2 or later, `dag-ml-cli` 0.3.37 or later and
 the R `n4m` binding 1.3.2 or later for this optional replay route. Core validates
 the ZIP and passes its original signed package bytes to DAG-ML; DAG-ML hydrates
 the state, schedules PREDICT and releases it through the persistent R process

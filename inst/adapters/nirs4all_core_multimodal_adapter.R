@@ -127,7 +127,7 @@ main <- function() {
     s <- sources[[name]];s$sample_ids <- ids(s$sample_ids);shape <- as.integer(unlist(s$descriptor$input_shape));n <- length(s$sample_ids)
     if(name=="metadata") {
       require_ok(is.list(s$rows)&&length(s$rows)==n&&all(vapply(s$rows,function(row)is.list(row)&&length(row)==2L&&(is.numeric(row[[1L]])||is.character(row[[1L]]))&&number(suppressWarnings(as.double(row[[1L]])),-Inf)&&is.character(row[[2L]])&&nchar(row[[2L]],type="bytes")<=1048576,logical(1))),"Finite numeric/raw UTF-8 metadata rows required")
-      s$values <- do.call(rbind,lapply(s$rows,function(row)c(as.character(row[[1L]]),row[[2L]])))
+      s$values <- do.call(rbind,lapply(s$rows,function(row)c(if(is.numeric(row[[1L]]))sprintf("%.17g",row[[1L]])else row[[1L]],row[[2L]])))
     } else {
       values <- unlist(s$data,use.names=FALSE);require_ok(number(length(values),1,16777216,TRUE)&&identical(as.integer(unlist(s$shape)),c(n,shape))&&length(values)==prod(c(n,shape))&&all(is.finite(values)),"Raw tensor shape/budget mismatch")
       # Transport is row-major; conversion only changes storage strides.
@@ -170,7 +170,9 @@ main <- function() {
   invoke <- function(task) {
     node <- task$node_plan;operator <- config$operators[[node$node_id]];require_ok(identical(node$kind,"model")&&identical(node$controller_id,controller)&&identical(node$controller_version,"1.0.0")&&!is.null(operator)&&identical(task$phase,"PREDICT"),"Core archive replay permits PREDICT only")
     require_ok(length(task$prediction_inputs)==0L&&length(task$data_view_receipts)==0L&&length(task$required_loss_attestations)==0L&&is.null(task$residual_targets)&&(is.null(task$fit_influence)||(identical(task$fit_influence$mechanism,"uniform_rows")&&length(task$fit_influence$row_weights)==0L)),"Generated/OOF/loss/residual/nonuniform inputs unsupported")
-    recipe <- recipe_for(operator,node$params)
+    # Native omits an empty params map. Exact lookup avoids R partially matching
+    # the absent key to params_fingerprint and treating that digest as params.
+    recipe <- recipe_for(operator,node[["params"]])
     if(task$phase=="PREDICT"){require_ok(length(task$artifact_inputs)==1L,"One complete predictor required");key <- names(task$artifact_inputs)[[1L]];entry <- models[[handle_key(task$input_handles[[key]])]];input <- task$artifact_inputs[[key]];require_ok(identical(input$node_id,node$node_id)&&identical(input$controller_id,controller)&&identical(input$params_fingerprint,node$params_fingerprint)&&same(input$artifact,entry$artifact)&&identical(entry$saved$node_id,node$node_id)&&identical(entry$saved$params_fingerprint,node$params_fingerprint)&&same(entry$saved$recipe,recipe)&&same(entry$saved$source_schemas,operator$source_schemas),"PREDICT binding mismatch");return(result(task,features(task,"predict"),entry$model))}
     require_ok(config$allow_fit,"Fitting disabled for replay");train <- features(task,if(task$phase=="FIT_CV")"fold_train" else "full_train");valid <- if(task$phase=="FIT_CV")features(task,"fold_validation") else train;require_ok(task$phase!="FIT_CV"||length(intersect(train$sample_ids,valid$sample_ids))==0L,"Training validation overlap")
     model <- n4m::n4m_multimodal_pipeline(recipe,selected_schemas(recipe,operator$source_schemas));retained <- FALSE;on.exit(if(!retained){n4m::n4m_close(model);audit("dispose")},add=TRUE);n4m::n4m_fit(model,train$blocks,targets(train$sample_ids));audit("fit",node_id=node$node_id,fold_id=task$fold_id,sample_ids=as.list(train$sample_ids),source_order=recipe$source_order,source_weights=recipe$source_weights,recipe=recipe)
