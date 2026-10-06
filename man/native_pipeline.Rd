@@ -12,20 +12,21 @@ nirs4all_run_pipeline(dataset, pipeline, source_id = "spectra",
  run_id = paste0("run:r:pipeline:", basename(tempfile())),
  cli = Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive"))
 nirs4all_pipeline_predict(object, X, sample_ids = NULL,
- methods_library = Sys.getenv("N4M_LIBRARY_PATH", Sys.getenv("N4M_LIB_PATH")),
+ methods_library = NULL,
  cli = object$cli)
 nirs4all_pipeline_export(object, path)
 nirs4all_pipeline_load(path,
- cli = Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive"))
+ cli = Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive"),
+ methods_library = Sys.getenv("N4M_LIBRARY_PATH", Sys.getenv("N4M_LIB_PATH")))
 nirs4all_pipeline_retrain(object, dataset,
- methods_library = Sys.getenv("N4M_LIBRARY_PATH", Sys.getenv("N4M_LIB_PATH")),
+ methods_library = NULL,
  run_id = paste0("run:r:retrain:", basename(tempfile())), cli = object$cli)
 }
 \arguments{
 \item{dataset}{A public dataset record or dataset object.}
 \item{pipeline}{Named list containing steps and candidates. Steps specify method_id, role and a named params list; candidates are parameter lists for the final model.}
 \item{source_id}{Numeric source identity.}
-\item{methods_library}{Path to the native Methods shared library.}
+\item{methods_library}{Path to the native Methods shared library. Prediction and retraining inherit the object runtime when NULL; an explicit path overrides it. Runtime paths are not serialized into model exports.}
 \item{run_id}{Fresh campaign identity.}
 \item{cli}{Core native CLI executable.}
 \item{object}{A native pipeline returned by run or load.}

@@ -6,7 +6,7 @@
 \alias{nirs4all_native_load}
 \title{Run and replay the shared native archive workflow}
 \usage{
-nirs4all_native_run(dataset, archive, source_id = "spectra", components = c(1L, 2L), methods_library = Sys.getenv("N4M_LIBRARY_PATH",
+nirs4all_native_run(dataset, archive, source_id = "spectra", components = c(1L, 2L), preprocessing = "snv_savgol", methods_library = Sys.getenv("N4M_LIBRARY_PATH",
     Sys.getenv("N4M_LIB_PATH")), run_id = paste0("run:r:", basename(tempfile())), results_directory = paste0(archive,
     ".results"), cli = Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive"))
 
@@ -20,6 +20,7 @@ nirs4all_native_export(object, directory)
 nirs4all_native_load(directory, cli = Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive"))
 }
 \arguments{
+\item{preprocessing}{Native preprocessing recipe, including the raw baseline and the SNV/Savitzky-Golay profile.}
   \item{dataset}{IO dataset record, dataset object, or native JSON dataset file.}
   \item{archive}{New output native archive path.}
   \item{source_id}{Selected dense source identifier; for structured uncertainty, optional source selection.}

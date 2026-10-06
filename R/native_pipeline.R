@@ -1,3 +1,8 @@
+.nirs4all_pipeline_runtime <- function(object) {
+  if (!is.null(object$methods_library) && nzchar(object$methods_library)) return(object$methods_library)
+  Sys.getenv("N4M_LIBRARY_PATH", Sys.getenv("N4M_LIB_PATH"))
+}
+
 .nirs4all_pipeline_recipe_json <- function(pipeline) {
   encode <- function(x) jsonlite::toJSON(x, auto_unbox = TRUE, digits = I(17L), null = "null")
   object <- function(x) {
@@ -31,13 +36,14 @@ nirs4all_run_pipeline <- function(dataset, pipeline, source_id = "spectra",
     methods_library = methods_library, run_id = run_id), .nirs4all_pipeline_record(paste0('{"dataset":', jsonlite::toJSON(dataset, auto_unbox = TRUE, digits = I(17L), null = "null"),
       ',"pipeline":', .nirs4all_pipeline_recipe_json(pipeline), '}')), cli)
   structure(list(native_json = attr(result, "native_json"), config = result$config,
-                 outcome = result$training_outcome, cli = cli), class = "nirs4all_native_pipeline")
+                 outcome = result$training_outcome, cli = cli, methods_library = methods_library), class = "nirs4all_native_pipeline")
 }
 
 #' Predict from a portable native pipeline without fitting
 nirs4all_pipeline_predict <- function(object, X, sample_ids = NULL,
-    methods_library = Sys.getenv("N4M_LIBRARY_PATH", Sys.getenv("N4M_LIB_PATH")),
+    methods_library = NULL,
     cli = object$cli) {
+  if (is.null(methods_library)) methods_library <- .nirs4all_pipeline_runtime(object)
   stopifnot(inherits(object, "nirs4all_native_pipeline"))
   X <- nirs4all_matrix(X)
   if (is.null(sample_ids)) sample_ids <- paste0("predict:", seq_len(nrow(X)))
@@ -58,17 +64,19 @@ nirs4all_pipeline_export <- function(object, path) {
 
 #' Load a native-validated portable pipeline package
 nirs4all_pipeline_load <- function(path,
-    cli = Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")) {
+    cli = Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive"),
+    methods_library = Sys.getenv("N4M_LIBRARY_PATH", Sys.getenv("N4M_LIB_PATH"))) {
   payload <- paste(readLines(path, warn = FALSE), collapse = "\n")
   result <- .nirs4all_workflow_native_call("pipeline-load", list(), .nirs4all_pipeline_record(payload), cli)
   structure(list(native_json = attr(result, "native_json"), config = result$config,
-                 outcome = result$training_outcome, cli = cli), class = "nirs4all_native_pipeline")
+                 outcome = result$training_outcome, cli = cli, methods_library = methods_library), class = "nirs4all_native_pipeline")
 }
 
 #' Retrain a portable native pipeline in a fresh campaign
 nirs4all_pipeline_retrain <- function(object, dataset,
-    methods_library = Sys.getenv("N4M_LIBRARY_PATH", Sys.getenv("N4M_LIB_PATH")),
+    methods_library = NULL,
     run_id = paste0("run:r:retrain:", basename(tempfile())), cli = object$cli) {
+  if (is.null(methods_library)) methods_library <- .nirs4all_pipeline_runtime(object)
   stopifnot(inherits(object, "nirs4all_native_pipeline"))
   if (inherits(dataset, "nirs4all_dataset")) dataset <- dataset$record
   data_json <- if (is.character(dataset) && length(dataset) == 1L) dataset else
@@ -77,5 +85,5 @@ nirs4all_pipeline_retrain <- function(object, dataset,
   result <- .nirs4all_workflow_native_call("pipeline-retrain",
     list(methods_library = methods_library, run_id = run_id), .nirs4all_pipeline_record(payload), cli)
   structure(list(native_json = attr(result, "native_json"), config = result$config,
-    outcome = result$training_outcome, cli = cli), class = "nirs4all_native_pipeline")
+    outcome = result$training_outcome, cli = cli, methods_library = methods_library), class = "nirs4all_native_pipeline")
 }
