@@ -6,7 +6,7 @@
   observed-target campaign per partial regression or classification target.
 - Open, query, predict, export and import modern SDK workspaces through the
   validated Python/Core bridge, including paths with spaces and Unicode.
-- Require Core 0.4.4, DAG-ML 0.3.38, IO 0.2.6 and n4m 1.3.4 for the new cohort.
+- Require Core 0.4.4, DAG-ML 0.3.39, IO 0.2.6 and n4m 1.3.4 for the new cohort.
 
 Native model arithmetic and persistence stay in Methods; dataset projection
 stays in IO, and phase execution stays in DAG-ML. These APIs qualify the
