@@ -17,7 +17,9 @@ nirs4all_pipeline_predict(object, X, sample_ids = NULL,
 nirs4all_pipeline_export(object, path)
 nirs4all_pipeline_load(path,
  cli = Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive"))
-nirs4all_pipeline_retrain(object, dataset, ...)
+nirs4all_pipeline_retrain(object, dataset,
+ methods_library = Sys.getenv("N4M_LIBRARY_PATH", Sys.getenv("N4M_LIB_PATH")),
+ run_id = paste0("run:r:retrain:", basename(tempfile())), cli = object$cli)
 }
 \arguments{
 \item{dataset}{A public dataset record or dataset object.}
@@ -30,7 +32,6 @@ nirs4all_pipeline_retrain(object, dataset, ...)
 \item{X}{Numeric prediction matrix.}
 \item{sample_ids}{Prediction sample identities.}
 \item{path}{Native JSON envelope file. Export refuses overwrite.}
-\item{...}{Options for a fresh training campaign.}
 }
 \details{The transport is nirs4all.native-pipeline.v1 JSON containing a native Package V2. It is separate from .n4a archive transport. Package fingerprints retain exact native JSON bytes. Numerical fitting and cold prediction execute in native Methods and DAG. Dependent origins and groups require declared leakage-safe folds. This API does not promise arbitrary Python model portability.}
 \value{Run, load and retrain return a native pipeline; predict returns native replay outputs; export invisibly returns its path.}

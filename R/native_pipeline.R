@@ -66,8 +66,16 @@ nirs4all_pipeline_load <- function(path,
 }
 
 #' Retrain a portable native pipeline in a fresh campaign
-nirs4all_pipeline_retrain <- function(object, dataset, ...) {
+nirs4all_pipeline_retrain <- function(object, dataset,
+    methods_library = Sys.getenv("N4M_LIBRARY_PATH", Sys.getenv("N4M_LIB_PATH")),
+    run_id = paste0("run:r:retrain:", basename(tempfile())), cli = object$cli) {
   stopifnot(inherits(object, "nirs4all_native_pipeline"))
-  nirs4all_run_pipeline(dataset, object$config$pipeline, source_id = object$config$source_id,
-                       ..., cli = object$cli)
+  if (inherits(dataset, "nirs4all_dataset")) dataset <- dataset$record
+  data_json <- if (is.character(dataset) && length(dataset) == 1L) dataset else
+    jsonlite::toJSON(dataset, auto_unbox = TRUE, digits = I(17L), null = "null")
+  payload <- paste0('{"model":', object$native_json, ',"dataset":', data_json, '}')
+  result <- .nirs4all_workflow_native_call("pipeline-retrain",
+    list(methods_library = methods_library, run_id = run_id), .nirs4all_pipeline_record(payload), cli)
+  structure(list(native_json = attr(result, "native_json"), config = result$config,
+    outcome = result$training_outcome, cli = cli), class = "nirs4all_native_pipeline")
 }
