@@ -1,3 +1,8 @@
+# nirs4all 0.7.2
+
+- Update the optional native runtime cohort to Core 0.4.5 and DAG-ML 0.3.41.
+- Preserve the R APIs and numerical delegation to n4m 1.3.4.
+
 # nirs4all 0.7.1
 
 - Add native estimator pipelines with CV, candidate selection, refit, export,
