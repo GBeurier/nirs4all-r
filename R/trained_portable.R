@@ -508,7 +508,7 @@ nirs4all_portable_validate_model <- function(bytes, pipeline, input_width,
   if (!identical(pipeline$learner$spec$learner, "pls"))
     stop("N4MM PLS state requires a PLS recipe", call. = FALSE)
   required_capabilities <- if (embedded) 9L else 1L
-  if (!identical(descriptor$format_version, if (embedded) 2L else 1L) ||
+  if (!nirs4all_pls_wire_version_matches(descriptor$format_version, embedded) ||
       !identical(descriptor$algorithm, 0L) ||
       !identical(descriptor$solver, 1L) ||
       !identical(descriptor$deflation, 0L) ||

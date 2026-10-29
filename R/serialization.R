@@ -98,12 +98,13 @@ nirs4all_load <- function(file) {
 
 #' Export a fitted native pipeline as portable N4MM bytes
 #'
-#' Accepts plain SIMPLS or an affine n4m MethodResult (N4MM format 1), or the native
-#' SNV → Savitzky-Golay → SIMPLS profile (format 2). Export the unfitted recipe separately with
+#' Accepts plain SIMPLS (N4MM format 1/3), an affine n4m MethodResult
+#' (format 1), or the native SNV → Savitzky-Golay → SIMPLS profile
+#' (format 2/3). Export the unfitted recipe separately with
 #' [nirs4all_export_pipeline()] when transferring it to another language.
 #' These bytes are model state, not a full DAG-ML Archive V2/V3.
 #' @param object A fitted [nirs4all_fit()] result.
-#' @return Raw N4MM format-1 or format-2 bytes.
+#' @return Raw N4MM format-1, format-2 or format-3 bytes.
 #' @export
 nirs4all_export_native_model <- function(object) {
   if (!inherits(object, "nirs4all_fitted") ||
@@ -123,7 +124,8 @@ nirs4all_export_native_model <- function(object) {
   bytes <- n4m::n4m_model_export(object$state)
   info <- n4m::n4m_model_pipeline_info(bytes)
   descriptor <- n4m::n4m_model_descriptor(bytes)
-  if (!identical(descriptor$format_version, profile$format_version) ||
+  if (!nirs4all_pls_wire_version_matches(descriptor$format_version,
+        identical(profile$owner, "embedded_methods")) ||
       !identical(descriptor$algorithm, 0L) ||
       !identical(descriptor$solver, 1L) ||
       !identical(descriptor$deflation, 0L) ||
@@ -144,11 +146,11 @@ nirs4all_export_native_model <- function(object) {
 #' The n4m decoder validates the bytes and any embedded preprocessing profile.
 #' This function refuses a mismatched R recipe or feature width. The caller
 #' supplies the recipe and, if relevant, the original ordered feature names.
-#' For plain format-1 PLS, scaling flags are caller assertions because the
+#' For plain PLS, scaling flags are caller assertions because the
 #' validated native descriptor does not expose those training flags. For an
 #' affine N4MM, the MethodResult fitting method and parameters are likewise
 #' caller assertions: the wire format identifies only the fitted predictor.
-#' @param bytes Raw N4MM format-1 or format-2 bytes.
+#' @param bytes Raw N4MM format-1, format-2 or format-3 bytes.
 #' @param pipeline Matching unfitted [nirs4all_pipeline()] definition or its
 #'   portable JSON/YAML recipe.
 #' @param feature_names Optional ordered feature names from training.
@@ -182,7 +184,8 @@ nirs4all_import_native_model <- function(bytes, pipeline, feature_names = NULL) 
   info <- n4m::n4m_model_pipeline_info(bytes)
   descriptor <- n4m::n4m_model_descriptor(bytes)
   width <- descriptor$n_features
-  if (!identical(descriptor$format_version, profile$format_version) ||
+  if (!nirs4all_pls_wire_version_matches(descriptor$format_version,
+        identical(profile$owner, "embedded_methods")) ||
       !identical(descriptor$algorithm, 0L) ||
       !identical(descriptor$solver, 1L) ||
       !identical(descriptor$deflation, 0L) ||
@@ -209,6 +212,14 @@ nirs4all_import_native_model <- function(bytes, pipeline, feature_names = NULL) 
                  task = "regression", classes = NULL,
                  n_features = width,
                  feature_names = feature_names), class = "nirs4all_fitted")
+}
+
+# Methods >= 1.3.7 emits format 3 for PLS with component-resolution state.
+# Native inspection validates that extension; ownership still follows the exact
+# embedded pipeline checks below. Legacy versions remain readable.
+nirs4all_pls_wire_version_matches <- function(version, embedded) {
+  is.integer(version) && length(version) == 1L && !is.na(version) &&
+    version %in% if (embedded) c(2L, 3L) else c(1L, 3L)
 }
 
 nirs4all_native_model_profile <- function(pipeline) {
