@@ -176,7 +176,7 @@ topology analyzer recognizes it. This branch export has **not** yet been
 qualified by the Core/WASM portable readers, unlike the flat profile above.
 
 For the exact default SNV → Savitzky-Golay smoothing → SIMPLS profile,
-`nirs4all_fit()` now embeds preprocessing in the native N4MM format-2 model.
+`nirs4all_fit()` now embeds preprocessing in the native N4MM format-2/3 model.
 `nirs4all_export_native_model()` returns that fitted state as raw bytes;
 `nirs4all_import_native_model()` accepts that JSON/YAML recipe or an R
 pipeline, validates its native descriptor and predicts directly on raw
@@ -431,11 +431,14 @@ untrained `mlr3` regression learner, clones it independently for every fit,
 and uses DAG-ML rather than `mlr3` for CV/OOF/refit. A user-defined controller can be
 provided with `nirs4all_controller(fit, predict, name)`; its state is R-only.
 The `n4m` PLS model is saved as portable N4MM bytes inside the RDS bundle.
-Plain SIMPLS exports N4MM format 1; the exact default SNV → SG → SIMPLS
-profile embeds its preprocessing in N4MM format 2. Both have fresh-process
+Methods 1.3.7 and later export fitted PLS as N4MM format 3, including
+component-resolution state and the embedded preprocessing when present.
+Legacy plain SIMPLS format 1 and embedded SNV → SG → SIMPLS format 2
+remain readable. Reading format 3 requires Methods 1.3.7 or newer; older
+native installations retain their format 1/2 support. Both profiles have fresh-process
 R↔Python prediction tests. Other pipelines still leave R preprocessing
-outside the model. The separate recipe is required to retrain, and N4MM
-format 1 does not expose scaling flags for independent recipe verification.
+outside the model. The separate recipe is required to retrain, and plain PLS N4MM
+does not expose scaling flags for independent recipe verification.
 `parsnip` and `mlr3` fitted states remain R-specific, as do custom-controller
 code and state.
 For portable n4m recipes, `nirs4all_expand_portable_pipelines()` expands the
