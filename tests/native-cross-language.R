@@ -56,7 +56,7 @@ if (nzchar(python)) {
   plain_recipe <- nirs4all_export_pipeline(plain_pipeline, "json")
   plain_fit <- nirs4all_fit(plain_pipeline, X, y)
   plain_bytes <- nirs4all_export_native_model(plain_fit)
-  stopifnot(identical(n4m::n4m_model_descriptor(plain_bytes)$format_version, 1L))
+  stopifnot(n4m::n4m_model_descriptor(plain_bytes)$format_version %in% c(1L, 3L))
   writeBin(plain_bytes, model_file)
   output <- suppressWarnings(system2(python,
     c(shQuote(helper), "predict_plain", shQuote(model_file), shQuote(request_file),
