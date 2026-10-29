@@ -1,3 +1,11 @@
+# nirs4all 0.7.3
+
+- Replay Methods N4MM format 3 PLS state, with or without native embedded
+  preprocessing, while retaining format 1/2 compatibility and strict recipe,
+  dimension, capability and preprocessing ownership validation.
+- Verify trained and native round trips against current Methods and genuine
+  legacy format 1/2 fixtures; keep rejection of incompatible recipes and state.
+
 # nirs4all 0.7.2
 
 - Update the optional native runtime cohort to Core 0.4.5 and DAG-ML 0.3.41.

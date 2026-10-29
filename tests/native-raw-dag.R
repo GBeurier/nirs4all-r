@@ -22,6 +22,12 @@ if (available) {
     ridge = list(pipeline = nirs4all_pipeline(
       learner = nirs4all_n4m_method("ridge", params = list(ridge_lambda = 0.5))),
       mode = "predict_affine", algorithm = 11L, format = 1L))
+  # Current PLS state records component resolution in format 3; affine
+  # predictors keep format 1. The legacy PLS families have separate fixtures.
+  if (utils::packageVersion("n4m") >= "1.3.7") {
+    profiles$plain_pls$format <- 3L
+    profiles$embedded_pls$format <- 3L
+  }
   for (name in names(profiles)) {
     profile <- profiles[[name]]
     outcome <- nirs4all_dag_cv_refit_predict(profile$pipeline, X, y,
