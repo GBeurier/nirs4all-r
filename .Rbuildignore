@@ -6,3 +6,5 @@
 ^nirs4all_.*[.]tar[.]gz$
 ^[.]git$
 ^[.]rlib$
+^LICENSING(_FR)?[.]md$
+^THIRD_PARTY_NOTICES[.]md$
