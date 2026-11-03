@@ -1,7 +1,7 @@
 Package: nirs4all
 Type: Package
 Title: Composable Near-Infrared Spectroscopy Pipelines for R
-Version: 0.7.3
+Version: 0.7.4
 Authors@R: c(person("Gregory", "Beurier", email = "gregory.beurier@cirad.fr", role = c("aut", "cre")), person("nirs4all", "contributors", role = "ctb"))
 Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     Composes portable preprocessing (including local and robust normalization,
@@ -29,7 +29,7 @@ Description: Provides an R-facing pipeline API for near-infrared spectroscopy.
     held-out split conformal calibration and frozen robustness audits.
     Complete native multimodal predictors preserve aligned raw source schemas
     and portable fitted state.
-License: AGPL (>= 3)
+License: CeCILL-2.1 | AGPL (>= 3)
 URL: https://github.com/GBeurier/nirs4all-r
 BugReports: https://github.com/GBeurier/nirs4all-r/issues
 Depends: R (>= 4.1)

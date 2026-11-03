@@ -4,7 +4,7 @@
 
 ## What this repo is
 
-`nirs4all-r` is the end-user R package **named `nirs4all`** (AGPL-3, served by R-universe `gbeurier.r-universe.dev`, not on CRAN yet). It composes:
+`nirs4all-r` is the end-user R package **named `nirs4all`** (`CeCILL-2.1 | AGPL (>= 3)`, served by R-universe `gbeurier.r-universe.dev`, not on CRAN yet). It composes:
 
 - `n4m` (R binding of `nirs4all-methods`) for every numerical kernel: preprocessing, PLS family, selectors, splitters, augmentations, N4MM/N4MP serialization;
 - `dagml` / `dagmldata` for native CV → OOF → selection → refit → replay;
