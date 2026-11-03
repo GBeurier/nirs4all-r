@@ -1,6 +1,8 @@
 # nirs4all for R
 
-License: AGPL-3.0-or-later. R-universe builds this package from `nirs4all-r`.
+License: `CeCILL-2.1 OR AGPL-3.0-or-later` (your choice; R: `CeCILL-2.1 | AGPL (>= 3)`),
+with an optional commercial license (<nirs4all-admin@cirad.fr>); see `LICENSING.md`
+and `THIRD_PARTY_NOTICES.md`. R-universe builds this package from `nirs4all-r`.
 Version 0.7.0 requires the publicly distributed R binding `n4m >= 1.3.2`.
 The qualified native cohort is DAG-ML 0.3.37, DAG-ML-Data 0.2.13, IO 0.2.5,
 Formats 0.2.11 and Core 0.4.3. Install from

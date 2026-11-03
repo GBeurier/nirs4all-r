@@ -1,3 +1,11 @@
+# nirs4all 0.7.4
+
+- Licensing metadata only: the package is dual-licensed
+  `CeCILL-2.1 | AGPL (>= 3)` (SPDX `CECILL-2.1 OR AGPL-3.0-or-later`) instead of
+  `AGPL (>= 3)`, like the rest of the nirs4all ecosystem. `LICENSING.md` and
+  `THIRD_PARTY_NOTICES.md` document the choice and the dependency licenses;
+  both license texts are installed under `inst/LICENSES/`.
+
 # nirs4all 0.7.3
 
 - Replay Methods N4MM format 3 PLS state, with or without native embedded
