@@ -150,17 +150,25 @@ nirs4all_portable_branch_plan <- function(branch_value) {
   list(type = "FeatureConcat", params = list(branches = branches))
 }
 
-nirs4all_portable_parse_text <- function(value, extension = "") {
+nirs4all_portable_parse_text <- function(value, extension = "", lists = FALSE) {
   if (identical(extension, "json"))
     return(jsonlite::fromJSON(value, simplifyVector = FALSE))
   if (extension %in% c("yaml", "yml"))
-    return(nirs4all_portable_parse_yaml(value))
+    return(nirs4all_portable_parse_yaml(value, lists))
   parsed <- tryCatch(jsonlite::fromJSON(value, simplifyVector = FALSE), error = identity)
   if (!inherits(parsed, "error")) return(parsed)
-  nirs4all_portable_parse_yaml(value)
+  nirs4all_portable_parse_yaml(value, lists)
 }
 
-nirs4all_portable_parse_yaml <- function(value) {
+# `lists = TRUE` keeps every YAML sequence a list, and an explicit empty mapping
+# `{}` a named empty list, so that the complete original document (one-element
+# arrays and `{}` versus `[]` included) reaches the owner unchanged.
+nirs4all_portable_parse_yaml <- function(value, lists = FALSE) {
+  if (isTRUE(lists))
+    return(yaml::yaml.load(value, eval.expr = FALSE, handlers = list(
+      seq = function(items) items,
+      map = function(items) if (length(items)) items else
+        structure(list(), names = character()))))
   parsed <- yaml::yaml.load(value, eval.expr = FALSE)
   # yaml normally collapses a one-element numeric sequence to a scalar. Keep
   # only augmentation `values` as a list so a scalar cannot impersonate the
@@ -201,15 +209,10 @@ nirs4all_portable_strip_comments <- function(value) {
   lapply(value, nirs4all_portable_strip_comments)
 }
 
-#' Read a Python-style portable pipeline definition
-#'
-#' Accepts a list, JSON/YAML text or a `.json`, `.yaml`, or `.yml` file. This
-#' reader preserves the historical nirs4all-core R subset; unsupported steps
-#' are rejected by [nirs4all_parse_execution_plan()] rather than ignored.
-#' @param source Pipeline list, serialized text or path.
-#' @return A `nirs4all_pipeline_definition`.
-#' @export
-nirs4all_load_pipeline <- function(source) {
+# Reads a list, JSON/YAML text or file once. With `lists = TRUE` the value is the
+# complete original document (comments, root controls and one-element arrays
+# kept) for owner admission; the default is the historical parse.
+nirs4all_portable_read_value <- function(source, lists = FALSE) {
   data <- source
   if (is.character(source) && length(source) == 1L) {
     path <- if (!grepl("[\r\n]", source) &&
@@ -221,11 +224,32 @@ nirs4all_load_pipeline <- function(source) {
         stop(sprintf("Configuration file does not exist: %s", path), call. = FALSE)
       data <- nirs4all_portable_parse_text(
         paste(readLines(path, warn = FALSE), collapse = "\n"),
-        tolower(tools::file_ext(path)))
+        tolower(tools::file_ext(path)), lists)
     } else {
-      data <- nirs4all_portable_parse_text(source)
+      data <- nirs4all_portable_parse_text(source, "", lists)
     }
   }
+  data
+}
+
+# The complete original document of a source: text and files keep their explicit
+# JSON/YAML types; an R list cannot express `{}`, so only there an empty unnamed
+# `params`/`method_params` is adapted to an empty mapping.
+nirs4all_portable_original <- function(source) {
+  if (is.list(source)) return(.nirs4all_portable_shape(source))
+  nirs4all_portable_read_value(source, lists = TRUE)
+}
+
+#' Read a Python-style portable pipeline definition
+#'
+#' Accepts a list, JSON/YAML text or a `.json`, `.yaml`, or `.yml` file. This
+#' reader preserves the historical nirs4all-core R subset; unsupported steps
+#' are rejected by [nirs4all_parse_execution_plan()] rather than ignored.
+#' @param source Pipeline list, serialized text or path.
+#' @return A `nirs4all_pipeline_definition`.
+#' @export
+nirs4all_load_pipeline <- function(source) {
+  data <- nirs4all_portable_read_value(source)
   if (!is.list(data))
     stop("Pipeline definition must be a list or mapping", call. = FALSE)
   if (!nirs4all_portable_named(data)) data <- list(pipeline = data)
@@ -238,11 +262,22 @@ nirs4all_load_pipeline <- function(source) {
        !is.finite(random_state) || random_state != floor(random_state) ||
        abs(random_state) > .Machine$integer.max))
     stop("random_state must be an integer", call. = FALSE)
-  structure(list(name = nirs4all_portable_or(data$name, "pipeline"),
-                 description = nirs4all_portable_or(data$description, ""),
-                 random_state = if (is.null(random_state)) NULL else as.integer(random_state),
-                 pipeline = nirs4all_portable_strip_comments(data$pipeline)),
-            class = "nirs4all_pipeline_definition")
+  visible <- list(name = nirs4all_portable_or(data$name, "pipeline"),
+                  description = nirs4all_portable_or(data$description, ""),
+                  random_state = if (is.null(random_state)) NULL else as.integer(random_state),
+                  pipeline = nirs4all_portable_strip_comments(data$pipeline))
+  definition <- structure(visible, class = "nirs4all_pipeline_definition")
+  # The four visible fields stay the public shape. The complete original
+  # document (comments, root controls, unknown fields, explicit JSON/YAML types)
+  # is attached once, with the visible baseline, so that owner transport can
+  # forward the original and apply only the edits made to the visible fields.
+  retained <- inherits(source, "nirs4all_pipeline_definition") &&
+    !is.null(attr(source, "original_document"))
+  attr(definition, "original_document") <- if (retained)
+    attr(source, "original_document") else nirs4all_portable_original(source)
+  attr(definition, "original_visible") <- if (retained)
+    attr(source, "original_visible") else visible
+  definition
 }
 
 #' Export a qualified R pipeline recipe
@@ -462,10 +497,35 @@ nirs4all_portable_components <- function(step) {
 }
 
 #' Translate the portable JSON/YAML subset into a product execution plan
+#'
+#' Without `core_cli` this is the host's source-level preflight: it keeps the R
+#' refusals and decides, from the declared profile, whether the recipe belongs
+#' to the owner-executed linear regression profile or to a named temporary
+#' residual B01 profile (`plan$profile`). With `core_cli` and a linear
+#' regression profile it also asks the Core `portable-pipeline-plan` operation
+#' for the no-fit owner admission and returns it unchanged in `plan$owner`;
+#' nothing is fitted and no Methods library is needed. A residual profile is
+#' never sent to the owner.
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
-#' @return Splitter, preprocessing and native model component variants.
+#' @param core_cli Optional `nirs4all-core-archive` executable (or `""` for
+#'   `NIRS4ALL_CORE_CLI`/`PATH`) to project the owner admission.
+#' @return Splitter, preprocessing and native model component variants, the
+#'   declared `profile`, the `admission` source and, when requested, `owner`.
 #' @export
-nirs4all_parse_execution_plan <- function(source) {
+nirs4all_parse_execution_plan <- function(source, core_cli = NULL) {
+  plan <- nirs4all_portable_parse_source(source)
+  plan$profile <- .nirs4all_portable_profile(plan)
+  plan$admission <- if (identical(plan$profile$route, "residual_b01"))
+    "residual_b01_local" else "source_preflight"
+  if (!is.null(core_cli) && identical(plan$profile$route, "owner")) {
+    plan$owner <- .nirs4all_portable_owner_call("portable-pipeline-plan",
+      .nirs4all_portable_request(source), core_cli)
+    plan$admission <- "owner"
+  }
+  plan
+}
+
+nirs4all_portable_parse_source <- function(source) {
   definition <- nirs4all_load_pipeline(source)
   splitter <- NULL
   augmentations <- list()
@@ -896,20 +956,52 @@ nirs4all_portable_dataset <- function(dataset, classification = FALSE) {
 
 #' Run a portable Python-style JSON/YAML pipeline on R data
 #'
-#' This bounded compatibility path supports optional Kennard-Stone holdout,
-#' native n4m preprocessing steps and PLS component sweeps. Regression PLS
-#' variants use RMSE; native sparse PLS-DA variants use classification accuracy.
-#' It delegates splitting and numerical work to `n4m`; selection on the holdout is *not* an independent
-#' test estimate. For general CV/OOF/refit use [nirs4all_dag_cv_refit_predict()].
+#' The declared profile decides the route before any execution. Linear
+#' regression recipes (n4m preprocessing chain, PLS or an affine n4m model,
+#' optional Kennard-Stone holdout) are admitted, split, fitted, scored and
+#' selected by the Core owner operation `portable-pipeline-run` (DAG
+#' single-holdout bank or its training sibling, Methods kernels); R only
+#' serializes the complete original document and dataset and projects the
+#' owner result. There is no R fallback for that profile: a missing Core CLI or
+#' Methods library, or any owner refusal, is an error. Classification,
+#' feature branches, training augmentations, models with extra fit inputs and
+#' the PLS algorithm `opls_nipals` are the named temporary residual B01
+#' profiles: they keep the existing local R
+#' execution, selected by `result$profile`, never by catching an owner error.
+#' See `docs/PORTABLE_RUNNER_PROFILES.md`. Selection on the holdout is *not* an
+#' independent test estimate; without a splitter the scope is `training`. For
+#' general CV/OOF/refit use [nirs4all_dag_cv_refit_predict()].
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
-#' @param dataset List with `X`, `y` and optional `rows`/`cols`, or a
-#'   `nirs4all_dataset` from [nirs4all_from_formats()].
-#' @return Split indices, per-variant predictions and task-specific score,
-#'   plus the selected variant.
+#' @param dataset List with `X`, `y` and optional `rows`/`cols`, a
+#'   `nirs4all_dataset` from [nirs4all_from_formats()], or a record-backed
+#'   `nirs4all_dataset()` (single finite source, owner projection; linear
+#'   profile only).
+#' @param core_cli Optional `nirs4all-core-archive` executable. Defaults to the
+#'   record-backed dataset's own CLI, `NIRS4ALL_CORE_CLI`, then `PATH`.
+#' @param methods_library Optional absolute path of `libn4m`. Defaults to
+#'   `N4M_LIB_PATH`, then `N4M_LIBRARY_PATH`.
+#' @return Split indices (zero-based, owner order), per-variant predictions and
+#'   RMSE or accuracy, the selected variant, targets, `evaluation`, and the
+#'   declared `profile`; owner runs add `mode`, `identities` and `owner`.
 #' @export
-nirs4all_run_portable_pipeline <- function(source, dataset) {
+nirs4all_run_portable_pipeline <- function(source, dataset, core_cli = NULL,
+                                           methods_library = NULL) {
   definition <- nirs4all_load_pipeline(source)
   plan <- nirs4all_parse_execution_plan(definition)
+  if (identical(plan$profile$route, "residual_b01"))
+    return(nirs4all_portable_run_residual(definition, plan, dataset))
+  .nirs4all_portable_run_owner(source, dataset, core_cli, methods_library)
+}
+
+# Temporary residual B01 execution: the unchanged local R runner. Reached only
+# when the declared profile is in `.nirs4all_portable_residual_b01`.
+nirs4all_portable_run_residual <- function(definition, plan, dataset) {
+  if (inherits(dataset, "nirs4all_dataset") && is.null(dataset$X) &&
+      !is.null(dataset$record))
+    stop(paste0("residual B01 profile (", paste(plan$profile$residual, collapse = ", "),
+                ") needs X and y; a record-backed nirs4all_dataset is supported ",
+                "only by the owner-executed linear regression profile"),
+         call. = FALSE)
   classification <- identical(plan$learner$learner, "sparse_pls_da")
   data <- nirs4all_portable_dataset(dataset, classification)
   if (is.null(plan$splitter)) {
@@ -957,5 +1049,6 @@ nirs4all_run_portable_pipeline <- function(source, dataset) {
        selected = variants[[selected]],
        targets = render_labels(targets),
        evaluation = list(scope = if (identical(split$kind, "all"))
-         "training" else "selection_validation", independent_test = FALSE))
+         "training" else "selection_validation", independent_test = FALSE),
+       profile = plan$profile)
 }
