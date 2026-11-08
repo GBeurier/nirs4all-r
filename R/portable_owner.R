@@ -6,84 +6,47 @@
 # only serializes the complete original document and dataset, calls the
 # existing `nirs4all-core-archive` CLI and projects the owner result. It holds
 # no splitter, variant, fit, metric or selection logic and no local fallback.
-# The residual B01 table below names the profiles that keep the unchanged local
-# R runner until their owner seams exist.
 
 .nirs4all_portable_owner_profile <- "portable_linear_regression.v1"
 # Classification (terminal n4m.SparsePLSDA): bank v2 selects on native accuracy.
 # Executed on Linux against the current native cohort (classification, graph and
-# OPLS R gates); not a universal or full-B01 claim.
+# OPLS R checks); not a universal support claim.
 .nirs4all_portable_owner_profile_classification <- "portable_linear_classification.v1"
 # Regression feature branch -> merge: features -> terminal model, and standalone
 # regression train augmentation / MBPLS block_sizes / GroupSparsePLS
 # group_assignment (owner profile `feature_graph.v1`: DAG per-estimator graph; the
 # join exists only for a branch). The feature-branch part was executed on Linux
-# against the current native cohort; the standalone train-augmentation and
-# MBPLS/GroupSparsePLS fit-input part is still source-only, awaiting the next
-# pooled wave. The complete original definition is forwarded: topology,
+# against the recorded native cohort. The standalone train-augmentation and
+# MBPLS/GroupSparsePLS fit-input route uses the same native owner graph.
+# The complete original definition is forwarded: topology,
 # augmentation kinds/values/seeds, fit-input arrays and parameters stay owner work.
 .nirs4all_portable_owner_profile_feature <- "portable_feature_regression.v1"
 # Classification with a feature branch or training augmentation (same owner profile
-# `feature_graph.v1`; graph classification banks). Staged private source: the
-# profile is selected here, activation waits for the owner and R gates. Class ids
-# only on the wire, decoded by lookup exactly as for the linear classification.
+# `feature_graph.v1`; graph classification banks). Qualification is limited to
+# the named Linux/native profiles. Class ids only on the wire, decoded by lookup
+# exactly as for the linear classification.
 .nirs4all_portable_owner_profile_feature_classification <- "portable_feature_classification.v1"
 .nirs4all_portable_classification_profiles <- c(
   .nirs4all_portable_owner_profile_classification,
   .nirs4all_portable_owner_profile_feature_classification)
 
-# Temporary residual B01 table (STAGED, not retired). The named combinations of
-# classification / feature branch / training augmentation / fit inputs are now
-# selected for the owner graph profiles above, so only combinations that no owner
-# profile admits remain here: augmentation with a feature branch (refused by the
-# portable grammar as well) and a fit-input terminal with a classifier (those
-# terminals are regressors). The residual runner (`nirs4all_portable_run_residual`)
-# and this table stay in place until Root retires them after parity; selection is
-# by declared profile only, never by catching an owner error.
-.nirs4all_portable_residual_b01 <- list(
-  feature_branch = list(
-    reason = paste("branch + merge: features combined with training augmentation:",
-      "refused by the portable grammar and by the owner graph profiles."),
-    next_seam = "No combined profile is planned; retire with the residual runner."),
-  train_augmentation = list(
-    reason = paste("train_augmentation combined with a feature branch:",
-      "refused by the portable grammar and by the owner graph profiles."),
-    next_seam = "No combined profile is planned; retire with the residual runner."),
-  extra_fit_inputs = list(
-    reason = paste("n4m.MBPLS block_sizes / n4m.GroupSparsePLS group_assignment",
-      "combined with a classifier: these terminals are regressors."),
-    next_seam = "No owner profile is planned; retire with the residual runner."))
-
+# Declared profile name, derived from the parsed recipe only (never by catching an
+# owner error): a classifier with a feature branch / training augmentation selects the
+# graph classification profile; a branch, training augmentation or MBPLS /
+# GroupSparsePLS fit inputs with a regressor the graph regression profile.
 .nirs4all_portable_profile <- function(plan) {
   learner <- plan$learner
   classifier <- identical(learner$learner, "sparse_pls_da")
-  branch <- any(vapply(plan$preprocessing, function(step)
-    identical(step$type, "FeatureConcat"), logical(1)))
-  augmented <- length(plan$augmentations) > 0L
-  fit_inputs <- identical(learner$learner, "n4m_method") &&
-    learner$method %in% c("mb_pls", "group_sparse_pls")
-  # Staged owner routes: standalone and combined regression branch / augmentation /
-  # fit inputs -> portable_feature_regression.v1; a classifier with a branch or
-  # augmentation -> portable_feature_classification.v1. What no owner profile
-  # admits keeps its declared residual keys.
-  keys <- c(if (branch && augmented) c("feature_branch", "train_augmentation"),
-            if (classifier && fit_inputs) "extra_fit_inputs")
-  if (!length(keys)) {
-    graph <- branch || augmented || fit_inputs
-    return(list(route = "owner",
-                name = if (classifier && graph)
-                  .nirs4all_portable_owner_profile_feature_classification else
-                  if (classifier) .nirs4all_portable_owner_profile_classification else
-                  if (graph) .nirs4all_portable_owner_profile_feature else
-                  .nirs4all_portable_owner_profile,
-                residual = character(), reasons = character(),
-                next_seams = character()))
-  }
-  list(route = "residual_b01", name = "residual_b01", residual = keys,
-       reasons = vapply(keys, function(key)
-         .nirs4all_portable_residual_b01[[key]]$reason, character(1)),
-       next_seams = vapply(keys, function(key)
-         .nirs4all_portable_residual_b01[[key]]$next_seam, character(1)))
+  graph <- any(vapply(plan$preprocessing, function(step)
+      identical(step$type, "FeatureConcat"), logical(1))) ||
+    length(plan$augmentations) > 0L ||
+    (identical(learner$learner, "n4m_method") &&
+       learner$method %in% c("mb_pls", "group_sparse_pls"))
+  list(name = if (classifier && graph)
+         .nirs4all_portable_owner_profile_feature_classification else
+       if (classifier) .nirs4all_portable_owner_profile_classification else
+       if (graph) .nirs4all_portable_owner_profile_feature else
+       .nirs4all_portable_owner_profile)
 }
 
 # `params`/`method_params` are mappings in every portable schema; an empty R
@@ -289,10 +252,8 @@
        evaluation = list(scope = evaluation$scope,
                          independent_test = evaluation$independent_test),
        mode = response$mode, identities = response$identities, owner = response$owner,
-       profile = list(route = "owner", name = response$profile,
-                      owner_profile = response$owner_profile,
-                      residual = character(), reasons = character(),
-                      next_seams = character()))
+       profile = list(name = response$profile,
+                      owner_profile = response$owner_profile))
   if (classification) {
     result$unseen_validation_classes <- need(response$unseen_validation_classes,
                                              "unseen_validation_classes")

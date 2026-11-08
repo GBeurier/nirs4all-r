@@ -117,7 +117,6 @@ stopifnot(identical(result$split$kind, "KennardStone"),
           identical(result$evaluation,
                     list(scope = "selection_validation", independent_test = FALSE)),
           identical(result$mode, "single_holdout"),
-          identical(result$profile$route, "owner"),
           identical(result$owner$profile, "single_resampled_holdout_bank.v1"))
 
 # 3. YAML with a one-element sequence keeps array shape; JSON text round-trips.
@@ -293,15 +292,14 @@ args <- strsplit(readLines(file.path(capture, "args")), " ", fixed = TRUE)[[1L]]
 sent <- request()
 stopifnot(identical(args[[1L]], "portable-pipeline-plan"), length(args) == 5L,
           !"dataset" %in% names(sent), identical(sent$definition$random_state, 11L),
-          identical(plan$admission, "owner"), identical(plan$owner$mode, "single_holdout"),
-          identical(plan$profile$route, "owner"), identical(plan$n_components, 2L))
+          identical(plan$admission, "owner"), identical(plan$owner$mode, "single_holdout"), identical(plan$n_components, 2L))
 write_response()
 reset(); local_plan <- nirs4all_parse_execution_plan(linear)
 stopifnot(identical(local_plan$admission, "source_preflight"),
           !file.exists(file.path(capture, "args")), is.null(local_plan$owner))
 
 # 7. A classifier with a feature branch is admitted by the owner plan operation under
-# the explicit graph classification profile (no local residual route, original
+# the explicit graph classification profile (no local run, original
 # document unchanged). The canned plan response only has to carry that profile.
 branched <- nirs4all_export_pipeline(nirs4all_pipeline(list(nirs4all_concat(list(
   a = list(nirs4all_snv()), b = list(nirs4all_msc())))), nirs4all_sparse_pls_da(2L)))
@@ -310,9 +308,7 @@ write_response(list(schema_version = 1L, profile = "portable_feature_classificat
   evaluation = list(scope = "training", independent_test = FALSE)))
 reset(); branched_plan <- nirs4all_parse_execution_plan(branched, core_cli = stub)
 stopifnot(identical(branched_plan$admission, "owner"),
-          identical(branched_plan$profile$route, "owner"),
           identical(branched_plan$profile$name, "portable_feature_classification.v1"),
-          !length(branched_plan$profile$residual),
           identical(branched_plan$owner$profile, "portable_feature_classification.v1"),
           identical(request()$profile, "portable_feature_classification.v1"),
           !"dataset" %in% names(request()),

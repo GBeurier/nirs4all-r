@@ -514,26 +514,23 @@ nirs4all_portable_components <- function(step) {
 
 #' Translate the portable JSON/YAML subset into a product execution plan
 #'
-#' Without `core_cli` this is the host's source-level preflight: it keeps the R
-#' refusals and decides, from the declared profile, whether the recipe belongs
-#' to the owner-executed linear regression profile or to a named temporary
-#' residual B01 profile (`plan$profile`). With `core_cli` and a linear
-#' regression profile it also asks the Core `portable-pipeline-plan` operation
-#' for the no-fit owner admission and returns it unchanged in `plan$owner`;
-#' nothing is fitted and no Methods library is needed. A residual profile is
-#' never sent to the owner.
+#' Without `core_cli` this is only the host's source-level preflight
+#' (`admission = "source_preflight"`): it keeps the R refusals and derives the
+#' declared profile name (`plan$profile$name`); it is not a native admission. With
+#' `core_cli` it also asks the Core `portable-pipeline-plan` operation for the
+#' no-fit owner admission, returns it unchanged in `plan$owner` and sets
+#' `admission = "owner"`; nothing is fitted and no Methods library is needed.
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
 #' @param core_cli Optional `nirs4all-core-archive` executable (or `""` for
 #'   `NIRS4ALL_CORE_CLI`/`PATH`) to project the owner admission.
 #' @return Splitter, preprocessing and native model component variants, the
-#'   declared `profile`, the `admission` source and, when requested, `owner`.
+#'   declared `profile` (`name`), the `admission` source and, when requested, `owner`.
 #' @export
 nirs4all_parse_execution_plan <- function(source, core_cli = NULL) {
   plan <- nirs4all_portable_parse_source(source)
   plan$profile <- .nirs4all_portable_profile(plan)
-  plan$admission <- if (identical(plan$profile$route, "residual_b01"))
-    "residual_b01_local" else "source_preflight"
-  if (!is.null(core_cli) && identical(plan$profile$route, "owner")) {
+  plan$admission <- "source_preflight"
+  if (!is.null(core_cli)) {
     plan$owner <- .nirs4all_portable_owner_call("portable-pipeline-plan",
       .nirs4all_portable_request(source, NULL, plan$profile$name), core_cli)
     plan$admission <- "owner"
@@ -924,7 +921,7 @@ nirs4all_portable_dataset <- function(dataset, classification = FALSE) {
 
 #' Run a portable Python-style JSON/YAML pipeline on R data
 #'
-#' The declared profile decides the route before any execution. Linear
+#' The declared profile name is derived from the recipe before any execution. Linear
 #' regression recipes (n4m preprocessing chain, PLS including `opls_nipals`, or
 #' an affine n4m model, optional Kennard-Stone holdout) and SparsePLS-DA
 #' classification recipes are admitted, split, fitted, scored and selected by the
@@ -946,11 +943,11 @@ nirs4all_portable_dataset <- function(dataset, classification = FALSE) {
 #' axis inputs). A classifier with a feature branch or training augmentation
 #' (`portable_feature_classification.v1`) and a branch with MBPLS / GroupSparsePLS
 #' fit inputs (`portable_feature_regression.v1`, explicit arrays describing the
-#' joined feature axis) are staged for the same owner graph route (private source,
-#' activation after the owner gates). Only combinations no owner profile admits
-#' (augmentation with a branch, fit inputs with a classifier) stay in the residual
-#' table and the unchanged local runner, selected by `result$profile`, never by
-#' catching an owner error.
+#' joined feature axis) take the same owner graph route. Qualification here is
+#' limited to the named Linux/native profiles. Every declared profile is
+#' owner-executed; combinations no owner
+#' profile admits (augmentation with a branch) are refused by the portable
+#' grammar. There is no local runner.
 #' See `docs/PORTABLE_RUNNER_PROFILES.md`. Selection on the holdout is *not* an
 #' independent test estimate; without a splitter the scope is `training`. For
 #' general CV/OOF/refit use [nirs4all_dag_cv_refit_predict()].
@@ -971,68 +968,6 @@ nirs4all_run_portable_pipeline <- function(source, dataset, core_cli = NULL,
                                            methods_library = NULL) {
   definition <- nirs4all_load_pipeline(source)
   plan <- nirs4all_parse_execution_plan(definition)
-  if (identical(plan$profile$route, "residual_b01"))
-    return(nirs4all_portable_run_residual(definition, plan, dataset))
   .nirs4all_portable_run_owner(source, dataset, core_cli, methods_library,
                                plan$profile$name)
-}
-
-# Temporary residual B01 execution: the unchanged local R runner. Reached only
-# when the declared profile is in `.nirs4all_portable_residual_b01`.
-nirs4all_portable_run_residual <- function(definition, plan, dataset) {
-  if (inherits(dataset, "nirs4all_dataset") && is.null(dataset$X) &&
-      !is.null(dataset$record))
-    stop(paste0("residual B01 profile (", paste(plan$profile$residual, collapse = ", "),
-                ") needs X and y; a record-backed nirs4all_dataset is supported ",
-                "only by the owner-executed linear profiles"),
-         call. = FALSE)
-  classification <- identical(plan$learner$learner, "sparse_pls_da")
-  data <- nirs4all_portable_dataset(dataset, classification)
-  if (is.null(plan$splitter)) {
-    indices <- seq.int(0L, nrow(data$X) - 1L)
-    split <- list(kind = "all", trainIndices = indices, testIndices = indices)
-  } else {
-    indices <- n4m::kennard_stone_split(data$X,
-      test_size = plan$splitter$params$test_size, zero_based = TRUE)
-    split <- list(kind = "KennardStone", trainIndices = as.integer(indices$train),
-                  testIndices = as.integer(indices$test))
-  }
-  train <- split$trainIndices + 1L
-  validation <- split$testIndices + 1L
-  steps <- nirs4all_portable_steps(plan$preprocessing)
-  targets <- data$y[validation]
-  render_labels <- function(values) {
-    if (!classification) return(as.numeric(values))
-    unname(data$class_values[as.integer(values)])
-  }
-  variants <- lapply(plan$n_components, function(n) {
-    learner <- plan$learner
-    learner$n_components <- n
-    controller <- if (classification) nirs4all_sparse_pls_da(
-      n, learner$sparsity_lambda) else if (identical(learner$learner, "n4m_method"))
-      nirs4all_n4m_method(learner$method, n, learner$params) else
-      do.call(nirs4all_pls, learner[setdiff(names(learner), "learner")])
-    pipeline <- nirs4all_pipeline(steps, controller,
-                                 augmentations = plan$augmentations)
-    fitted <- nirs4all_fit(pipeline, data$X[train, , drop = FALSE], data$y[train])
-    predictions <- nirs4all_predict(fitted, data$X[validation, , drop = FALSE])
-    if (classification)
-      return(list(n_components = as.integer(n),
-                  accuracy = mean(predictions == targets),
-                  predictions = render_labels(predictions)))
-    predictions <- as.numeric(predictions)
-    list(n_components = as.integer(n), rmse = sqrt(mean((predictions - targets)^2)),
-         predictions = predictions)
-  })
-  score_name <- if (classification) "accuracy" else "rmse"
-  scores <- vapply(variants, `[[`, numeric(1), score_name)
-  selected <- if (classification) which.max(scores) else which.min(scores)
-  list(name = definition$name, rows = as.integer(nrow(data$X)),
-       cols = as.integer(ncol(data$X)), split = split,
-       preprocessing = plan$preprocessing, variants = variants,
-       selected = variants[[selected]],
-       targets = render_labels(targets),
-       evaluation = list(scope = if (identical(split$kind, "all"))
-         "training" else "selection_validation", independent_test = FALSE),
-       profile = plan$profile)
 }

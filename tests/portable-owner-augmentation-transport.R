@@ -118,8 +118,7 @@ stopifnot(identical(args[[1L]], "portable-pipeline-run"), length(args) == 7L,
           grepl('"seed":4294967299', raw_request(), fixed = TRUE),
           grepl('"seed":9007199254740991', raw_request(), fixed = TRUE),
           !grepl("methodId|fit_inputs_v1|e\\+", raw_request()))
-stopifnot(identical(result$profile$route, "owner"),
-          identical(result$profile$name, feature_profile),
+stopifnot(identical(result$profile$name, feature_profile),
           identical(result$profile$owner_profile, "feature_graph.v1"),
           identical(result$owner$profile, "single_resampled_holdout_graph_bank.v1"),
           is.null(result$selected$feature_blocks),
@@ -182,7 +181,7 @@ write_response(owner_response())
 
 # 5. Combined recipes are admitted by the owner plan operation under the explicit
 # graph profile (classification for a classifier, regression for fit inputs with a
-# branch): no residual route, original document unchanged.
+# branch): original document unchanged.
 branch_steps <- list(nirs4all_concat(list(a = list(nirs4all_snv()), b = list(nirs4all_msc()))))
 classifier_augmented <- nirs4all_export_pipeline(nirs4all_pipeline(
   learner = nirs4all_sparse_pls_da(2L), augmentations = list(
@@ -196,9 +195,7 @@ for (case in list(list(classifier_augmented, "portable_feature_classification.v1
     evaluation = list(scope = "training", independent_test = FALSE)))
   reset(); admitted <- nirs4all_parse_execution_plan(case[[1L]], core_cli = stub)
   stopifnot(identical(admitted$admission, "owner"),
-            identical(admitted$profile$route, "owner"),
             identical(admitted$profile$name, case[[2L]]),
-            !length(admitted$profile$residual),
             identical(request()$profile, case[[2L]]),
             identical(request()$definition, jsonlite::fromJSON(case[[1L]], simplifyVector = FALSE)))
 }

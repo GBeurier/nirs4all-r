@@ -47,8 +47,7 @@ holdout$pipeline <- c(list(list(class = "n4m.KennardStone",
 
 # Declared dispatch: standalone regression augmentation is owner-executed.
 plan <- nirs4all_parse_execution_plan(recipe, core_cli = cli)
-stopifnot(identical(plan$profile$route, "owner"), !length(plan$profile$residual),
-          identical(plan$profile$name, "portable_feature_regression.v1"),
+stopifnot(identical(plan$profile$name, "portable_feature_regression.v1"),
           identical(plan$admission, "owner"),
           identical(plan$owner$profile, "portable_feature_regression.v1"),
           identical(plan$owner$owner_profile, "feature_graph.v1"))
@@ -61,8 +60,7 @@ stopifnot(max(abs(reference - everything(truncated))) > 1e-6,
           max(abs(reference - everything(plain))) > 1e-6)
 
 check_common <- function(result, bank) {
-  stopifnot(identical(result$profile$route, "owner"),
-            identical(result$profile$name, "portable_feature_regression.v1"),
+  stopifnot(identical(result$profile$name, "portable_feature_regression.v1"),
             identical(result$profile$owner_profile, "feature_graph.v1"),
             identical(result$owner$profile, bank),
             !"selected_package" %in% names(result$owner$evidence),

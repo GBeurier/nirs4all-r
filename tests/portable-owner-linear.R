@@ -75,7 +75,6 @@ stopifnot(identical(result$mode, "single_holdout"),
           identical(result$split$testIndices, as.integer(split$test)),
           identical(result$evaluation, list(scope = "selection_validation",
                                             independent_test = FALSE)),
-          identical(result$profile$route, "owner"),
           identical(result$owner$profile, "single_resampled_holdout_bank.v1"),
           identical(vapply(result$variants, `[[`, integer(1), "n_components"), 1:4),
           max(abs(result$targets - y[test])) < 1e-12)

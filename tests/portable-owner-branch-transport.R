@@ -119,8 +119,7 @@ stopifnot(identical(args[[1L]], "portable-pipeline-run"), length(args) == 7L,
           !"class_labels" %in% names(sent$dataset), identical(names(sent$dataset), c("X", "y")))
 
 # 2. Projection: exact profile, owner winner, optional blocks copied untouched.
-stopifnot(identical(result$profile$route, "owner"),
-          identical(result$profile$name, feature_profile),
+stopifnot(identical(result$profile$name, feature_profile),
           identical(result$profile$owner_profile, "feature_graph.v1"),
           identical(result$owner$profile, "single_resampled_holdout_graph_bank.v1"),
           identical(result$split$kind, "KennardStone"),
@@ -171,7 +170,7 @@ stopifnot(identical(args[[1L]], "portable-pipeline-plan"), length(args) == 5L,
 write_response(owner_response())
 
 # 6. A branch with a classifier is admitted by the owner plan operation under the
-# graph classification profile; nothing stays residual and nothing runs locally.
+# graph classification profile; nothing runs locally.
 combined <- nirs4all_export_pipeline(nirs4all_pipeline(list(nirs4all_concat(list(
   a = list(nirs4all_snv()), b = list(nirs4all_msc())))), nirs4all_sparse_pls_da(2L)))
 write_response(list(schema_version = 1L, profile = "portable_feature_classification.v1",
@@ -180,7 +179,6 @@ write_response(list(schema_version = 1L, profile = "portable_feature_classificat
 reset(); admitted <- nirs4all_parse_execution_plan(combined, core_cli = stub)
 stopifnot(identical(admitted$admission, "owner"),
           identical(admitted$profile$name, "portable_feature_classification.v1"),
-          !length(admitted$profile$residual),
           identical(request()$profile, "portable_feature_classification.v1"))
 write_response(owner_response())
 

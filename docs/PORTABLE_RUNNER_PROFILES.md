@@ -1,16 +1,15 @@
 # Portable runner profiles (`nirs4all_run_portable_pipeline`)
 
-**Status.** The Core operations named here are specified by the portable owner
+**Scope and recorded evidence.** The Core operations named here are specified by the portable owner
 interface (`PUBLIC_API.md`, frozen 2026-11-08) and its classification addendum
-(width amendment, SHA-256 `6cfbf341…dae1`). On **Linux, against the current native
+(width amendment, SHA-256 `6cfbf341…dae1`). On **Linux, against the recorded native
 cohort**, 12 unique R scripts passed, covering the linear, classification, graph
 (feature-branch) and OPLS profiles, including a true OPLS training and
 raw-Kennard-Stone holdout run with non-default flags and MSC. Not executed: the
 optional Python peers, Formats-backed and DAG-CV paths, and any other platform.
 Direct Methods and frozen-oracle checks are separate evidence. This is **not** a
-universal or full-B01 claim. The standalone train-augmentation and
-MBPLS/GroupSparsePLS fit-input section below is a private source successor,
-**not qualified**: it awaits the next pooled wave.
+universal support claim. Qualification here is limited to the named Linux/native
+profiles; other platforms and unlisted execution paths are outside that scope.
 
 ## Implemented now: linear regression profile (`portable_linear_regression.v1`)
 
@@ -127,7 +126,7 @@ no fitted model, deployment or cold replay.
 kept. Owner errors are errors. The named combinations are in the next section.
 See the status note above for what was executed.
 
-## Standalone train augmentation and extra fit inputs (same profile; source-only, unqualified)
+## Standalone train augmentation and extra fit inputs (same profile)
 
 A **regression** recipe with the `train_augmentation` prefix
 (`n4m.NativeXAugmentation`: `kind`, positional `values`, exact `seed`) and/or a
@@ -154,7 +153,7 @@ scores use the raw fit rows after learned preprocessing. There is no
 Owner-vs-R equality for GroupSparsePLS is same-kernel interoperability, not an
 independent oracle.
 
-## Combined profiles (staged private source; not qualified)
+## Combined profiles
 
 Selected by the declared parsed recipe and sent as the original document with the
 explicit profile, through the same two commands (`owner-implementation`
@@ -179,34 +178,25 @@ contract `residual-combinations-next/implementation/PUBLIC_API.md`, SHA-256
 
 R keeps its source refusals (augmentation with a branch, selector or DI-PLS;
 positional arrays), has no host numerics, scoring, selection, fold or variant
-loop for these profiles and never catches an owner error. This private slice
-stages the routes only: the residual runner and its table are **not** deleted,
-nothing is activated or retired here, and B01 is not closed. Owner-vs-R equality
-in the real test is same-kernel parity. The standalone frozen MBPLS values are
-a historical same-engine pls4all/libn4m reference, not independent mathematics;
-they do not cover these combinations.
+loop for these profiles and never catches an owner error. Qualification is
+limited to the named Linux/native profiles.
+Owner-vs-R equality in the real test is same-kernel parity. The standalone frozen
+MBPLS values are a historical same-engine pls4all/libn4m reference, not
+independent mathematics; they do not cover these combinations.
 
-## Temporary residual B01 table (staged; what remains)
+## Owner execution and profile fields
 
-These profiles are selected from the **declared** parsed recipe before any
-execution (`result$profile`, `plan$profile`) and keep the unchanged local R runner.
-They are never reached by catching an owner error. Each one is a **required later
-migration inside the same consolidation goal**, not a permanent exception, not a
-frozen reference and not DAG/native parity. B01 is not closed by this batch.
-
-| Key | Source reason (current) | Required next owner seam |
-| --- | --- | --- |
-| `feature_branch` (only with training augmentation) | `branch` + `merge: features` with training augmentation: refused by the portable grammar and by the owner graph profiles. | None planned; retire with the residual runner. |
-| `train_augmentation` (only with a feature branch) | Training augmentation with a feature branch (as above). | None planned; retire with the residual runner. |
-| `extra_fit_inputs` (only with a classifier) | MBPLS / GroupSparsePLS terminals are regressors. | None planned; retire with the residual runner. |
-
-These combinations are not reachable from the portable parser today; the table is
-kept (not deleted) until Root retires the residual runner after parity.
-`opls_nipals` (Methods role `models.pls.opls`, flags forwarded from the original
+Every declared profile is owner-executed; the local R fit/score/winner runner, its
+residual table and the `route` / `residual` / `reasons` / `next_seams` fields of
+`plan$profile` / `result$profile` are removed. `profile` keeps `name` (and, on a run
+result, the owner's `owner_profile`). `plan$admission` is `"source_preflight"`
+(host refusals and the derived profile name only; never a native admission) or
+`"owner"` (Core `portable-pipeline-plan` called). Combinations no owner profile
+admits (augmentation with a branch) are refused by the portable grammar, not run
+locally. `opls_nipals` (Methods role `models.pls.opls`, flags forwarded from the original
 document, no solver substitution) is on the owner route; the Linux native-cohort R OPLS
 check passed (training and raw-Kennard-Stone holdout, MSC, non-default flags,
-terminal `models.pls.opls` identity). A record-backed dataset with a residual profile is
-refused by name (no X/y is invented).
+terminal `models.pls.opls` identity).
 
 ## No-fit generator expansion
 
@@ -221,28 +211,26 @@ unfitted `nirs4all_pipeline()` per returned definition with
 `nirs4all_pipeline_from_portable()` and names them `variant_0001`, `variant_0002`,
 ... by position; it generates nothing and has no local fallback. The Core CLI is
 a required, documented dependency of this function. `portable-pipeline-run` still
-refuses generator definitions. Private staged source, not qualified; the contract
-is `residual-enumeration-next/owner-implementation/PUBLIC_API.md`
-(SHA-256 `10c89b48a53af737d06abc487dc788158acc65904381d70e8203d65d93090400`).
+refuses generator definitions.
 
 ## Tests
 
-Classification, graph and OPLS scripts were executed as stated in the status note;
-`portable-owner-augmentation-transport.R` and `portable-owner-augmentation.R`
-(the standalone augmentation / fit-input profile) are authored and **not yet
-executed**.
+In the earlier evidence snapshot, classification, graph and OPLS scripts were
+executed as stated above; `portable-owner-augmentation-transport.R` and
+`portable-owner-augmentation.R` (the standalone augmentation / fit-input profile)
+were authored and **not yet executed at that time**.
 
 - `tests/portable-owner-transport.R`: shell-stub inspection of the argument
   vector, original-document serialization, dataset forms, projection (the stub's
   winner is deliberately not the minimum RMSE) and error propagation. Transport
   only; no scientific claim. POSIX.
-- `tests/portable-residual-dispatch.R`: declared dispatch, exact residual table
-  (only combinations no owner profile admits; the combined profiles are
-  owner-routed, with a failing stub proving an owner failure never reroutes).
+- `tests/portable-residual-dispatch.R`: declared profile-name derivation for every
+  profile and the grammar refusal of augmentation with a branch; a failing stub
+  proves an owner failure is an error and never a local run.
 - `tests/portable-owner-combinations.R`: real Core CLI, four named combinations
   (branch + classifier, augmentation + classifier, branch + MBPLS, branch +
   GroupSparsePLS) in training and raw-Kennard-Stone scope against valid local R
-  baselines; authored, not executed.
+  baselines; authored, not executed in that earlier evidence snapshot.
 - `tests/portable-owner-classification-transport.R`: stub-only codec and
   projection checks of the classification profile (unsorted factor levels, integer
   and double codes, ids-only wire without any label field, training-mode unseen

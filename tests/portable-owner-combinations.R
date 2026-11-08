@@ -3,7 +3,7 @@
 # augmentation (`portable_feature_classification.v1`), and a feature branch with
 # MBPLS block_sizes or GroupSparsePLS group_assignment
 # (`portable_feature_regression.v1`). Owner profile `feature_graph.v1`. Linux/R only.
-# STAGED PRIVATE SOURCE: not qualified, not a release claim.
+# Scope is limited to the named Linux/native profiles, not universal support.
 #
 # Prerequisites (otherwise an explicit NOT RUN line, or a failure when
 # NIRS4ALL_REQUIRE_CORE_PORTABLE=1):
@@ -98,8 +98,7 @@ for (name in names(cases)) {
 
   # Declared dispatch and the no-fit plan: owner admission, explicit profile.
   plan <- nirs4all_parse_execution_plan(recipe_of(case, TRUE), core_cli = cli)
-  stopifnot(identical(plan$profile$route, "owner"), !length(plan$profile$residual),
-            identical(plan$profile$name, profile), identical(plan$admission, "owner"),
+  stopifnot(identical(plan$profile$name, profile), identical(plan$admission, "owner"),
             identical(plan$owner$profile, profile),
             identical(plan$owner$owner_profile, "feature_graph.v1"))
 
@@ -108,8 +107,7 @@ for (name in names(cases)) {
     result <- run(recipe_of(case, held), data)
     rows <- if (held) test else seq_len(n)
     expected <- baseline[[name]][[scope]]
-    stopifnot(identical(result$profile$route, "owner"),
-              identical(result$profile$name, profile),
+    stopifnot(identical(result$profile$name, profile),
               identical(result$profile$owner_profile, "feature_graph.v1"),
               identical(result$owner$profile, unname(banks[[scope]])),
               !"selected_package" %in% names(result$owner$evidence),

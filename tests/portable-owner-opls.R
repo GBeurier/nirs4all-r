@@ -46,10 +46,9 @@ holdout_recipe <- list(name = "opls_holdout", pipeline = c(list(list(
 pipeline <- nirs4all_pipeline(list(nirs4all_msc()), do.call(nirs4all_pls,
   c(list(n_components = 2L, algo = "opls_nipals"), flags)))
 
-# Declared dispatch: owner route, no residual key, the algorithm is not renamed.
+# Declared dispatch: the algorithm is not renamed.
 plan <- nirs4all_parse_execution_plan(training_recipe)
-stopifnot(identical(plan$profile$route, "owner"), !length(plan$profile$residual),
-          identical(plan$profile$name, "portable_linear_regression.v1"),
+stopifnot(identical(plan$profile$name, "portable_linear_regression.v1"),
           identical(plan$learner$algo, "opls_nipals"))
 
 # The owner's effective terminal recipe step, from its evidence: the selected
@@ -74,9 +73,7 @@ check_identity <- function(result) {
             is.null(params$algo), is.null(params$solver))   # never PLS NIPALS or a solver
 }
 check_scores <- function(result, predictions, targets) {
-  stopifnot(identical(result$profile$route, "owner"),
-            identical(result$profile$name, "portable_linear_regression.v1"),
-            !length(result$profile$residual),
+  stopifnot(identical(result$profile$name, "portable_linear_regression.v1"),
             length(result$variants) == 1L,
             identical(result$selected$n_components, 2L),
             identical(result$selected$ordinal, result$variants[[1L]]$ordinal),

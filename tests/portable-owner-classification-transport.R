@@ -120,8 +120,7 @@ stopifnot(identical(args[[1L]], "portable-pipeline-run"), length(args) == 7L,
 stopifnot(!identical(unlist(sent$dataset$y), as.integer(factor(as.character(y_factor))) - 1L))
 
 # 2. Projection: owner order, owner winner, ids decoded by lookup only.
-stopifnot(identical(result$profile$route, "owner"),
-          identical(result$profile$name, classification_profile),
+stopifnot(identical(result$profile$name, classification_profile),
           identical(result$mode, "single_holdout"),
           identical(result$split$kind, "KennardStone"),
           identical(result$split$testIndices, c(11L, 9L, 10L)),
@@ -237,7 +236,7 @@ stopifnot(identical(args[[1L]], "portable-pipeline-plan"), length(args) == 5L,
           identical(plan$owner, roundtrip(plan_response)))
 write_response(owner_response())
 
-# 8. opls_nipals is no longer residual: its declared algorithm and flags reach the
+# 8. opls_nipals: its declared algorithm and flags reach the
 # owner unchanged on the regression profile (no solver substitution).
 opls <- list(pipeline = list(list(class = "n4m.SNV"), list(model = list(class = "n4m.PLS",
   params = list(n_components = 2L, algo = "opls_nipals", scale_x = FALSE, center_y = TRUE)))))
@@ -255,7 +254,6 @@ sent <- request()
 stopifnot(identical(sent$profile, "portable_linear_regression.v1"),
           identical(sent$definition$pipeline[[2L]]$model$params$algo, "opls_nipals"),
           identical(sent$definition$pipeline[[2L]]$model$params$scale_x, FALSE),
-          identical(opls_result$profile$route, "owner"),
           is.null(opls_result$unseen_validation_classes))
 write_response(owner_response())
 
@@ -289,7 +287,6 @@ stopifnot(identical(sent$profile, feature_classification),
           identical(unlist(sent$dataset$y), rep(0:2, 4L)),             # level order ids
           !grepl("class_labels|class_values|virginica|setosa", raw_request()),
           identical(names(sent$definition$pipeline[[2L]]$branch), c("z_msc", "a_snv")),
-          identical(branched$profile$route, "owner"),
           identical(branched$profile$name, feature_classification),
           identical(branched$profile$owner_profile, "feature_graph.v1"),
           identical(branched$owner$profile,
