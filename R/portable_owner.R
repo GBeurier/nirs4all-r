@@ -1,6 +1,6 @@
 # Owner transport for the portable JSON/YAML runner.
 #
-# Linear regression recipes are admitted, split, fitted, scored and selected by
+# Linear regression and SparsePLS-DA classification recipes are admitted, split, fitted, scored and selected by
 # the Core operations `portable-pipeline-plan` / `portable-pipeline-run` (DAG
 # single-holdout bank or its training sibling over Methods kernels). This file
 # only serializes the complete original document and dataset, calls the
@@ -10,35 +10,31 @@
 # R runner until their owner seams exist.
 
 .nirs4all_portable_owner_profile <- "portable_linear_regression.v1"
+# Classification (terminal n4m.SparsePLSDA): bank v2 selects on native accuracy.
+# Source-only successor: live activation waits for the owner classification gates.
+.nirs4all_portable_owner_profile_classification <- "portable_linear_classification.v1"
+# Regression feature branch -> merge: features -> terminal model (owner profile
+# `feature_graph.v1`: DAG per-estimator graph + native feature join). Source-only
+# successor: live activation waits for the owner graph gates. The complete
+# original definition is forwarded; topology, order and parameters stay owner work.
+.nirs4all_portable_owner_profile_feature <- "portable_feature_regression.v1"
 
 # Temporary residual B01: profiles declared by the parsed recipe that the
 # linear owner route cannot carry today. Each entry is a REQUIRED later
 # migration inside the same consolidation goal, not a permanent exception and
 # not a claim of DAG/native parity. Selection is by declared profile only.
 .nirs4all_portable_residual_b01 <- list(
-  classification = list(
-    reason = paste("Classification (n4m.SparsePLSDA, accuracy, ordered class labels):",
-      "bank v1 selects on RMSE only and the native 1.1.0 pipeline_steps_v1",
-      "controller is regression-only."),
-    next_seam = paste("Native classifier variant of the 1.1.0 controller (labels,",
-      "exact class order) plus an independently versioned bank v2 profile",
-      "selecting on accuracy, maximized.")),
   feature_branch = list(
-    reason = paste("branch + merge: features: RolePipeline has no topology role",
-      "and the bank admits a single N4mRolePipeline target node."),
-    next_seam = "Owner topology support for feature branches in the portable bank."),
+    reason = paste("branch + merge: features combined with a classifier, training",
+      "augmentation or extra fit inputs: the owner graph profile",
+      "portable_feature_regression.v1 qualifies regression feature branches only."),
+    next_seam = paste("Combined owner profile (graph classification, augmentation or",
+      "fit-input transport) once each qualifies; a feature branch alone is",
+      "owner-executed.")),
   train_augmentation = list(
     reason = paste("train_augmentation: RolePipeline has no augmenter role and",
       "DAG native roles exclude augmenters."),
     next_seam = "Owner fit-population augmenter support."),
-  opls_solver = list(
-    reason = paste("PLS algo = \"opls_nipals\": R executes the existing N4M_ALGO_OPLS",
-      "kernel, but the generic RolePipeline regressor models.pls.pls_regression",
-      "fixes N4M_ALGO_PLS_REGRESSION (linear_adapters.cpp:358-363) and exposes no",
-      "OPLS role; renaming it to a PLS NIPALS solver would change the algorithm."),
-    next_seam = paste("Methods owner exposes the existing OPLS path as a generic",
-      "RolePipeline regressor (methods-opls-role-20261108) and DAG lowers it; remove",
-      "this key when that role is qualified. Only opls_nipals; no solver substitution.")),
   extra_fit_inputs = list(
     reason = paste("n4m.MBPLS block_sizes and n4m.GroupSparsePLS group_assignment:",
       "transport of these extra fit inputs through the pipeline_steps_v1",
@@ -48,17 +44,21 @@
 
 .nirs4all_portable_profile <- function(plan) {
   learner <- plan$learner
-  keys <- c(
-    if (identical(learner$learner, "sparse_pls_da")) "classification",
-    if (any(vapply(plan$preprocessing, function(step)
-        identical(step$type, "FeatureConcat"), logical(1)))) "feature_branch",
+  classifier <- identical(learner$learner, "sparse_pls_da")
+  branch <- any(vapply(plan$preprocessing, function(step)
+    identical(step$type, "FeatureConcat"), logical(1)))
+  others <- c(
     if (length(plan$augmentations)) "train_augmentation",
-    if (identical(learner$learner, "pls") && identical(learner$algo, "opls_nipals"))
-      "opls_solver",
     if (identical(learner$learner, "n4m_method") &&
         learner$method %in% c("mb_pls", "group_sparse_pls")) "extra_fit_inputs")
+  # A feature branch alone (regression) is owner-executed; it stays declared
+  # residual only when combined with a classifier or another residual profile.
+  keys <- c(if (branch && (classifier || length(others))) "feature_branch", others)
   if (!length(keys))
-    return(list(route = "owner", name = .nirs4all_portable_owner_profile,
+    return(list(route = "owner",
+                name = if (classifier) .nirs4all_portable_owner_profile_classification else
+                  if (branch) .nirs4all_portable_owner_profile_feature else
+                  .nirs4all_portable_owner_profile,
                 residual = character(), reasons = character(),
                 next_seams = character()))
   list(route = "residual_b01", name = "residual_b01", residual = keys,
@@ -118,8 +118,9 @@
   document
 }
 
-.nirs4all_portable_request <- function(source, dataset = NULL) {
-  request <- list(schema_version = 1L, profile = .nirs4all_portable_owner_profile,
+.nirs4all_portable_request <- function(source, dataset = NULL,
+                                       profile = .nirs4all_portable_owner_profile) {
+  request <- list(schema_version = 1L, profile = profile,
                   definition = .nirs4all_portable_document(source))
   if (!is.null(dataset)) request$dataset <- dataset
   request
@@ -127,17 +128,27 @@
 
 # Dataset forms. Plain list/matrix: row-scoped positional execution IDs (the
 # owner marks them positional; row names are not identity). Formats-backed:
-# declared sample IDs and axis facts at full precision. Record-backed: the
-# complete IO record, projected by the owner or refused by name. Nothing is
-# reassembled or inferred here.
-.nirs4all_portable_owner_dataset <- function(dataset) {
+# declared sample IDs and axis facts at full precision, plus metadata/provenance.
+# Record-backed: the complete IO record, projected by the owner or refused by
+# name (classification refuses it until Core carries IO class labels). Nothing
+# is reassembled or inferred here.
+#
+# Classification keeps R's own class codec and sends only the existing dense `y`
+# wire as nonnegative integral class ids: `as.integer(factor) - 1L` in the
+# factor's own (possibly unsorted) level order, or, for numeric codes,
+# `match(y, sort(unique(y))) - 1L`. The class names and numeric type stay in R
+# (`class_values`) and are only looked up when decoding the owner's ids; there is
+# no label-domain field on the wire.
+.nirs4all_portable_owner_dataset <- function(dataset, classification = FALSE) {
   if (inherits(dataset, "nirs4all_dataset") && is.null(dataset$X) &&
       !is.null(dataset$record))
-    return(list(payload = dataset$record, core_cli = dataset$core_cli))
-  data <- nirs4all_portable_dataset(dataset, classification = FALSE)
+    return(list(payload = dataset$record, core_cli = dataset$core_cli,
+                class_values = NULL))
+  data <- nirs4all_portable_dataset(dataset, classification = classification)
   payload <- list(
     X = lapply(seq_len(nrow(data$X)), function(i) as.list(as.numeric(data$X[i, ]))),
-    y = as.list(as.numeric(data$y)))
+    y = if (classification) as.list(as.integer(data$y) - 1L) else
+      as.list(as.numeric(data$y)))
   if (inherits(dataset, "nirs4all_dataset") && !is.null(dataset$sample_ids)) {
     payload$sample_ids <- as.list(dataset$sample_ids)
     payload$axis <- list(kind = dataset$axis_kind, unit = dataset$axis_unit,
@@ -150,7 +161,7 @@
     for (field in c("metadata", "provenance"))
       if (!is.null(dataset[[field]])) payload[[field]] <- dataset[[field]]
   }
-  list(payload = payload, core_cli = NULL)
+  list(payload = payload, core_cli = NULL, class_values = data$class_values)
 }
 
 .nirs4all_portable_methods_library <- function(methods_library) {
@@ -203,35 +214,60 @@
   jsonlite::fromJSON(output, simplifyVector = FALSE, bigint_as_char = TRUE)
 }
 
-# Projection only: field renaming and vector typing, no score, rank or winner.
-.nirs4all_portable_project <- function(response) {
+# Projection only: field renaming, vector typing and, for classification, the
+# lookup `class_values[id + 1L]` of owner class ids. No score, rank, winner,
+# argmax or class count is computed here; `unseen_validation_classes` and the
+# owner evidence are copied untouched.
+.nirs4all_portable_project <- function(response,
+                                       profile = .nirs4all_portable_owner_profile,
+                                       class_values = NULL) {
   need <- function(value, what) {
     if (is.null(value)) stop(paste("owner response lacks", what), call. = FALSE)
     value
   }
+  classification <- identical(profile, .nirs4all_portable_owner_profile_classification)
   if (!is.list(response) || !identical(response$schema_version, 1L) ||
-      !identical(response$profile, .nirs4all_portable_owner_profile) ||
+      !identical(response$profile, profile) ||
       !(is.character(response$mode) && length(response$mode) == 1L &&
         response$mode %in% c("training", "single_holdout")))
     stop("unsupported portable owner response schema, profile or mode", call. = FALSE)
   integers <- function(value) as.integer(unlist(value, use.names = FALSE))
   numbers <- function(value) as.numeric(unlist(value, use.names = FALSE))
-  variant <- function(entry) list(
-    n_components = if (is.null(entry$n_components)) NA_integer_ else
-      as.integer(entry$n_components),
-    rmse = as.numeric(need(entry$rmse, "rmse")),
-    predictions = numbers(need(entry$predictions, "predictions")),
-    params = entry$params, ordinal = entry$ordinal, variant_id = entry$variant_id)
+  decode <- function(value) {
+    if (!classification) return(numbers(value))
+    if (is.null(class_values))
+      stop("the class domain of this dataset is owner-defined and cannot be decoded by R",
+           call. = FALSE)
+    ids <- integers(value)
+    labels <- class_values[ids + 1L]
+    if (anyNA(ids) || any(ids < 0L) || anyNA(labels))
+      stop("owner returned a class id outside the declared class domain", call. = FALSE)
+    unname(labels)   # as the legacy render_labels: values only, never input names
+  }
+  variant <- function(entry) {
+    head <- list(n_components = if (is.null(entry$n_components)) NA_integer_ else
+      as.integer(entry$n_components))
+    score <- if (classification)
+      list(accuracy = as.numeric(need(entry$accuracy, "accuracy"))) else
+      list(rmse = as.numeric(need(entry$rmse, "rmse")))
+    out <- c(head, score, list(predictions = decode(need(entry$predictions, "predictions")),
+      params = entry$params, ordinal = entry$ordinal, variant_id = entry$variant_id))
+    # Optional owner block widths of the feature join (feature-branch profile
+    # only): object keyed by join id, ordered {branch_id, column_count}; copied
+    # untouched, never computed, relabelled or rehashed here.
+    if (!is.null(entry$feature_blocks)) out$feature_blocks <- entry$feature_blocks
+    out
+  }
   split <- need(response$split, "split")
   evaluation <- need(response$evaluation, "evaluation")
-  list(name = response$name, rows = as.integer(need(response$rows, "rows")),
+  result <- list(name = response$name, rows = as.integer(need(response$rows, "rows")),
        cols = as.integer(need(response$cols, "cols")),
        split = list(kind = split$kind, trainIndices = integers(split$trainIndices),
                     testIndices = integers(split$testIndices)),
        preprocessing = response$preprocessing,
        variants = lapply(need(response$variants, "variants"), variant),
        selected = variant(need(response$selected, "selected")),
-       targets = numbers(need(response$targets, "targets")),
+       targets = decode(need(response$targets, "targets")),
        evaluation = list(scope = evaluation$scope,
                          independent_test = evaluation$independent_test),
        mode = response$mode, identities = response$identities, owner = response$owner,
@@ -239,12 +275,21 @@
                       owner_profile = response$owner_profile,
                       residual = character(), reasons = character(),
                       next_seams = character()))
+  if (classification) {
+    result$unseen_validation_classes <- need(response$unseen_validation_classes,
+                                             "unseen_validation_classes")
+    result$class_values <- class_values
+  }
+  result
 }
 
-.nirs4all_portable_run_owner <- function(source, dataset, core_cli, methods_library) {
-  marshalled <- .nirs4all_portable_owner_dataset(dataset)
+.nirs4all_portable_run_owner <- function(source, dataset, core_cli, methods_library,
+                                         profile = .nirs4all_portable_owner_profile) {
+  classification <- identical(profile, .nirs4all_portable_owner_profile_classification)
+  marshalled <- .nirs4all_portable_owner_dataset(dataset, classification)
   if (is.null(core_cli)) core_cli <- marshalled$core_cli
-  request <- .nirs4all_portable_request(source, marshalled$payload)
+  request <- .nirs4all_portable_request(source, marshalled$payload, profile)
   .nirs4all_portable_project(.nirs4all_portable_owner_call(
-    "portable-pipeline-run", request, core_cli, methods_library))
+    "portable-pipeline-run", request, core_cli, methods_library),
+    profile, marshalled$class_values)
 }

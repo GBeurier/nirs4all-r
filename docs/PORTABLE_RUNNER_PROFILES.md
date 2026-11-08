@@ -2,8 +2,12 @@
 
 Source-authored staging; not built, run or qualified. The Core operations named
 here are specified by the portable owner interface (`PUBLIC_API.md`, frozen
-2026-11-08) and are not claimed to exist in any installed build until the shared
-owner compilation wave has run.
+2026-11-08) and its classification addendum (width amendment, SHA-256
+`6cfbf341…dae1`); they are not claimed to exist in any installed build until the
+shared owner compilation wave has run. **The classification profile and the
+removal of the `classification` and `opls_solver` residual keys are a private
+source successor: they become live only after the matching owner classification
+and Methods OPLS/width gates pass, and R's own gates have not been run.**
 
 ## Implemented now: linear regression profile (`portable_linear_regression.v1`)
 
@@ -53,9 +57,71 @@ dataset's own `core_cli`, `NIRS4ALL_CORE_CLI`, then `PATH`. Methods library:
 
 | Input | Forwarded | Notes |
 | --- | --- | --- |
-| `list(X, y[, rows, cols])` (matrix, nested or flat X) | `X`, `y` | Row-scoped positional execution IDs (`position:0`, …) assigned by the owner. Row names are not identity. No groups. |
+| `list(X, y[, rows, cols])` (matrix, nested or flat X) | `X`, `y` | Row-scoped positional execution IDs (`position_0`, …) assigned by the owner. Row names are not identity. No groups. |
 | `nirs4all_from_formats()` object | `X`, `y`, `sample_ids`, `axis` (`kind`, `unit`, `signal_type`, `wavelengths`), and when present `metadata`, `provenance` | Declared IDs and axis facts at 17 significant digits. `metadata`/`provenance` are the dense-contract arrays: one opaque JSON object or list per row (empty allowed), in X/`sample_ids` order, passed unchanged; they are not groups or identity and are never folded into `axis`. The owner refuses a length that differs from X. `formats` stays in R. **B pending:** the exact owner-result field that carries this context back is not published in `PUBLIC_API.md`; R projects `identities` and `owner` unchanged and invents no key. |
 | `nirs4all_dataset()` record object | the complete IO record | Projected by the owner's IO provider (single finite source, declared IDs). Masks, multiple sources or targets, non-train partitions, declared folds, groups or repetitions are refused by the owner by name. Nothing is reassembled in R. |
+
+## Classification profile (`portable_linear_classification.v1`; source-only)
+
+A recipe whose terminal model is `n4m.SparsePLSDA` (preprocessing chain,
+optional Kennard-Stone holdout, inclusive `n_components` range, `sparsity_lambda`)
+runs through the same two commands; R sends `profile =
+"portable_linear_classification.v1"` and the complete original document. The
+owner admits it, runs bank v2 (`single_resampled_holdout_bank.v2` /
+`training_bank.v2`, native accuracy, maximized, first-candidate ties) and returns
+`variants[].accuracy`, `selected`, class-id `predictions`/`targets` and
+`unseen_validation_classes`. R computes no score, winner, argmax, softmax,
+intercept or class count, and has no fallback.
+
+- **Codec (existing R, unchanged).** Factor/character targets: `id =
+  as.integer(factor) - 1L` in R's own level order (a factor's unsorted levels are
+  kept; a character vector is factored alphabetically). Numeric codes: `id =
+  match(y, sort(unique(y))) - 1L`, keeping the integer or double type. The dense
+  `y` carries only these nonnegative integral ids; there is **no** class-label or
+  domain field on the wire. Class names and the numeric type stay in R
+  (`result$class_values`) and the owner's ids are decoded by the lookup
+  `class_values[id + 1L]`. An id outside the domain is an error.
+- **Reports.** `result$unseen_validation_classes` is the owner's
+  `[{class_id, count, sample_ids}]`, copied untouched (identical to
+  `result$owner$evidence$unseen_validation_classes`). It lists *evaluated* rows
+  whose class is outside the fitted classifier's domain and can be nonempty in
+  both holdout and training mode (for example after a training sample filter);
+  those rows stay evaluated and count as errors. Recorded behavior change: the
+  old local runner could predict an absent class through the kernel's empty
+  indicator column; the owner cannot. This is not a claim of universal parity.
+- **Datasets.** Plain lists and Formats-backed datasets (declared `sample_ids`,
+  `axis`, `metadata`, `provenance`) are marshalled as for regression with the
+  codec above. A record-backed dataset is forwarded unchanged and refused by the
+  owner by name until Core carries IO `y_categorical` class labels; R parses no
+  record.
+- **Width.** `n_components ≤ min(n_fit − 1, p_transformed)` is enforced by the
+  Methods classifier after the preprocessors are trained (pending Methods
+  qualification); there is no R-side transform whitelist or width predictor.
+
+## Feature branch profile (`portable_feature_regression.v1`; source-only)
+
+A regression recipe with `branch` immediately followed by `merge: "features"` and
+a terminal model (preprocessing may precede and follow the merge; optional
+Kennard-Stone on raw X) is owner-executed: DAG compiles the original definition
+into per-estimator native nodes, a native `controller:n4m.feature_join` and the
+terminal model (profile `portable_feature_regression.v1`, owner profile
+`feature_graph.v1`, banks `single_resampled_holdout_graph_bank.v1` /
+`training_graph_bank.v1`). R sends the **complete original definition unchanged**
+(branch names and their object order, array form, `{name, steps}` entries,
+parameters, merge) and the explicit profile; it flattens, reorders and runs
+nothing locally. Every branch is fitted on the same training rows only and the
+join concatenates branch columns in declared order (Methods owns selector column
+order). The result keeps the linear fields; where the owner supplies them,
+`variants[].feature_blocks` and `selected$feature_blocks` are copied untouched:
+objects keyed by join node id holding ordered `{branch_id, column_count}`. R
+computes no widths, fabricates no merged feature labels or wavelength axis
+(`identities$axis` still describes the original input), and the profile offers
+no fitted model, deployment or cold replay.
+
+**Limits.** A feature branch combined with a classifier, training augmentation
+or extra fit inputs stays a declared residual (below); R's source refusals
+(for example augmentation with a branch) are kept. Owner errors are errors.
+Live activation waits for the owner graph gates; R's gates have not been run.
 
 ## Temporary residual B01 table
 
@@ -67,14 +133,17 @@ frozen reference and not DAG/native parity. B01 is not closed by this batch.
 
 | Key | Source reason (current) | Required next owner seam |
 | --- | --- | --- |
-| `classification` | `n4m.SparsePLSDA`, accuracy and ordered class labels: bank v1 selects on RMSE only and the native 1.1.0 `pipeline_steps_v1` controller is regression-only. | Classifier variant of the 1.1.0 controller (labels, exact class order) and an independently versioned bank v2 profile selecting on accuracy, maximized. |
-| `feature_branch` | `branch` + `merge: features`: RolePipeline has no topology role and the bank admits a single `N4mRolePipeline` target node. | Owner topology support for feature branches in the portable bank. |
+| `feature_branch` (only when combined with a classifier, `train_augmentation` or `extra_fit_inputs`) | `branch` + `merge: features` with one of those: the owner graph profile qualifies regression feature branches only. | Combined owner profile (graph classification, augmentation or fit-input transport) once each qualifies. |
 | `train_augmentation` | RolePipeline has no augmenter role and DAG native roles exclude augmenters. | Owner fit-population augmenter support. |
-| `opls_solver` | PLS `algo = "opls_nipals"`: R executes the existing `N4M_ALGO_OPLS` kernel, but the generic RolePipeline regressor `models.pls.pls_regression` fixes `N4M_ALGO_PLS_REGRESSION` (`linear_adapters.cpp:358–363`) and exposes no OPLS role. Every other PLS `algo` stays on the owner route. | Methods owner exposes the existing OPLS path as a generic RolePipeline regressor (`methods-opls-role-20261108`) and DAG lowers it; remove this key when the role is qualified. No PLS NIPALS substitution. |
 | `extra_fit_inputs` | `n4m.MBPLS` `block_sizes` and `n4m.GroupSparsePLS` `group_assignment`: transport of these extra fit inputs through the controller is not shown in source. | Owner manifest admission of these parameters; move the key to the owner route when the plan operation admits it. |
 
-A recipe may carry several keys. A record-backed dataset with a residual profile
-is refused by name (no X/y is invented).
+A recipe may carry several keys. A classifier or an `opls_nipals` model combined
+with one of these keys stays residual through *that* key until its topology,
+augmentation or extra-input profile qualifies; it is never split or flattened.
+`opls_nipals` (Methods role `models.pls.opls`, flags forwarded from the original
+document, no solver substitution) is on the owner route in this successor; the R
+OPLS gate has not been run. A record-backed dataset with a residual profile is
+refused by name (no X/y is invented).
 
 ## Tests (authored, not executed)
 
@@ -83,17 +152,32 @@ is refused by name (no X/y is invented).
   winner is deliberately not the minimum RMSE) and error propagation. Transport
   only; no scientific claim. POSIX.
 - `tests/portable-residual-dispatch.R`: declared dispatch, exact residual table
-  (including `opls_solver`, with other PLS solvers staying on the owner route),
-  a failing stub proves residual recipes never reach the owner and linear
-  failures never reroute.
+  (a branch with a classifier, training augmentation, extra fit inputs; classifier,
+  OPLS and feature-branch-alone recipes are owner-routed), a failing stub proves residual recipes never reach
+  the owner and linear failures never reroute.
+- `tests/portable-owner-classification-transport.R`: stub-only codec and
+  projection checks of the classification profile (unsorted factor levels, integer
+  and double codes, ids-only wire without any label field, training-mode unseen
+  report, Formats metadata/provenance, original-document edits, plan operation,
+  OPLS flags, record-backed refusal, boundary refusals). No fit; no parity claim.
+- `tests/portable-owner-classification.R`: real Core CLI classification profile
+  (same two prerequisites, not executed).
+- `tests/portable-owner-branch-transport.R`: stub-only checks of the feature
+  branch profile (exact profile, non-alphabetical object order in the sent bytes,
+  `feature_blocks` passthrough, plan operation, residual combinations, owner
+  error without fallback). No fit; no parity claim.
+- `tests/portable-owner-branch.R`: real Core CLI feature-branch profile (same two
+  prerequisites, not executed); `portable-branch-merge.R` (unchanged) now runs its
+  branch recipe through the owner route once the graph gates pass.
 - `tests/portable-owner-linear.R`: real Core CLI profile; needs `NIRS4ALL_CORE_CLI`
   and `N4M_LIB_PATH` (`NIRS4ALL_REQUIRE_CORE_PORTABLE=1` makes absence fail).
 - Existing runner-calling tests (`portable-json-yaml`, `portable-n4m-preprocessing`,
   `portable-affine-methods`, `spa-selection`, `strict-inputs`) are unchanged and
   now exercise the owner route for their linear recipes; they need the same two
   prerequisites. `portable-branch-merge`, `portable-train-augmentations`,
-  `portable-mbpls`, `portable-group-sparse-pls` and `n4m-classification` exercise
-  the residual route. `tests/python-oracle.R` does not call the runner and is
+  `portable-mbpls` and `portable-group-sparse-pls` exercise the residual route;
+  `n4m-classification` (unchanged) runs its non-branch classifier recipes through
+  the owner classification route once the owner gates pass. `tests/python-oracle.R` does not call the runner and is
   frozen with its oracle JSON.
 
 Platform: Linux/R. Octave/MATLAB are separate bindings and are not qualified here.

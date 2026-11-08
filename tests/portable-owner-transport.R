@@ -301,11 +301,11 @@ stopifnot(identical(local_plan$admission, "source_preflight"),
           !file.exists(file.path(capture, "args")), is.null(local_plan$owner))
 
 # 7. Residual profiles are never sent to the owner, even when a CLI is supplied.
-residual <- nirs4all_export_pipeline(nirs4all_pipeline(list(nirs4all_snv()),
-  nirs4all_sparse_pls_da(2L)))
+residual <- nirs4all_export_pipeline(nirs4all_pipeline(list(nirs4all_concat(list(
+  a = list(nirs4all_snv()), b = list(nirs4all_msc())))), nirs4all_sparse_pls_da(2L)))
 reset(); residual_plan <- nirs4all_parse_execution_plan(residual, core_cli = stub)
 stopifnot(identical(residual_plan$admission, "residual_b01_local"),
-          identical(residual_plan$profile$residual, "classification"),
+          identical(residual_plan$profile$residual, "feature_branch"),
           !file.exists(file.path(capture, "args")))
 
 # 8. Owner failure and unavailability are errors: no local rerun, no reroute.

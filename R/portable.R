@@ -519,7 +519,7 @@ nirs4all_parse_execution_plan <- function(source, core_cli = NULL) {
     "residual_b01_local" else "source_preflight"
   if (!is.null(core_cli) && identical(plan$profile$route, "owner")) {
     plan$owner <- .nirs4all_portable_owner_call("portable-pipeline-plan",
-      .nirs4all_portable_request(source), core_cli)
+      .nirs4all_portable_request(source, NULL, plan$profile$name), core_cli)
     plan$admission <- "owner"
   }
   plan
@@ -957,16 +957,24 @@ nirs4all_portable_dataset <- function(dataset, classification = FALSE) {
 #' Run a portable Python-style JSON/YAML pipeline on R data
 #'
 #' The declared profile decides the route before any execution. Linear
-#' regression recipes (n4m preprocessing chain, PLS or an affine n4m model,
-#' optional Kennard-Stone holdout) are admitted, split, fitted, scored and
-#' selected by the Core owner operation `portable-pipeline-run` (DAG
-#' single-holdout bank or its training sibling, Methods kernels); R only
-#' serializes the complete original document and dataset and projects the
-#' owner result. There is no R fallback for that profile: a missing Core CLI or
-#' Methods library, or any owner refusal, is an error. Classification,
-#' feature branches, training augmentations, models with extra fit inputs and
-#' the PLS algorithm `opls_nipals` are the named temporary residual B01
-#' profiles: they keep the existing local R
+#' regression recipes (n4m preprocessing chain, PLS including `opls_nipals`, or
+#' an affine n4m model, optional Kennard-Stone holdout) and SparsePLS-DA
+#' classification recipes are admitted, split, fitted, scored and selected by the
+#' Core owner operation `portable-pipeline-run` (DAG single-holdout bank or its
+#' training sibling, Methods kernels); R only serializes the complete original
+#' document and dataset and projects the owner result. Classification sends
+#' R's existing class codes as nonnegative integer ids on the dense `y` wire and
+#' looks the returned ids up in its own class domain (`class_values`); accuracy,
+#' winner and `unseen_validation_classes` come from the owner. There is no R
+#' fallback for these profiles: a missing Core CLI or Methods library, or any
+#' owner refusal, is an error. A regression feature branch
+#' (`branch` + `merge: features` + terminal model, profile
+#' `portable_feature_regression.v1`) is owner-executed on the DAG per-estimator
+#' graph with a native feature join; its optional `feature_blocks` widths are
+#' copied from the owner. Training augmentations, models with extra fit inputs
+#' and a feature branch combined with a classifier (or with either of those) are
+#' the named temporary residual B01 profiles (including their classification
+#' variants): they keep the existing local R
 #' execution, selected by `result$profile`, never by catching an owner error.
 #' See `docs/PORTABLE_RUNNER_PROFILES.md`. Selection on the holdout is *not* an
 #' independent test estimate; without a splitter the scope is `training`. For
@@ -974,8 +982,8 @@ nirs4all_portable_dataset <- function(dataset, classification = FALSE) {
 #' @param source Definition accepted by [nirs4all_load_pipeline()].
 #' @param dataset List with `X`, `y` and optional `rows`/`cols`, a
 #'   `nirs4all_dataset` from [nirs4all_from_formats()], or a record-backed
-#'   `nirs4all_dataset()` (single finite source, owner projection; linear
-#'   profile only).
+#'   `nirs4all_dataset()` (single finite source, owner projection; the owner
+#'   refuses it by name for classification until Core carries IO class labels).
 #' @param core_cli Optional `nirs4all-core-archive` executable. Defaults to the
 #'   record-backed dataset's own CLI, `NIRS4ALL_CORE_CLI`, then `PATH`.
 #' @param methods_library Optional absolute path of `libn4m`. Defaults to
@@ -990,7 +998,8 @@ nirs4all_run_portable_pipeline <- function(source, dataset, core_cli = NULL,
   plan <- nirs4all_parse_execution_plan(definition)
   if (identical(plan$profile$route, "residual_b01"))
     return(nirs4all_portable_run_residual(definition, plan, dataset))
-  .nirs4all_portable_run_owner(source, dataset, core_cli, methods_library)
+  .nirs4all_portable_run_owner(source, dataset, core_cli, methods_library,
+                               plan$profile$name)
 }
 
 # Temporary residual B01 execution: the unchanged local R runner. Reached only
@@ -1000,7 +1009,7 @@ nirs4all_portable_run_residual <- function(definition, plan, dataset) {
       !is.null(dataset$record))
     stop(paste0("residual B01 profile (", paste(plan$profile$residual, collapse = ", "),
                 ") needs X and y; a record-backed nirs4all_dataset is supported ",
-                "only by the owner-executed linear regression profile"),
+                "only by the owner-executed linear profiles"),
          call. = FALSE)
   classification <- identical(plan$learner$learner, "sparse_pls_da")
   data <- nirs4all_portable_dataset(dataset, classification)
