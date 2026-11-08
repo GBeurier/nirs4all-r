@@ -1,10 +1,11 @@
 # Declared-profile dispatch of nirs4all_run_portable_pipeline().
 #
-# Linear regression (including opls_nipals), SparsePLS-DA classification and
-# regression feature-branch recipes go to the Core owner operation; training
-# augmentations, models with extra fit inputs and a feature branch combined with
-# a classifier or with either of those are the named temporary residual B01
-# profiles and keep the unchanged local R execution. The route is chosen from the parsed recipe BEFORE execution, never
+# Linear regression (including opls_nipals), SparsePLS-DA classification,
+# regression feature-branch recipes and standalone regression training
+# augmentation / MBPLS block_sizes / GroupSparsePLS group_assignment go to the
+# Core owner operation; a classifier with augmentation and a feature branch with a
+# classifier or fit inputs are the named temporary residual B01 profiles and keep
+# the unchanged local R execution. The route is chosen from the parsed recipe BEFORE execution, never
 # by catching an owner error. Every residual entry is a required later
 # migration, not a parity claim. No Core CLI is needed here: a failing stub
 # proves that residual recipes never reach the owner.
@@ -57,21 +58,47 @@ stopifnot(identical(feature$route, "owner"),
           identical(feature$name, "portable_feature_regression.v1"),
           !length(feature$residual))
 
-# Residual profiles, each with its exact declared key, source reason and seam.
-cases <- list(
-  train_augmentation = nirs4all_pipeline(learner = nirs4all_pls(2L), augmentations =
+# Standalone regression training augmentation and extra fit inputs: owner route
+# with the existing graph profile (the owner types values and supplies the feature
+# axis inputs; R only forwards the original document).
+standalone <- list(
+  augmentation = nirs4all_pipeline(learner = nirs4all_pls(2L), augmentations =
     list(nirs4all_native_augmentation("gaussian_noise", 0.05, seed = 3))),
-  extra_fit_inputs = nirs4all_pipeline(learner = nirs4all_n4m_method("mb_pls", 2L,
-    list(block_sizes = c(4L, 4L, 4L)))))
-for (key in names(cases)) {
-  profile <- route(cases[[key]])
-  stopifnot(identical(profile$route, "residual_b01"),
-            identical(unname(profile$residual), key),
-            identical(unname(profile$reasons), residual_table[[key]]$reason),
-            identical(unname(profile$next_seams), residual_table[[key]]$next_seam))
+  mbpls = nirs4all_pipeline(learner = nirs4all_n4m_method("mb_pls", 2L,
+    list(block_sizes = c(4L, 4L, 4L)))),
+  group_sparse = nirs4all_pipeline(learner = nirs4all_group_sparse_pls(2L,
+    c(1L, 1L, 2L, 2L), 0.2)),
+  both = nirs4all_pipeline(learner = nirs4all_n4m_method("mb_pls", 2L,
+    list(block_sizes = c(4L, 4L, 4L))), augmentations =
+    list(nirs4all_native_augmentation("gaussian_noise", 0.05, seed = 3))))
+for (name in names(standalone)) {
+  profile <- route(standalone[[name]])
+  stopifnot(identical(profile$route, "owner"),
+            identical(profile$name, "portable_feature_regression.v1"),
+            !length(profile$residual))
 }
-group <- nirs4all_pipeline(learner = nirs4all_group_sparse_pls(2L, c(1L, 1L, 2L, 2L), 0.2))
-stopifnot(identical(unname(route(group)$residual), "extra_fit_inputs"))
+
+# Residual combinations, each with its exact declared keys, reasons and seams.
+branch_steps <- list(nirs4all_concat(list(a = list(nirs4all_snv()), b = list(nirs4all_msc()))))
+cases <- list(
+  train_augmentation = list(nirs4all_pipeline(learner = nirs4all_sparse_pls_da(2L),
+    augmentations = list(nirs4all_native_augmentation("gaussian_noise", 0.05, seed = 3))),
+    "train_augmentation"),
+  branch_mbpls = list(nirs4all_pipeline(branch_steps, nirs4all_n4m_method("mb_pls", 2L,
+    list(block_sizes = c(4L, 4L, 4L)))), c("feature_branch", "extra_fit_inputs")),
+  branch_group_sparse = list(nirs4all_pipeline(branch_steps,
+    nirs4all_group_sparse_pls(2L, c(1L, 1L, 2L, 2L), 0.2)),
+    c("feature_branch", "extra_fit_inputs")))
+for (name in names(cases)) {
+  profile <- route(cases[[name]][[1L]])
+  keys <- cases[[name]][[2L]]
+  stopifnot(identical(profile$route, "residual_b01"),
+            identical(unname(profile$residual), keys),
+            identical(unname(profile$reasons), unname(vapply(keys, function(key)
+              residual_table[[key]]$reason, ""))),
+            identical(unname(profile$next_seams), unname(vapply(keys, function(key)
+              residual_table[[key]]$next_seam, ""))))
+}
 
 # A branch combined with a classifier or another residual profile stays declared
 # residual through `feature_branch` (the combined owner profile is not qualified).
@@ -101,13 +128,14 @@ if (.Platform$OS.type != "windows") {
   X <- outer(seq_len(21L), seq_len(12L), function(s, b)
     sin(s * b / 9) + cos(s + b / 7) + s * b / 100)
   y <- 1.3 + 0.7 * X[, 2L] - 0.4 * X[, 6L]
-  mbpls <- nirs4all_pipeline(learner = nirs4all_n4m_method("mb_pls", 2L,
-    list(block_sizes = c(4L, 4L, 4L))))
+  # Feature branch + MBPLS (concat width 24): the unchanged local runner.
+  mbpls <- nirs4all_pipeline(branch_steps, nirs4all_n4m_method("mb_pls", 2L,
+    list(block_sizes = c(12L, 12L))))
   result <- nirs4all_run_portable_pipeline(nirs4all_export_pipeline(mbpls),
     list(X = X, y = y), core_cli = stub)
   stopifnot(!file.exists(file.path(capture, "called")),
             identical(result$profile$route, "residual_b01"),
-            identical(unname(result$profile$residual), "extra_fit_inputs"),
+            identical(unname(result$profile$residual), c("feature_branch", "extra_fit_inputs")),
             identical(result$evaluation, list(scope = "training", independent_test = FALSE)),
             max(abs(result$selected$predictions -
                     predict(nirs4all_fit(mbpls, X, y), X))) < 1e-10)

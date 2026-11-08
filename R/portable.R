@@ -160,16 +160,31 @@ nirs4all_portable_parse_text <- function(value, extension = "", lists = FALSE) {
   nirs4all_portable_parse_yaml(value, lists)
 }
 
+# yaml turns a plain decimal integer into a 32-bit R integer, so a seed above
+# 2^31 - 1 (valid up to 2^53 - 1) would become NA. The documented `int` handler
+# (yaml vignette: handlers are keyed by YAML type) receives the scalar text: an
+# in-range integer stays an R integer exactly as before, a larger one becomes the
+# exact double, and any other text (e.g. digit-group forms) raises, which makes
+# yaml use its own default conversion for it. No YAML lexer or seed rule here.
+nirs4all_portable_yaml_int <- function(x) {
+  number <- suppressWarnings(as.numeric(x))
+  if (length(number) != 1L || is.na(number))
+    stop("not a plain decimal integer", call. = FALSE)
+  if (abs(number) <= .Machine$integer.max) as.integer(number) else number
+}
+
 # `lists = TRUE` keeps every YAML sequence a list, and an explicit empty mapping
 # `{}` a named empty list, so that the complete original document (one-element
 # arrays and `{}` versus `[]` included) reaches the owner unchanged.
 nirs4all_portable_parse_yaml <- function(value, lists = FALSE) {
   if (isTRUE(lists))
     return(yaml::yaml.load(value, eval.expr = FALSE, handlers = list(
+      int = nirs4all_portable_yaml_int,
       seq = function(items) items,
       map = function(items) if (length(items)) items else
         structure(list(), names = character()))))
-  parsed <- yaml::yaml.load(value, eval.expr = FALSE)
+  parsed <- yaml::yaml.load(value, eval.expr = FALSE,
+                            handlers = list(int = nirs4all_portable_yaml_int))
   # yaml normally collapses a one-element numeric sequence to a scalar. Keep
   # only augmentation `values` as a list so a scalar cannot impersonate the
   # required positional array; leave all historical recipe nodes unchanged.
@@ -180,7 +195,8 @@ nirs4all_portable_parse_yaml <- function(value, lists = FALSE) {
       is.list(node) && "train_augmentation" %in% names(node), logical(1))))
     return(parsed)
   shaped <- yaml::yaml.load(value, eval.expr = FALSE,
-                            handlers = list(seq = function(items) items))
+                            handlers = list(int = nirs4all_portable_yaml_int,
+                                            seq = function(items) items))
   shaped_nodes <- if (nirs4all_portable_named(shaped))
     nirs4all_portable_or(shaped$pipeline, shaped$steps) else shaped
   for (index in seq_along(nodes)) {
@@ -971,10 +987,13 @@ nirs4all_portable_dataset <- function(dataset, classification = FALSE) {
 #' (`branch` + `merge: features` + terminal model, profile
 #' `portable_feature_regression.v1`) is owner-executed on the DAG per-estimator
 #' graph with a native feature join; its optional `feature_blocks` widths are
-#' copied from the owner. Training augmentations, models with extra fit inputs
-#' and a feature branch combined with a classifier (or with either of those) are
-#' the named temporary residual B01 profiles (including their classification
-#' variants): they keep the existing local R
+#' copied from the owner. A standalone regression `train_augmentation` prefix
+#' and/or an MBPLS `block_sizes` / GroupSparsePLS `group_assignment` terminal take
+#' the same profile and are sent unchanged (values, seeds and arrays as declared;
+#' the owner resolves the augmenters, types the values and supplies the feature
+#' axis inputs). A classifier with training augmentation, and a feature branch
+#' with a classifier, augmentation or fit inputs, are the named temporary
+#' residual B01 profiles: they keep the existing local R
 #' execution, selected by `result$profile`, never by catching an owner error.
 #' See `docs/PORTABLE_RUNNER_PROFILES.md`. Selection on the holdout is *not* an
 #' independent test estimate; without a splitter the scope is `training`. For

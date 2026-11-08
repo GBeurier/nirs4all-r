@@ -124,11 +124,13 @@ stopifnot(identical(spa_result$split$trainIndices, as.integer(split$train)),
           max(abs(spa_result$selected$predictions -
                   predict(nirs4all_fit(spa_manual, X[train, , drop = FALSE], y[train]),
                           X[test, , drop = FALSE]))) < 1e-10)
+# The owner's join widths are a promised, mandatory result of this known profile:
+# declared (non-alphabetical) order selected then original, widths 4 and 8.
 spa_blocks <- spa_result$selected$feature_blocks
-if (!is.null(spa_blocks))
-  stopifnot(identical(vapply(spa_blocks[[1L]], `[[`, "", "branch_id"),
-                      c("selected", "original")),
-            identical(vapply(spa_blocks[[1L]], `[[`, integer(1), "column_count"), c(4L, 8L)))
+stopifnot(!is.null(spa_blocks),
+          identical(vapply(spa_blocks[[1L]], `[[`, "", "branch_id"),
+                    c("selected", "original")),
+          identical(vapply(spa_blocks[[1L]], `[[`, integer(1), "column_count"), c(4L, 8L)))
 
 # 5. Anonymous array form: default branch names, same predictions as the object form.
 anonymous <- recipe

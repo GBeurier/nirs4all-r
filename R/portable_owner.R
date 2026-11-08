@@ -11,12 +11,17 @@
 
 .nirs4all_portable_owner_profile <- "portable_linear_regression.v1"
 # Classification (terminal n4m.SparsePLSDA): bank v2 selects on native accuracy.
-# Source-only successor: live activation waits for the owner classification gates.
+# Executed on Linux against the current native cohort (classification, graph and
+# OPLS R gates); not a universal or full-B01 claim.
 .nirs4all_portable_owner_profile_classification <- "portable_linear_classification.v1"
-# Regression feature branch -> merge: features -> terminal model (owner profile
-# `feature_graph.v1`: DAG per-estimator graph + native feature join). Source-only
-# successor: live activation waits for the owner graph gates. The complete
-# original definition is forwarded; topology, order and parameters stay owner work.
+# Regression feature branch -> merge: features -> terminal model, and standalone
+# regression train augmentation / MBPLS block_sizes / GroupSparsePLS
+# group_assignment (owner profile `feature_graph.v1`: DAG per-estimator graph; the
+# join exists only for a branch). The feature-branch part was executed on Linux
+# against the current native cohort; the standalone train-augmentation and
+# MBPLS/GroupSparsePLS fit-input part is still source-only, awaiting the next
+# pooled wave. The complete original definition is forwarded: topology,
+# augmentation kinds/values/seeds, fit-input arrays and parameters stay owner work.
 .nirs4all_portable_owner_profile_feature <- "portable_feature_regression.v1"
 
 # Temporary residual B01: profiles declared by the parsed recipe that the
@@ -32,15 +37,15 @@
       "fit-input transport) once each qualifies; a feature branch alone is",
       "owner-executed.")),
   train_augmentation = list(
-    reason = paste("train_augmentation: RolePipeline has no augmenter role and",
-      "DAG native roles exclude augmenters."),
-    next_seam = "Owner fit-population augmenter support."),
+    reason = paste("train_augmentation combined with a classifier: the owner graph",
+      "profile portable_feature_regression.v1 qualifies regression only",
+      "(standalone regression augmentation is owner-executed)."),
+    next_seam = "Graph classification profile; then drop this combination."),
   extra_fit_inputs = list(
-    reason = paste("n4m.MBPLS block_sizes and n4m.GroupSparsePLS group_assignment:",
-      "transport of these extra fit inputs through the pipeline_steps_v1",
-      "controller is not shown in source."),
-    next_seam = paste("Owner manifest admission of these parameters; move the",
-      "profile to the owner route once the plan operation admits it.")))
+    reason = paste("n4m.MBPLS block_sizes / n4m.GroupSparsePLS group_assignment",
+      "combined with a feature branch: the owner graph profile refuses fit inputs",
+      "with a branch (standalone regression fit inputs are owner-executed)."),
+    next_seam = "Owner branch plus fit-input profile once it qualifies."))
 
 .nirs4all_portable_profile <- function(plan) {
   learner <- plan$learner
@@ -51,13 +56,18 @@
     if (length(plan$augmentations)) "train_augmentation",
     if (identical(learner$learner, "n4m_method") &&
         learner$method %in% c("mb_pls", "group_sparse_pls")) "extra_fit_inputs")
-  # A feature branch alone (regression) is owner-executed; it stays declared
-  # residual only when combined with a classifier or another residual profile.
-  keys <- c(if (branch && (classifier || length(others))) "feature_branch", others)
+  # Standalone regression feature branch, train augmentation and fit inputs are
+  # owner-executed (profile portable_feature_regression.v1). Each of them stays a
+  # declared residual only in the combinations the owner refuses until a combined
+  # profile qualifies: with a classifier, or (augmentation / fit inputs) with a
+  # feature branch.
+  topology <- classifier || branch
+  keys <- c(if (branch && (classifier || length(others))) "feature_branch",
+            if (topology) others)
   if (!length(keys))
     return(list(route = "owner",
                 name = if (classifier) .nirs4all_portable_owner_profile_classification else
-                  if (branch) .nirs4all_portable_owner_profile_feature else
+                  if (branch || length(others)) .nirs4all_portable_owner_profile_feature else
                   .nirs4all_portable_owner_profile,
                 residual = character(), reasons = character(),
                 next_seams = character()))
