@@ -7,16 +7,17 @@
 nirs4all_multimodal_archive_predict <- function(path, dataset,
     core_cli = Sys.which("nirs4all-core-archive"), dag_cli = Sys.which("dag-ml-cli"),
     workdir = tempfile("nirs4all-raw-archive-"),
-    adapter_script = system.file("adapters", "nirs4all_core_multimodal_adapter.R", package = "nirs4all")) {
+    adapter_script = system.file("adapters", "nirs4all_core_multimodal_adapter.R", package = "nirs4all"),
+    entrypoint = NULL) {
   if (missing(core_cli) && inherits(dataset, "nirs4all_dataset")) core_cli <- dataset$core_cli
   ds <- nirs4all_dataset(dataset, core_cli)
-  archive <- nirs4all_core_archive(path, ds$core_cli)
+  archive <- nirs4all_core_archive(path, ds$core_cli, entrypoint = entrypoint)
   workdir <- .nirs4all_core_workdir(workdir)
   input <- .nirs4all_core_contract(ds$record, file.path(workdir, "dataset.json"), "public dataset")
   prepared_path <- file.path(workdir, "prepared.json")
   native_dir <- file.path(workdir, "native-inputs")
   .nirs4all_core_run(ds$core_cli, c("multimodal-replay-inputs", "--archive", archive$path,
-    "--input", input, "--output", prepared_path, "--workdir", native_dir), workdir)
+    .nirs4all_core_entrypoint(archive$entrypoint), "--input", input, "--output", prepared_path, "--workdir", native_dir), workdir)
   prepared <- jsonlite::fromJSON(prepared_path, simplifyVector = FALSE)
   adapter_script <- .nirs4all_core_path(adapter_script, "Installed raw R adapter")
   rscript <- .nirs4all_core_path(file.path(R.home("bin"), "Rscript"), "Rscript", executable = TRUE)

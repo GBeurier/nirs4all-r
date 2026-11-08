@@ -50,17 +50,30 @@ if (!nzchar(manifest_path)) {
   }
   for (case in fixtures$cases) {
     archive <- nirs4all_core_archive(case$archive, core_cli = core)
-    stopifnot(identical(as.integer(archive$archive$schema_version), as.integer(case$archive_version)))
+    # archive_version in the fixture manifest is the Package schema (2/3); the
+    # physical container is Core N4a V1.
+    stopifnot(identical(archive$archive$schema_version, 1L),
+              identical(archive$archive$profile, "native-methods-package"),
+              identical(as.integer(archive$archive$package_schema_version),
+                        as.integer(case$archive_version)),
+              identical(archive$archive$archive_sha256,
+                        digest::digest(file = case$archive, algo = "sha256", serialize = FALSE)))
     original <- digest::digest(file = case$archive, algo = "sha256", serialize = FALSE)
-    package_ref <- if (case$archive_version == 2L)
-      archive$archive$replay$portable_predictor_package else
-      archive$archive$replay$portable_refit_package
+    # Core reports the verified physical root member; R neither orders members
+    # nor maps logical package URIs to physical paths.
     package_path <- tempfile(fileext = ".json")
+    entry_args <- if (is.null(archive$entrypoint)) character() else
+      c("--entrypoint", archive$entrypoint)
     status <- system2(core, vapply(c("read-member", "--archive", archive$path,
-      "--expected-archive-sha256", archive$archive$archive_sha256,
-      "--member", package_ref$member_path, "--output", package_path), shQuote, character(1)))
-    stopifnot(identical(status, 0L), identical(
-      digest::digest(file = package_path, algo = "sha256", serialize = FALSE), package_ref$raw_sha256))
+      "--expected-archive-sha256", archive$archive$archive_sha256, entry_args,
+      "--member", archive$archive$package_member, "--output", package_path), shQuote, character(1)))
+    # The actual root bytes must hash to exactly one receipt inventory entry.
+    matches <- Filter(function(m) identical(m$path, archive$archive$package_member),
+                      archive$archive$receipt$members)
+    stopifnot(identical(status, 0L), length(matches) == 1L)
+    expected_member_sha <- sub("^sha256:", "", matches[[1L]]$sha256)
+    stopifnot(grepl("^[0-9a-f]{64}$", expected_member_sha), identical(
+      digest::digest(file = package_path, algo = "sha256", serialize = FALSE), expected_member_sha))
     unlink(package_path)
     adapter <- make_adapter(case)
     outcome <- run(case, archive, adapter)

@@ -1,0 +1,6 @@
+\name{nirs4all_execution_profiles}
+\alias{nirs4all_execution_profiles}
+\title{Native execution profiles and the R federation record}
+\usage{nirs4all_execution_profiles()}
+\value{A fresh list decoded from the embedded registry; modifying it never changes later calls.}
+\description{Returns the profile registry published by nirs4all-core (\code{nirs4all-core.execution-profiles.v1}). It declares five native profiles at version 1: \code{native-workflow@1}, \code{native-conformal@1}, \code{native-methods-package@1}, \code{native-n4a-canonical@1} and \code{n4a-container@1}, with per-operation \code{supported}/\code{unsupported} entries (compile, fit, predict, import, export) for each Core runtime surface, per-surface runtime requirements, and the current content declared per operation, surface and route (\code{content_routes}): which route returns a host object, which carries the Core wrapper JSON schema id \code{nirs4all.calibrated.v1}, and which transfers the native archive V2 bytes. \code{external_federation} holds the record for this package, which is outside Core's runtime surfaces and references those five profiles. The entries are a metadata contract: readability, execution support and scientific qualification are separate, and it is not a numerical certification.}

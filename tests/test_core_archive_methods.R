@@ -56,7 +56,14 @@ if (!nzchar(manifest_path)) {
   }
   for (case in fixtures$cases) {
     archive <- nirs4all_core_archive(case$archive, core_cli = core)
-    stopifnot(identical(as.integer(archive$archive$schema_version), as.integer(case$archive_version)))
+    # archive_version in the fixture manifest is the Package schema (2/3); the
+    # physical container is Core N4a V1.
+    stopifnot(identical(archive$archive$schema_version, 1L),
+              identical(archive$archive$profile, "native-methods-package"),
+              identical(as.integer(archive$archive$package_schema_version),
+                        as.integer(case$archive_version)),
+              identical(archive$archive$archive_sha256,
+                        digest::digest(file = case$archive, algo = "sha256", serialize = FALSE)))
     original <- digest::digest(file = case$archive, algo = "sha256", serialize = FALSE)
     data <- read_json(case$oracle_data_path)
     stopifnot(identical(data$family, case$family), data$n_components == 1L, identical(data$scale, TRUE))

@@ -67,6 +67,111 @@ Core archive replay are separate profiles, qualified independently; the new
 release does not turn arbitrary historical process captures into supported
 archives.
 
+Canonical V1 `.n4a` containers (manifest schema `nirs4all.n4a.container.v1`)
+are a separate route from Core Archive V2/V3 and from the JSON Package
+functions, and the two never fall back to each other. Four thin file-based
+functions drive the `n4a-inspect`, `n4a-produce`, `n4a-predict` and
+`n4a-retrain` commands of `nirs4all-core-archive`:
+
+```r
+model <- nirs4all_n4a_produce(
+  "train.json", "recipe.json", "model.n4a",
+  methods_library = "/installed/lib/libn4m.so",
+  methods_library_sha256 = verified_methods_sha256,
+  embed_training_record = TRUE
+)
+nirs4all_n4a_inspect("model.n4a")$executability  # "not_evaluated"
+prediction <- nirs4all_n4a_predict(
+  model, "future.json", partition = "predict",
+  methods_library = "/installed/lib/libn4m.so",
+  methods_library_sha256 = verified_methods_sha256
+)
+prediction$values  # rownames = sample IDs, colnames = target names
+fresh <- nirs4all_n4a_retrain(model, "train-v2.json", "retrained.n4a",
+  methods_library = "/installed/lib/libn4m.so",
+  methods_library_sha256 = verified_methods_sha256)
+```
+
+Scope and requirements:
+
+- The functions need a `nirs4all-core-archive` that provides the `n4a-*`
+  commands (`core_cli` or `NIRS4ALL_CORE_CLI`); an older executable signals a
+  `nirs4all_n4a_unavailable` condition. Produce, predict and retrain also need
+  the real Methods library and its independently attested SHA-256; there is no
+  default hash and no fallback runtime.
+- Records are JSON **file paths**, so the owner reads the exact bytes; datasets
+  and lists are refused on this route.
+- Inspect reports readability only and never claims executability. Whether a
+  recipe, target count or profile can run is decided by the Core, DAG and
+  Methods owners, not by R; refusals are signalled as `nirs4all_n4a_refusal`
+  conditions carrying the native message.
+- Prediction never refits. Rows follow the physical record order, aligned once
+  by the owner-provided sample IDs, and the owner `replay` and `receipt` are
+  returned unchanged. Prediction on the embedded training record is in-sample.
+- Retrain calls the Core owner `retrain_n4a_native`: the source ID and the
+  validated stored recipe come from the container, so R accepts neither and runs
+  no training. The source is left untouched and owner errors are signalled
+  unchanged.
+- `tests/n4a-canonical.R` exercises the `standard_scale` + `ridge` recipe with
+  two ordered targets. It is one profile witness, not universal support, and it
+  prints an explicit `SKIP` unless `NIRS4ALL_CORE_CLI`, `N4M_LIBRARY_PATH`,
+  `N4M_EXPECTED_LIBRARY_SHA256` and `NIRS4ALL_N4A_FIXTURE_DIR` are set
+  (`NIRS4ALL_REQUIRE_CORE_N4A=1` makes that a failure). Linux only.
+
+Every `nirs4all_n4a_*` function accepts an optional `memory_budget_bytes`. It is
+forwarded to the CLI as the exact decimal text of `--memory-budget-bytes <u64>`
+and Core decides admission; `NULL` or `""` (the default) sends no flag, and R adds
+no cap, default or memory detection. Pass a whole number up to 2^53 - 1, or exact
+decimal text up to `"18446744073709551615"` for larger budgets; other values,
+including a double above 2^53 - 1 that may already have been rounded, are refused
+before any CLI call. Reports are decoded with `bigint_as_char = TRUE`, so large
+integers appear as strings in `report`, and `native_json` always holds the exact
+numbers. The flag is source-only until the shared campaign runs the real CLI.
+
+Owner-neutral exchange uses the same route and needs no Methods library:
+`nirs4all_n4a_write()` and `nirs4all_n4a_read()` store and return arbitrary data,
+recipes, results, scores and opaque host models as bytes.
+
+```r
+# manifest.json: exact manifest file. members.json: [{"path": ..., "file": ...}].
+w <- nirs4all_n4a_write("manifest.json", "members.json", "exchange.n4a")
+sha <- digest::digest("exchange.n4a", algo = "sha256", file = TRUE)
+r <- nirs4all_n4a_read("exchange.n4a", "extracted", expected_sha256 = sha,
+                       member = "models/host.bin")
+readBin(r$member_files[[1]], "raw", file.size(r$member_files[[1]]))  # exact bytes
+# Update: a new container; the base is verified, never modified or overwritten.
+u <- nirs4all_n4a_write("manifest.json", "changed-members.json", "v2.n4a",
+                        base = "exchange.n4a", base_sha256 = sha)
+```
+
+- Manifest, member list and members are **files**; R encodes, parses and
+  deserializes none of them, and lists are refused. Bytes (including NUL and
+  0xFF) and array shapes reach Core unchanged.
+- `nirs4all_n4a_read()` writes `member-000000.bin`, ... and the exact
+  `manifest.json` into a new directory. Paths inside the container are never
+  operating-system paths; the unchanged owner `report` maps files to archive
+  paths, and R relies on no particular report key.
+- An update always creates a new container and needs the base's independently
+  known SHA-256. Nothing is overwritten.
+- Readable is not executable. These functions need no Methods runtime or
+  admission; an opaque host model stays an opaque byte member, which R never
+  loads or runs. Whether anything can be executed is decided by its owner.
+- Relative `file` entries of the member list resolve against the directory that
+  contains the list file.
+- `tests/n4a-exchange.R` needs the real CLI plus the Core owner fixture
+  directory `tests/parity/fixtures/n4a_host_opaque_v1`. Qualification run
+  (no optional skip):
+
+  ```bash
+  NIRS4ALL_REQUIRE_CORE_N4A=1 NIRS4ALL_CORE_CLI=/path/to/nirs4all-core-archive \
+  NIRS4ALL_N4A_HOST_FIXTURE_DIR=/path/to/n4a_host_opaque_v1 \
+  Rscript tests/n4a-exchange.R
+  ```
+
+  Without `NIRS4ALL_REQUIRE_CORE_N4A=1` a missing prerequisite prints an
+  explicit `NOT RUN` line and nothing native is asserted. The test needs no
+  Methods library.
+
 The built-in `n4m` preprocessing steps now include SNV (with centering/scaling
 flags), local SNV, robust SNV, area normalization, polynomial detrend and
 Savitzky–Golay. They use the upstream C ABI through the R `n4m` binding;
@@ -509,7 +614,7 @@ Neither test qualifies arbitrary n4m compositions or complex DAG graphs.
 Current missing product gates are documented in
 [`dag-ml/docs/R_BINDING_PARITY_AND_INTEROP.md`](https://github.com/GBeurier/dag-ml/blob/main/docs/R_BINDING_PARITY_AND_INTEROP.md).
 
-Core Archive V2/V3 ZIP replay is exposed through native executables:
+Native Core N4a V1 package replay (Package schema 2 predictor / 3 refit) is exposed through native executables:
 
 ```r
 archive <- nirs4all_core_archive("trained.n4a")
@@ -525,7 +630,7 @@ prediction <- nirs4all_core_archive_predict(
 
 Install `nirs4all-core-archive` 0.4.2 or later, `dag-ml-cli` 0.3.37 or later and
 the R `n4m` binding 1.3.2 or later for this optional replay route. Core validates
-the ZIP and passes its original signed package bytes to DAG-ML; DAG-ML hydrates
+the V1 container, resolves the entrypoint and passes the selected signed package bytes to DAG-ML; DAG-ML hydrates
 the state, schedules PREDICT and releases it through the persistent R process
 protocol. No Python interpreter is used. The installed raw adapter covers the
 closed U07 four-source scaler/tensor-PCA/mixed-column plus native Ridge profile
@@ -547,7 +652,7 @@ prediction <- nirs4all_core_archive_predict_methods(
 )
 ```
 
-This calls the existing Core V2/V3 replay and native Methods controllers. It
+This calls the existing Core Package 2/3 replay and native Methods controllers. It
 requires no user-written adapter and preserves the package's controller identity.
 Each numerical input declares its ordered sample IDs, matrix `x` and target names;
 target values `y` are refused. Core checks the exact loaded library snapshot and

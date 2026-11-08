@@ -3,9 +3,10 @@
 \alias{nirs4all_core_archive_predict}
 \alias{nirs4all_core_archive_predict_methods}
 \alias{nirs4all_core_multimodal_adapter}
-\title{Replay a Core ZIP archive through native DAG and Methods processes}
+\title{Replay a native Core N4a package through native DAG and Methods processes}
 \usage{
-nirs4all_core_archive(path, core_cli = Sys.which("nirs4all-core-archive"))
+nirs4all_core_archive(path, core_cli = Sys.which("nirs4all-core-archive"),
+  entrypoint = NULL)
 
 nirs4all_core_archive_predict(archive, request, data_envelopes, adapter,
   trusted_controllers, dag_cli = Sys.which("dag-ml-cli"),
@@ -24,8 +25,9 @@ nirs4all_core_multimodal_adapter(sources, operators, node_params, source_ids,
   workdir = tempfile("nirs4all-core-r-adapter-"))
 }
 \arguments{
-  \item{path}{A Core Archive V2/V3 \code{.n4a} file.}
+  \item{path}{A Core N4a V1 \code{.n4a} container with a native Package schema 2 or 3 root.}
   \item{core_cli}{Installed native Core archive executable.}
+  \item{entrypoint}{Optional declared entrypoint ID forwarded to Core; when \code{NULL} Core resolves the unique matching entrypoint or refuses.}
   \item{archive}{Validated reference returned by \code{nirs4all_core_archive}.}
   \item{request}{Signed native TrainingReplayRequest list or exact JSON file.}
   \item{data_envelopes}{Native map of target-free prediction envelopes, as a list or exact JSON file.}
@@ -46,7 +48,7 @@ nirs4all_core_multimodal_adapter(sources, operators, node_params, source_ids,
   \item{target_names}{One ordered target name for the closed raw native profile.}
 }
 \description{
-Core owns ZIP limits, inventory closure and raw hashes. DAG-ML owns package
+Core owns the physical N4a V1 container (schema 1), inventory closure, entrypoint resolution and hashes; the native Package schema (2 predictor, 3 refit) is reported separately as \code{package_schema_version}. DAG-ML owns package
 validation, signed replay scheduling and portable-artifact hydration/release.
 The R adapter passes current buffers to installed Methods numerical operations.
 No Python interpreter, R ZIP parser or R machine-learning coordinator is used.
@@ -62,18 +64,18 @@ Requests and current data envelopes are native contracts supplied explicitly;
 they are not constructed by reading or trusting the archive. An archive object
 retains its raw SHA and prediction revalidates the original file. This POSIX
 process surface requires the Core and DAG native executables and installed n4m.
-It does not accept historical Python joblib bundle archives as Core ZIPs.
+It does not accept historical Python joblib bundle archives, nor pre-V1 ZIP archives (Core refuses them; there is no fallback).
 
 \code{nirs4all_core_archive_predict_methods} is the direct callback-free route
 for supported N4MM, N4ME and RolePipeline packages produced by native Methods
-controllers. It calls Core's existing V2/V3 replay, which delegates package
+controllers. It calls Core's existing Package 2/3 replay, which delegates package
 validation and scheduling to DAG-ML and numerical state import/prediction to
 Methods. The explicit library hash pins an exact private loaded snapshot and
 checks the Methods ABI. The raw U07 controller has a distinct identity and uses
 the process route; it is not substituted for a native Methods controller.
 }
 \value{
-Archive opening returns a validated inventory reference. Prediction returns the
+Archive opening returns a validated reference holding Core's native view (\code{archive_id}, full-file \code{archive_sha256}, \code{package_schema_version}, \code{entrypoint}, \code{operation}, \code{package_member}) and the neutral V1 manifest. Prediction returns the
 native replay outcome and workdir. Adapter preparation returns its executable,
 independent manifests, workdir and lifecycle log path.
 }

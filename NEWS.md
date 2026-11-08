@@ -1,3 +1,48 @@
+# nirs4all 0.7.5
+
+- Dependency floors follow the native-container cohort: Methods `n4m >= 1.3.13`
+  (native N4MM format 3), `dagml`/DAG CLI `>= 0.4.0`, and the Core archive CLI and
+  Python `nirs4all-core >= 0.5.0`. The two Core requirement statements are
+  aligned; `nirs4allio >= 0.2.6` is unchanged.
+- `nirs4all_execution_profiles()` documentation now describes the five native
+  profiles at version 1 (`native-workflow`, `native-conformal`,
+  `native-methods-package`, `native-n4a-canonical`, `n4a-container`) instead of two.
+  The embedded registry data is unchanged; R remains an externally federated
+  surface, and readability, execution support and scientific qualification stay
+  separate.
+
+- `nirs4all_core_archive()` now opens Core N4a V1 containers (`archive$schema_version`
+  1, profile `native-methods-package`). The Package schema is reported as
+  `archive$package_schema_version` (2 predictor, 3 refit), the root physical member
+  as `archive$package_member`, and `archive_id`/`archive_sha256` are the container ID
+  and full-file hash. It gains an optional `entrypoint` forwarded to Core; old
+  pre-V1 ZIP archives are refused with no fallback.
+- Add `nirs4all_n4a_inspect()`, `nirs4all_n4a_produce()`,
+  `nirs4all_n4a_predict()` and `nirs4all_n4a_retrain()` for canonical V1 `.n4a`
+  containers through the `n4a-*` commands of `nirs4all-core-archive`. They take
+  record files by path, return rows in physical record order aligned by owner
+  sample IDs, keep the owner replay and receipt unchanged, and report
+  readability without claiming executability. Core, DAG and Methods decide which
+  recipes and profiles run; R has no method list and no fallback route.
+- `nirs4all_n4a_retrain()` calls the Core owner `retrain_n4a_native`; the source
+  ID and stored recipe come from the validated package and owner errors
+  propagate unchanged.
+- Add `nirs4all_n4a_write()` and `nirs4all_n4a_read()` for owner-neutral
+  exchange of arbitrary members (data, recipes, results, scores, opaque host
+  models) through the `n4a-write` and `n4a-read` commands. They take exact
+  manifest, member-list and member files by path, update an immutable base
+  without overwriting, return numbered extracted files plus the unchanged owner
+  report, and need no Methods runtime. Readable is not executable.
+- Every `nirs4all_n4a_*` transport accepts an optional `memory_budget_bytes`,
+  forwarded to the CLI as the exact decimal text of `--memory-budget-bytes`.
+  `NULL` or `""` (the default) sends no flag and R adds no cap or default. A
+  whole number up to 2^53 - 1 or decimal text up to 18446744073709551615 is
+  accepted; anything else, including a larger double, is refused before any CLI
+  call. Reports keep `bigint_as_char = TRUE` and the exact `native_json`.
+- Add `tests/n4a-canonical.R`, a `standard_scale` + `ridge` two-target profile
+  witness (produce, inspect, predict, retrain) that skips explicitly without the
+  native executable, Methods library and fixtures.
+
 # nirs4all 0.7.4
 
 - Licensing metadata only: the package is dual-licensed

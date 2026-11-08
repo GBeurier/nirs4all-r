@@ -59,34 +59,72 @@
   path
 }
 
-#' Open and validate a Core ZIP archive using the native Core reader
+# Physical Core N4a V1 (`archive$schema_version` 1) is distinct from the native
+# package schema (`package_schema_version` 2 predictor / 3 refit). Core resolves
+# the operation/entrypoint and the physical root member; R never selects by
+# member order and keeps archive_id/archive_sha256 exactly as Core reports them.
+.nirs4all_core_entrypoint <- function(entrypoint) {
+  if (is.null(entrypoint)) return(character())
+  if (!is.character(entrypoint) || length(entrypoint) != 1L || is.na(entrypoint) ||
+      !nzchar(entrypoint))
+    stop("entrypoint must be NULL or a nonempty string", call. = FALSE)
+  c("--entrypoint", entrypoint)
+}
+
+.nirs4all_core_native_view <- function(view) {
+  is_string <- function(x) is.character(x) && length(x) == 1L && !is.na(x) && nzchar(x)
+  if (!is.list(view) || !identical(view$schema_version, 1L) ||
+      !identical(view$profile, "native-methods-package") ||
+      !(identical(view$package_schema_version, 2L) ||
+        identical(view$package_schema_version, 3L)) ||
+      !is_string(view$archive_id) || !is_string(view$archive_sha256) ||
+      !grepl("^[0-9a-f]{64}$", view$archive_sha256) ||
+      !is_string(view$entrypoint) || !is_string(view$operation) ||
+      !is_string(view$package_member))
+    stop("R native archive replay requires a Core N4a V1 native-methods-package view",
+         call. = FALSE)
+  invisible(view)
+}
+
+#' Open and validate a native Core `.n4a` package using the native Core reader
 #'
-#' Accepts Core Archive V2/V3 `.n4a` files. The native reader validates container
-#' limits, inventory closure, payload hashes and archive references. R does not
-#' unzip members or deserialize fitted state. A loaded archive keeps its original
-#' raw SHA; prediction revalidates the file against that identity.
-#' @param path Path to a Core `.n4a` archive.
+#' Accepts Core N4a V1 containers (`schema_version` 1) holding a native
+#' `native-methods-package` closure whose root is a Package schema 2 predictor or
+#' Package schema 3 refit (`package_schema_version`). Core validates the container,
+#' selects the operation/entrypoint and reports the physical root member; R does
+#' not unzip members, order-select roots or deserialize fitted state. Old
+#' pre-V1 ZIP archives are refused by Core. A loaded archive keeps `archive_id`
+#' (container ID) and the full-file `archive_sha256`; prediction revalidates the
+#' file against that identity.
+#' @param path Path to a Core `.n4a` container.
 #' @param core_cli Installed `nirs4all-core-archive` executable.
-#' @return An immutable-by-contract archive reference and validated inventory.
+#' @param entrypoint Optional declared entrypoint ID forwarded to Core. When
+#'   `NULL`, Core resolves the unique matching entrypoint or refuses.
+#' @return An immutable-by-contract archive reference with Core's native view
+#'   (`archive`) and neutral V1 `manifest`.
 #' @export
-nirs4all_core_archive <- function(path, core_cli = Sys.which("nirs4all-core-archive")) {
+nirs4all_core_archive <- function(path, core_cli = Sys.which("nirs4all-core-archive"),
+                                  entrypoint = NULL) {
   core_cli <- .nirs4all_native_cli(core_cli)
   path <- .nirs4all_core_path(path, "archive")
+  entry_args <- .nirs4all_core_entrypoint(entrypoint)
   directory <- tempfile("nirs4all-core-inspect-")
   dir.create(directory)
   on.exit(unlink(directory, recursive = TRUE), add = TRUE)
   output <- file.path(directory, "inventory.json")
-  .nirs4all_core_run(core_cli, c("inspect", "--archive", path, "--output", output), directory)
+  .nirs4all_core_run(core_cli, c("inspect", "--archive", path, entry_args,
+                                 "--output", output), directory)
   inventory <- jsonlite::fromJSON(output, simplifyVector = FALSE)
-  if (!identical(inventory$schema_version, 1L) ||
-      !(inventory$archive$schema_version %in% c(2L, 3L)))
-    stop("R native archive replay requires a Core Archive V2 or V3", call. = FALSE)
+  if (!identical(inventory$schema_version, 1L))
+    stop("R native archive replay requires a Core inspection envelope", call. = FALSE)
+  .nirs4all_core_native_view(inventory$archive)
   structure(list(path = path, archive = inventory$archive,
-                 manifest = inventory$manifest, core_cli = core_cli),
+                 manifest = inventory$manifest, core_cli = core_cli,
+                 entrypoint = entrypoint),
             class = "nirs4all_core_archive")
 }
 
-#' Replay a Core Archive V2/V3 from R with native DAG process callbacks
+#' Replay a Core native package from R with native DAG process callbacks
 #'
 #' Core revalidates the original archive and passes its exact signed package
 #' bytes to DAG-ML. DAG-ML verifies independent controller trust, the signed
@@ -120,12 +158,10 @@ nirs4all_core_archive_predict <- function(archive, request, data_envelopes,
     workdir = tempfile("nirs4all-core-replay-"),
     outcome_id = "outcome:nirs4all-r.core.replay", run_id = "run:nirs4all-r.core.replay",
     process_timeout_ms = 0) {
-  if (!inherits(archive, "nirs4all_core_archive") ||
-      !(archive$archive$schema_version %in% c(2L, 3L)) ||
-      !is.character(archive$archive$archive_sha256) ||
-      length(archive$archive$archive_sha256) != 1L ||
-      !grepl("^[0-9a-f]{64}$", archive$archive$archive_sha256))
-    stop("archive must be a validated Core Archive V2/V3 reference", call. = FALSE)
+  if (!inherits(archive, "nirs4all_core_archive"))
+    stop("archive must be a validated Core native package reference", call. = FALSE)
+  .nirs4all_core_native_view(archive$archive)
+  entry_args <- .nirs4all_core_entrypoint(archive$entrypoint)
   core_cli <- .nirs4all_core_path(archive$core_cli, "core_cli", executable = TRUE)
   dag_cli <- .nirs4all_core_path(dag_cli, "dag_cli", executable = TRUE)
   if (is.list(adapter)) {
@@ -148,7 +184,7 @@ nirs4all_core_archive_predict <- function(archive, request, data_envelopes,
     file.path(workdir, "trusted-controllers.json"), "trusted controller manifests")
   output <- file.path(workdir, "outcome.json")
   .nirs4all_core_run(core_cli, c("replay-process", "--archive", archive$path,
-    "--expected-archive-sha256", archive$archive$archive_sha256, "--dag-cli", dag_cli,
+    "--expected-archive-sha256", archive$archive$archive_sha256, entry_args, "--dag-cli", dag_cli,
     "--request", request_path, "--envelopes", envelopes_path,
     "--trusted-controllers", controllers_path, "--adapter", adapter, "--output", output,
     "--outcome-id", outcome_id, "--run-id", run_id,
@@ -158,9 +194,10 @@ nirs4all_core_archive_predict <- function(archive, request, data_envelopes,
   outcome
 }
 
-#' Replay native N4MM, N4ME or RolePipeline archives directly through Core
+#' Replay native N4MM, N4ME or RolePipeline packages directly through Core
 #'
-#' Uses Core's existing native Methods replay entry points for Archive V2/V3.
+#' Uses Core's existing native Methods replay entry points for the Package
+#' schema 2/3 root of a Core N4a V1 container.
 #' DAG-ML validates and schedules the original portable package; Methods imports
 #' and predicts the supported native state. No process adapter, Python, fitting,
 #' host-sidecar hydration or target access is involved. This is the direct route
@@ -185,12 +222,10 @@ nirs4all_core_archive_predict_methods <- function(archive, request, data_envelop
     methods_inputs, methods_library, methods_library_sha256,
     workdir = tempfile("nirs4all-core-methods-"),
     outcome_id = "outcome:nirs4all-r.core.methods", run_id = "run:nirs4all-r.core.methods") {
-  if (!inherits(archive, "nirs4all_core_archive") ||
-      !(archive$archive$schema_version %in% c(2L, 3L)) ||
-      !is.character(archive$archive$archive_sha256) ||
-      length(archive$archive$archive_sha256) != 1L ||
-      !grepl("^[0-9a-f]{64}$", archive$archive$archive_sha256))
-    stop("archive must be a validated Core Archive V2/V3 reference", call. = FALSE)
+  if (!inherits(archive, "nirs4all_core_archive"))
+    stop("archive must be a validated Core native package reference", call. = FALSE)
+  .nirs4all_core_native_view(archive$archive)
+  entry_args <- .nirs4all_core_entrypoint(archive$entrypoint)
   core_cli <- .nirs4all_core_path(archive$core_cli, "core_cli", executable = TRUE)
   library <- .nirs4all_core_path(methods_library, "Methods library")
   if (!is.character(methods_library_sha256) || length(methods_library_sha256) != 1L ||
@@ -213,7 +248,7 @@ nirs4all_core_archive_predict_methods <- function(archive, request, data_envelop
   inputs_path <- .nirs4all_core_contract(methods_inputs, file.path(workdir, "methods-inputs.json"), "Methods inputs")
   output <- file.path(workdir, "outcome.json")
   .nirs4all_core_run(core_cli, c("replay-methods", "--archive", archive$path,
-    "--expected-archive-sha256", archive$archive$archive_sha256,
+    "--expected-archive-sha256", archive$archive$archive_sha256, entry_args,
     "--request", request_path, "--envelopes", envelopes_path, "--methods-inputs", inputs_path,
     "--methods-library", library, "--methods-library-sha256", methods_library_sha256,
     "--output", output, "--outcome-id", outcome_id, "--run-id", run_id), workdir)
