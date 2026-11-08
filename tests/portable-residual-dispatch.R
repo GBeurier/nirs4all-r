@@ -1,14 +1,15 @@
 # Declared-profile dispatch of nirs4all_run_portable_pipeline().
 #
 # Linear regression (including opls_nipals), SparsePLS-DA classification,
-# regression feature-branch recipes and standalone regression training
-# augmentation / MBPLS block_sizes / GroupSparsePLS group_assignment go to the
-# Core owner operation; a classifier with augmentation and a feature branch with a
-# classifier or fit inputs are the named temporary residual B01 profiles and keep
-# the unchanged local R execution. The route is chosen from the parsed recipe BEFORE execution, never
-# by catching an owner error. Every residual entry is a required later
-# migration, not a parity claim. No Core CLI is needed here: a failing stub
-# proves that residual recipes never reach the owner.
+# regression feature-branch recipes, standalone regression training augmentation /
+# MBPLS block_sizes / GroupSparsePLS group_assignment and, as staged private
+# source, the combinations classifier + feature branch, classifier + training
+# augmentation and feature branch + MBPLS / GroupSparsePLS are selected for the
+# Core owner operation. Only combinations no owner profile admits stay in the
+# residual table (the local runner is kept, not retired). The route is chosen from
+# the parsed recipe BEFORE execution, never
+# by catching an owner error. Routing only: no fit parity is shown here. No Core
+# CLI is needed: a failing stub proves an owner failure is an error, not a reroute.
 library(nirs4all)
 
 residual_table <- nirs4all:::.nirs4all_portable_residual_b01
@@ -78,81 +79,90 @@ for (name in names(standalone)) {
             !length(profile$residual))
 }
 
-# Residual combinations, each with its exact declared keys, reasons and seams.
+# Staged combined owner routes: classifier with a branch or augmentation use the
+# graph classification profile, branch with MBPLS / GroupSparsePLS the existing
+# graph regression profile. The original document is sent unchanged (no flattening).
 branch_steps <- list(nirs4all_concat(list(a = list(nirs4all_snv()), b = list(nirs4all_msc()))))
-cases <- list(
-  train_augmentation = list(nirs4all_pipeline(learner = nirs4all_sparse_pls_da(2L),
-    augmentations = list(nirs4all_native_augmentation("gaussian_noise", 0.05, seed = 3))),
-    "train_augmentation"),
+seeded <- list(nirs4all_native_augmentation("gaussian_noise", 0.05, seed = 3))
+classification_graph <- "portable_feature_classification.v1"
+regression_graph <- "portable_feature_regression.v1"
+combined <- list(
+  branch_classifier = list(nirs4all_pipeline(branch_steps, nirs4all_sparse_pls_da(2L)),
+                           classification_graph),
+  augmentation_classifier = list(nirs4all_pipeline(learner = nirs4all_sparse_pls_da(2L),
+    augmentations = seeded), classification_graph),
   branch_mbpls = list(nirs4all_pipeline(branch_steps, nirs4all_n4m_method("mb_pls", 2L,
-    list(block_sizes = c(4L, 4L, 4L)))), c("feature_branch", "extra_fit_inputs")),
+    list(block_sizes = c(4L, 4L, 4L)))), regression_graph),
   branch_group_sparse = list(nirs4all_pipeline(branch_steps,
-    nirs4all_group_sparse_pls(2L, c(1L, 1L, 2L, 2L), 0.2)),
-    c("feature_branch", "extra_fit_inputs")))
-for (name in names(cases)) {
-  profile <- route(cases[[name]][[1L]])
-  keys <- cases[[name]][[2L]]
-  stopifnot(identical(profile$route, "residual_b01"),
-            identical(unname(profile$residual), keys),
-            identical(unname(profile$reasons), unname(vapply(keys, function(key)
-              residual_table[[key]]$reason, ""))),
-            identical(unname(profile$next_seams), unname(vapply(keys, function(key)
-              residual_table[[key]]$next_seam, ""))))
+    nirs4all_group_sparse_pls(2L, c(1L, 1L, 2L, 2L), 0.2)), regression_graph))
+for (name in names(combined)) {
+  profile <- route(combined[[name]][[1L]])
+  stopifnot(identical(profile$route, "owner"),
+            identical(profile$name, combined[[name]][[2L]]),
+            !length(profile$residual))
 }
+# Every classification variant keeps the classification codec path; the linear and
+# graph classification profiles are the only classification profiles.
+stopifnot(identical(nirs4all:::.nirs4all_portable_classification_profiles,
+  c("portable_linear_classification.v1", classification_graph)))
 
-# A branch combined with a classifier or another residual profile stays declared
-# residual through `feature_branch` (the combined owner profile is not qualified).
-combined <- nirs4all_pipeline(list(nirs4all_concat(list(
-  a = list(nirs4all_snv()), b = list(nirs4all_msc())))), nirs4all_sparse_pls_da(2L))
-combined_profile <- route(combined)
-stopifnot(identical(combined_profile$route, "residual_b01"),
-          identical(unname(combined_profile$residual), "feature_branch"),
-          identical(unname(combined_profile$reasons), residual_table$feature_branch$reason),
-          identical(unname(combined_profile$next_seams), residual_table$feature_branch$next_seam))
-branch_mbpls <- nirs4all_pipeline(list(nirs4all_concat(list(
-  a = list(nirs4all_snv()), b = list(nirs4all_msc())))),
-  nirs4all_n4m_method("mb_pls", 2L, list(block_sizes = c(4L, 4L, 4L))))
-stopifnot(identical(unname(route(branch_mbpls)$residual),
-                    c("feature_branch", "extra_fit_inputs")))
-combined_augmented <- nirs4all_pipeline(learner = nirs4all_sparse_pls_da(2L),
-  augmentations = list(nirs4all_native_augmentation("gaussian_noise", 0.05, seed = 3)))
-stopifnot(identical(unname(route(combined_augmented)$residual), "train_augmentation"))
+# What no owner profile admits keeps its declared residual keys and reasons. The
+# portable parser itself refuses augmentation with a branch, so the combination is
+# built as a plan and the real recipe is shown to be refused before any native call.
+plan_stub <- list(learner = list(learner = "pls"), augmentations = seeded,
+                  preprocessing = list(list(type = "FeatureConcat")))
+refused <- nirs4all:::.nirs4all_portable_profile(plan_stub)
+stopifnot(identical(refused$route, "residual_b01"),
+          identical(unname(refused$residual), c("feature_branch", "train_augmentation")),
+          identical(unname(refused$reasons), unname(c(residual_table$feature_branch$reason,
+            residual_table$train_augmentation$reason))))
+grammar_refusal <- tryCatch(nirs4all_parse_execution_plan(list(pipeline = list(
+  list(train_augmentation = list(class = "n4m.NativeXAugmentation",
+    params = list(kind = "gaussian_noise", values = list(0.05), seed = 3))),
+  list(branch = list(a = list(list(class = "n4m.SNV")), b = list(list(class = "n4m.MSC")))),
+  list(merge = "features"), list(model = list(class = "n4m.PLS"))))), error = identity)
+stopifnot(inherits(grammar_refusal, "error"))
 
-# Residual execution is the unchanged local R runner and never calls the owner.
+# An owner failure is an error, never a local rerun, for the linear profile and for
+# each staged combination: the failing stub is called and its refusal propagates.
 capture <- tempfile("residual-stub-")
 dir.create(capture)
 if (.Platform$OS.type != "windows") {
   stub <- file.path(capture, "nirs4all-core-archive")
   writeLines(c("#!/bin/sh", "echo called > \"$(dirname \"$0\")/called\"", "exit 9"), stub)
   Sys.chmod(stub, "0755")
+  library_file <- file.path(capture, "libn4m.so")
+  writeLines("stub", library_file)
   X <- outer(seq_len(21L), seq_len(12L), function(s, b)
     sin(s * b / 9) + cos(s + b / 7) + s * b / 100)
   y <- 1.3 + 0.7 * X[, 2L] - 0.4 * X[, 6L]
-  # Feature branch + MBPLS (concat width 24): the unchanged local runner.
-  mbpls <- nirs4all_pipeline(branch_steps, nirs4all_n4m_method("mb_pls", 2L,
-    list(block_sizes = c(12L, 12L))))
-  result <- nirs4all_run_portable_pipeline(nirs4all_export_pipeline(mbpls),
-    list(X = X, y = y), core_cli = stub)
-  stopifnot(!file.exists(file.path(capture, "called")),
-            identical(result$profile$route, "residual_b01"),
-            identical(unname(result$profile$residual), c("feature_branch", "extra_fit_inputs")),
-            identical(result$evaluation, list(scope = "training", independent_test = FALSE)),
-            max(abs(result$selected$predictions -
-                    predict(nirs4all_fit(mbpls, X, y), X))) < 1e-10)
-  # The linear profile has no such reroute: an owner failure is an error.
-  linear <- nirs4all_export_pipeline(nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(2L)))
-  library_file <- file.path(capture, "libn4m.so")
-  writeLines("stub", library_file)
-  error <- tryCatch(nirs4all_run_portable_pipeline(linear, list(X = X, y = y),
-    core_cli = stub, methods_library = library_file), error = identity)
+  labels <- factor(rep(c("c", "a", "b"), 7L), levels = c("c", "a", "b"))
+  runs <- list(
+    linear = list(nirs4all_pipeline(list(nirs4all_snv()), nirs4all_pls(2L)), y),
+    branch_classifier = list(combined$branch_classifier[[1L]], labels),
+    augmentation_classifier = list(combined$augmentation_classifier[[1L]], labels),
+    branch_mbpls = list(nirs4all_pipeline(branch_steps, nirs4all_n4m_method("mb_pls", 2L,
+      list(block_sizes = c(12L, 12L)))), y))
+  for (name in names(runs)) {
+    unlink(file.path(capture, "called"))
+    error <- tryCatch(nirs4all_run_portable_pipeline(nirs4all_export_pipeline(runs[[name]][[1L]]),
+      list(X = X, y = runs[[name]][[2L]]), core_cli = stub, methods_library = library_file),
+      error = identity)
+    stopifnot(inherits(error, "nirs4all_portable_owner_refusal"),
+              file.exists(file.path(capture, "called")))
+  }
+}
+
+# A record-backed classification dataset is forwarded to the owner (which refuses
+# it by name); R neither parses the record nor invents X/y.
+if (.Platform$OS.type != "windows") {
+  backed <- structure(list(record = list(schema = "nirs4all.dataset.v1", dataset = list()),
+                           core_cli = stub), class = "nirs4all_dataset")
+  unlink(file.path(capture, "called"))
+  error <- tryCatch(nirs4all_run_portable_pipeline(
+    nirs4all_export_pipeline(combined$branch_classifier[[1L]]), backed,
+    methods_library = library_file), error = identity)
   stopifnot(inherits(error, "nirs4all_portable_owner_refusal"),
             file.exists(file.path(capture, "called")))
 }
-
-# A record-backed dataset cannot feed a residual profile; no X/y is invented.
-backed <- structure(list(record = list(schema = "nirs4all.dataset.v1", dataset = list()),
-                         core_cli = "unused"), class = "nirs4all_dataset")
-error <- tryCatch(nirs4all_run_portable_pipeline(nirs4all_export_pipeline(combined),
-  backed), error = identity)
-stopifnot(inherits(error, "error"), grepl("record-backed", conditionMessage(error), fixed = TRUE))
 cat("portable-residual-dispatch: ok\n")

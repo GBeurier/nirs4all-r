@@ -300,13 +300,24 @@ reset(); local_plan <- nirs4all_parse_execution_plan(linear)
 stopifnot(identical(local_plan$admission, "source_preflight"),
           !file.exists(file.path(capture, "args")), is.null(local_plan$owner))
 
-# 7. Residual profiles are never sent to the owner, even when a CLI is supplied.
-residual <- nirs4all_export_pipeline(nirs4all_pipeline(list(nirs4all_concat(list(
+# 7. A classifier with a feature branch is admitted by the owner plan operation under
+# the explicit graph classification profile (no local residual route, original
+# document unchanged). The canned plan response only has to carry that profile.
+branched <- nirs4all_export_pipeline(nirs4all_pipeline(list(nirs4all_concat(list(
   a = list(nirs4all_snv()), b = list(nirs4all_msc())))), nirs4all_sparse_pls_da(2L)))
-reset(); residual_plan <- nirs4all_parse_execution_plan(residual, core_cli = stub)
-stopifnot(identical(residual_plan$admission, "residual_b01_local"),
-          identical(residual_plan$profile$residual, "feature_branch"),
-          !file.exists(file.path(capture, "args")))
+write_response(list(schema_version = 1L, profile = "portable_feature_classification.v1",
+  owner_profile = "feature_graph.v1", mode = "training", name = "classifier",
+  evaluation = list(scope = "training", independent_test = FALSE)))
+reset(); branched_plan <- nirs4all_parse_execution_plan(branched, core_cli = stub)
+stopifnot(identical(branched_plan$admission, "owner"),
+          identical(branched_plan$profile$route, "owner"),
+          identical(branched_plan$profile$name, "portable_feature_classification.v1"),
+          !length(branched_plan$profile$residual),
+          identical(branched_plan$owner$profile, "portable_feature_classification.v1"),
+          identical(request()$profile, "portable_feature_classification.v1"),
+          !"dataset" %in% names(request()),
+          identical(request()$definition, jsonlite::fromJSON(branched, simplifyVector = FALSE)))
+write_response()
 
 # 8. Owner failure and unavailability are errors: no local rerun, no reroute.
 write(9L, file.path(capture, "exit"))

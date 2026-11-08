@@ -991,10 +991,14 @@ nirs4all_portable_dataset <- function(dataset, classification = FALSE) {
 #' and/or an MBPLS `block_sizes` / GroupSparsePLS `group_assignment` terminal take
 #' the same profile and are sent unchanged (values, seeds and arrays as declared;
 #' the owner resolves the augmenters, types the values and supplies the feature
-#' axis inputs). A classifier with training augmentation, and a feature branch
-#' with a classifier, augmentation or fit inputs, are the named temporary
-#' residual B01 profiles: they keep the existing local R
-#' execution, selected by `result$profile`, never by catching an owner error.
+#' axis inputs). A classifier with a feature branch or training augmentation
+#' (`portable_feature_classification.v1`) and a branch with MBPLS / GroupSparsePLS
+#' fit inputs (`portable_feature_regression.v1`, explicit arrays describing the
+#' joined feature axis) are staged for the same owner graph route (private source,
+#' activation after the owner gates). Only combinations no owner profile admits
+#' (augmentation with a branch, fit inputs with a classifier) stay in the residual
+#' table and the unchanged local runner, selected by `result$profile`, never by
+#' catching an owner error.
 #' See `docs/PORTABLE_RUNNER_PROFILES.md`. Selection on the holdout is *not* an
 #' independent test estimate; without a splitter the scope is `training`. For
 #' general CV/OOF/refit use [nirs4all_dag_cv_refit_predict()].

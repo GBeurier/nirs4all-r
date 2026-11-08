@@ -6,7 +6,7 @@
 # argument vector and request bytes and returns a canned response. The test
 # inspects the explicit profile, the untouched original topology (including a
 # non-alphabetical object order), the optional `feature_blocks` passthrough, the
-# residual combinations and error propagation. It runs no fit, makes no
+# classifier-with-branch admission and error propagation. It runs no fit, makes no
 # scientific or owner-parity claim and does not show that the owner graph
 # profile exists or is qualified (see portable-owner-branch.R for the real CLI).
 library(nirs4all)
@@ -170,14 +170,19 @@ stopifnot(identical(args[[1L]], "portable-pipeline-plan"), length(args) == 5L,
           identical(plan$owner, roundtrip(plan_response)))
 write_response(owner_response())
 
-# 6. Residual combinations are never sent to the owner: a branch with a classifier
-# or with a residual model stays declared residual through `feature_branch`.
+# 6. A branch with a classifier is admitted by the owner plan operation under the
+# graph classification profile; nothing stays residual and nothing runs locally.
 combined <- nirs4all_export_pipeline(nirs4all_pipeline(list(nirs4all_concat(list(
   a = list(nirs4all_snv()), b = list(nirs4all_msc())))), nirs4all_sparse_pls_da(2L)))
-reset(); residual <- nirs4all_parse_execution_plan(combined, core_cli = stub)
-stopifnot(identical(residual$admission, "residual_b01_local"),
-          identical(unname(residual$profile$residual), "feature_branch"),
-          !file.exists(file.path(capture, "args")))
+write_response(list(schema_version = 1L, profile = "portable_feature_classification.v1",
+  owner_profile = "feature_graph.v1", mode = "training", name = "combined",
+  evaluation = list(scope = "training", independent_test = FALSE)))
+reset(); admitted <- nirs4all_parse_execution_plan(combined, core_cli = stub)
+stopifnot(identical(admitted$admission, "owner"),
+          identical(admitted$profile$name, "portable_feature_classification.v1"),
+          !length(admitted$profile$residual),
+          identical(request()$profile, "portable_feature_classification.v1"))
+write_response(owner_response())
 
 # 7. Existing source refusals are kept (augmentation with a branch), before any
 # native call.

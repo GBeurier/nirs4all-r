@@ -23,54 +23,62 @@
 # pooled wave. The complete original definition is forwarded: topology,
 # augmentation kinds/values/seeds, fit-input arrays and parameters stay owner work.
 .nirs4all_portable_owner_profile_feature <- "portable_feature_regression.v1"
+# Classification with a feature branch or training augmentation (same owner profile
+# `feature_graph.v1`; graph classification banks). Staged private source: the
+# profile is selected here, activation waits for the owner and R gates. Class ids
+# only on the wire, decoded by lookup exactly as for the linear classification.
+.nirs4all_portable_owner_profile_feature_classification <- "portable_feature_classification.v1"
+.nirs4all_portable_classification_profiles <- c(
+  .nirs4all_portable_owner_profile_classification,
+  .nirs4all_portable_owner_profile_feature_classification)
 
-# Temporary residual B01: profiles declared by the parsed recipe that the
-# linear owner route cannot carry today. Each entry is a REQUIRED later
-# migration inside the same consolidation goal, not a permanent exception and
-# not a claim of DAG/native parity. Selection is by declared profile only.
+# Temporary residual B01 table (STAGED, not retired). The named combinations of
+# classification / feature branch / training augmentation / fit inputs are now
+# selected for the owner graph profiles above, so only combinations that no owner
+# profile admits remain here: augmentation with a feature branch (refused by the
+# portable grammar as well) and a fit-input terminal with a classifier (those
+# terminals are regressors). The residual runner (`nirs4all_portable_run_residual`)
+# and this table stay in place until Root retires them after parity; selection is
+# by declared profile only, never by catching an owner error.
 .nirs4all_portable_residual_b01 <- list(
   feature_branch = list(
-    reason = paste("branch + merge: features combined with a classifier, training",
-      "augmentation or extra fit inputs: the owner graph profile",
-      "portable_feature_regression.v1 qualifies regression feature branches only."),
-    next_seam = paste("Combined owner profile (graph classification, augmentation or",
-      "fit-input transport) once each qualifies; a feature branch alone is",
-      "owner-executed.")),
+    reason = paste("branch + merge: features combined with training augmentation:",
+      "refused by the portable grammar and by the owner graph profiles."),
+    next_seam = "No combined profile is planned; retire with the residual runner."),
   train_augmentation = list(
-    reason = paste("train_augmentation combined with a classifier: the owner graph",
-      "profile portable_feature_regression.v1 qualifies regression only",
-      "(standalone regression augmentation is owner-executed)."),
-    next_seam = "Graph classification profile; then drop this combination."),
+    reason = paste("train_augmentation combined with a feature branch:",
+      "refused by the portable grammar and by the owner graph profiles."),
+    next_seam = "No combined profile is planned; retire with the residual runner."),
   extra_fit_inputs = list(
     reason = paste("n4m.MBPLS block_sizes / n4m.GroupSparsePLS group_assignment",
-      "combined with a feature branch: the owner graph profile refuses fit inputs",
-      "with a branch (standalone regression fit inputs are owner-executed)."),
-    next_seam = "Owner branch plus fit-input profile once it qualifies."))
+      "combined with a classifier: these terminals are regressors."),
+    next_seam = "No owner profile is planned; retire with the residual runner."))
 
 .nirs4all_portable_profile <- function(plan) {
   learner <- plan$learner
   classifier <- identical(learner$learner, "sparse_pls_da")
   branch <- any(vapply(plan$preprocessing, function(step)
     identical(step$type, "FeatureConcat"), logical(1)))
-  others <- c(
-    if (length(plan$augmentations)) "train_augmentation",
-    if (identical(learner$learner, "n4m_method") &&
-        learner$method %in% c("mb_pls", "group_sparse_pls")) "extra_fit_inputs")
-  # Standalone regression feature branch, train augmentation and fit inputs are
-  # owner-executed (profile portable_feature_regression.v1). Each of them stays a
-  # declared residual only in the combinations the owner refuses until a combined
-  # profile qualifies: with a classifier, or (augmentation / fit inputs) with a
-  # feature branch.
-  topology <- classifier || branch
-  keys <- c(if (branch && (classifier || length(others))) "feature_branch",
-            if (topology) others)
-  if (!length(keys))
+  augmented <- length(plan$augmentations) > 0L
+  fit_inputs <- identical(learner$learner, "n4m_method") &&
+    learner$method %in% c("mb_pls", "group_sparse_pls")
+  # Staged owner routes: standalone and combined regression branch / augmentation /
+  # fit inputs -> portable_feature_regression.v1; a classifier with a branch or
+  # augmentation -> portable_feature_classification.v1. What no owner profile
+  # admits keeps its declared residual keys.
+  keys <- c(if (branch && augmented) c("feature_branch", "train_augmentation"),
+            if (classifier && fit_inputs) "extra_fit_inputs")
+  if (!length(keys)) {
+    graph <- branch || augmented || fit_inputs
     return(list(route = "owner",
-                name = if (classifier) .nirs4all_portable_owner_profile_classification else
-                  if (branch || length(others)) .nirs4all_portable_owner_profile_feature else
+                name = if (classifier && graph)
+                  .nirs4all_portable_owner_profile_feature_classification else
+                  if (classifier) .nirs4all_portable_owner_profile_classification else
+                  if (graph) .nirs4all_portable_owner_profile_feature else
                   .nirs4all_portable_owner_profile,
                 residual = character(), reasons = character(),
                 next_seams = character()))
+  }
   list(route = "residual_b01", name = "residual_b01", residual = keys,
        reasons = vapply(keys, function(key)
          .nirs4all_portable_residual_b01[[key]]$reason, character(1)),
@@ -235,7 +243,7 @@
     if (is.null(value)) stop(paste("owner response lacks", what), call. = FALSE)
     value
   }
-  classification <- identical(profile, .nirs4all_portable_owner_profile_classification)
+  classification <- profile %in% .nirs4all_portable_classification_profiles
   if (!is.list(response) || !identical(response$schema_version, 1L) ||
       !identical(response$profile, profile) ||
       !(is.character(response$mode) && length(response$mode) == 1L &&
@@ -295,7 +303,7 @@
 
 .nirs4all_portable_run_owner <- function(source, dataset, core_cli, methods_library,
                                          profile = .nirs4all_portable_owner_profile) {
-  classification <- identical(profile, .nirs4all_portable_owner_profile_classification)
+  classification <- profile %in% .nirs4all_portable_classification_profiles
   marshalled <- .nirs4all_portable_owner_dataset(dataset, classification)
   if (is.null(core_cli)) core_cli <- marshalled$core_cli
   request <- .nirs4all_portable_request(source, marshalled$payload, profile)

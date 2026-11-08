@@ -123,9 +123,8 @@ computes no widths, fabricates no merged feature labels or wavelength axis
 (`identities$axis` still describes the original input), and the profile offers
 no fitted model, deployment or cold replay.
 
-**Limits.** A feature branch combined with a classifier, training augmentation
-or extra fit inputs stays a declared residual (below); R's source refusals
-(for example augmentation with a branch) are kept. Owner errors are errors.
+**Limits.** R's source refusals (for example augmentation with a branch) are
+kept. Owner errors are errors. The named combinations are in the next section.
 See the status note above for what was executed.
 
 ## Standalone train augmentation and extra fit inputs (same profile; source-only, unqualified)
@@ -155,7 +154,39 @@ scores use the raw fit rows after learned preprocessing. There is no
 Owner-vs-R equality for GroupSparsePLS is same-kernel interoperability, not an
 independent oracle.
 
-## Temporary residual B01 table
+## Combined profiles (staged private source; not qualified)
+
+Selected by the declared parsed recipe and sent as the original document with the
+explicit profile, through the same two commands (`owner-implementation`
+contract `residual-combinations-next/implementation/PUBLIC_API.md`, SHA-256
+`ed1c8dfa…fb2`):
+
+- **Classifier with a feature branch or training augmentation:**
+  `portable_feature_classification.v1` (owner profile `feature_graph.v1`; banks
+  `single_resampled_holdout_graph_classification_bank.v1` /
+  `training_graph_classification_bank.v1`). Class ids only on the dense `y` wire
+  (no `class_labels`), decoded by the lookup `class_values[id + 1L]` in both R
+  projection sites exactly as for the linear classification (factor level order,
+  numeric class types, `unname`); accuracy, winner, ordered variants and
+  `unseen_validation_classes` (including classes outside the fitted domain, which
+  stay scored) are the owner's. `feature_blocks` is copied untouched where the
+  owner supplies it (an empty object when there is no join). Record-backed
+  categorical datasets keep the owner's named refusal.
+- **Feature branch with MBPLS `block_sizes` / GroupSparsePLS `group_assignment`:**
+  the existing `portable_feature_regression.v1`; the explicit arrays describe the
+  **joined, ordered** feature axis (declared by the user, never inferred from
+  branch widths, metadata or sample groups); Methods checks width and applicability.
+
+R keeps its source refusals (augmentation with a branch, selector or DI-PLS;
+positional arrays), has no host numerics, scoring, selection, fold or variant
+loop for these profiles and never catches an owner error. This private slice
+stages the routes only: the residual runner and its table are **not** deleted,
+nothing is activated or retired here, and B01 is not closed. Owner-vs-R equality
+in the real test is same-kernel parity. The standalone frozen MBPLS values are
+a historical same-engine pls4all/libn4m reference, not independent mathematics;
+they do not cover these combinations.
+
+## Temporary residual B01 table (staged; what remains)
 
 These profiles are selected from the **declared** parsed recipe before any
 execution (`result$profile`, `plan$profile`) and keep the unchanged local R runner.
@@ -165,13 +196,12 @@ frozen reference and not DAG/native parity. B01 is not closed by this batch.
 
 | Key | Source reason (current) | Required next owner seam |
 | --- | --- | --- |
-| `feature_branch` (only when combined with a classifier or `extra_fit_inputs`) | `branch` + `merge: features` with one of those: the owner graph profile qualifies regression feature branches only. | Combined owner profile (graph classification, augmentation or fit-input transport) once each qualifies. |
-| `train_augmentation` (only with a classifier) | Training augmentation combined with a classifier: the owner graph profile qualifies regression only. | Graph classification profile. |
-| `extra_fit_inputs` (only with a feature branch) | `n4m.MBPLS` `block_sizes` / `n4m.GroupSparsePLS` `group_assignment` combined with a feature branch: the owner graph profile refuses fit inputs with a branch. | Owner branch plus fit-input profile. |
+| `feature_branch` (only with training augmentation) | `branch` + `merge: features` with training augmentation: refused by the portable grammar and by the owner graph profiles. | None planned; retire with the residual runner. |
+| `train_augmentation` (only with a feature branch) | Training augmentation with a feature branch (as above). | None planned; retire with the residual runner. |
+| `extra_fit_inputs` (only with a classifier) | MBPLS / GroupSparsePLS terminals are regressors. | None planned; retire with the residual runner. |
 
-A recipe may carry several keys. A classifier or an `opls_nipals` model combined
-with one of these keys stays residual through *that* key until its topology,
-augmentation or extra-input profile qualifies; it is never split or flattened.
+These combinations are not reachable from the portable parser today; the table is
+kept (not deleted) until Root retires the residual runner after parity.
 `opls_nipals` (Methods role `models.pls.opls`, flags forwarded from the original
 document, no solver substitution) is on the owner route; the Linux native-cohort R OPLS
 check passed (training and raw-Kennard-Stone holdout, MSC, non-default flags,
@@ -190,10 +220,12 @@ executed**.
   winner is deliberately not the minimum RMSE) and error propagation. Transport
   only; no scientific claim. POSIX.
 - `tests/portable-residual-dispatch.R`: declared dispatch, exact residual table
-  (a branch with a classifier or fit inputs, a classifier with augmentation;
-  classifier, OPLS, feature-branch-alone and standalone augmentation / fit-input
-  recipes are owner-routed), a failing stub proves residual recipes never reach
-  the owner and linear failures never reroute.
+  (only combinations no owner profile admits; the combined profiles are
+  owner-routed, with a failing stub proving an owner failure never reroutes).
+- `tests/portable-owner-combinations.R`: real Core CLI, four named combinations
+  (branch + classifier, augmentation + classifier, branch + MBPLS, branch +
+  GroupSparsePLS) in training and raw-Kennard-Stone scope against valid local R
+  baselines; authored, not executed.
 - `tests/portable-owner-classification-transport.R`: stub-only codec and
   projection checks of the classification profile (unsorted factor levels, integer
   and double codes, ids-only wire without any label field, training-mode unseen
@@ -203,8 +235,8 @@ executed**.
   (same two prerequisites; part of the Linux native-cohort run).
 - `tests/portable-owner-branch-transport.R`: stub-only checks of the feature
   branch profile (exact profile, non-alphabetical object order in the sent bytes,
-  `feature_blocks` passthrough, plan operation, residual combinations, owner
-  error without fallback). No fit; no parity claim.
+  `feature_blocks` passthrough, plan operation, classifier + branch owner
+  admission, owner error without fallback). No fit; no parity claim.
 - `tests/portable-owner-branch.R`: real Core CLI feature-branch profile (same two
   prerequisites; part of the Linux native-cohort run); `portable-branch-merge.R`
   (unchanged) runs its branch recipe through the owner route and needs the same
@@ -212,8 +244,8 @@ executed**.
 - `tests/portable-owner-augmentation-transport.R`: stub-only checks of the
   standalone augmentation / MBPLS / GroupSparsePLS profile (exact profile, declared
   values, order, multi-parameter numbers and seeds above 2^31 in the sent bytes,
-  unchanged arrays, no `fit_inputs_v1`/`groups` invented, combined residuals,
-  owner error without fallback). No fit; no parity claim.
+  unchanged arrays, no `fit_inputs_v1`/`groups` invented, combined-recipe owner
+  admissions, owner error without fallback). No fit; no parity claim.
 - `tests/portable-owner-augmentation.R`: real Core CLI `band_perturb` check (same
   two prerequisites, not executed): training and Kennard-Stone holdout against the
   existing local R fit/predict.

@@ -7,7 +7,7 @@
 # argument vector and request bytes and returns a canned response. The test
 # inspects the explicit profile, the untouched original numbers (declared order,
 # multi-parameter values, seeds above 2^31 and up to 2^53-1), the unchanged
-# feature-axis arrays, the residual combinations and error propagation. It runs
+# feature-axis arrays, the combined-recipe admissions and error propagation. It runs
 # no fit, makes no scientific or owner-parity claim and does not show that the
 # owner augmentation/fit-input route exists or is qualified (see
 # portable-owner-augmentation.R for the real Core CLI).
@@ -180,20 +180,29 @@ stopifnot(identical(args[[1L]], "portable-pipeline-plan"), length(args) == 5L,
           identical(plan$owner, roundtrip(plan_response)))
 write_response(owner_response())
 
-# 5. Combinations the owner refuses stay declared residual and are never sent.
+# 5. Combined recipes are admitted by the owner plan operation under the explicit
+# graph profile (classification for a classifier, regression for fit inputs with a
+# branch): no residual route, original document unchanged.
 branch_steps <- list(nirs4all_concat(list(a = list(nirs4all_snv()), b = list(nirs4all_msc()))))
 classifier_augmented <- nirs4all_export_pipeline(nirs4all_pipeline(
   learner = nirs4all_sparse_pls_da(2L), augmentations = list(
     nirs4all_native_augmentation("gaussian_noise", 0.05, seed = 3))))
 branch_fit_inputs <- nirs4all_export_pipeline(nirs4all_pipeline(branch_steps,
   nirs4all_n4m_method("mb_pls", 2L, list(block_sizes = c(12L, 12L)))))
-for (case in list(list(classifier_augmented, "train_augmentation"),
-                  list(branch_fit_inputs, c("feature_branch", "extra_fit_inputs")))) {
-  reset(); residual <- nirs4all_parse_execution_plan(case[[1L]], core_cli = stub)
-  stopifnot(identical(residual$admission, "residual_b01_local"),
-            identical(unname(residual$profile$residual), case[[2L]]),
-            !file.exists(file.path(capture, "args")))
+for (case in list(list(classifier_augmented, "portable_feature_classification.v1"),
+                  list(branch_fit_inputs, "portable_feature_regression.v1"))) {
+  write_response(list(schema_version = 1L, profile = case[[2L]],
+    owner_profile = "feature_graph.v1", mode = "training", name = "combined",
+    evaluation = list(scope = "training", independent_test = FALSE)))
+  reset(); admitted <- nirs4all_parse_execution_plan(case[[1L]], core_cli = stub)
+  stopifnot(identical(admitted$admission, "owner"),
+            identical(admitted$profile$route, "owner"),
+            identical(admitted$profile$name, case[[2L]]),
+            !length(admitted$profile$residual),
+            identical(request()$profile, case[[2L]]),
+            identical(request()$definition, jsonlite::fromJSON(case[[1L]], simplifyVector = FALSE)))
 }
+write_response(owner_response())
 
 # 6. Existing source refusals are kept and happen before any native call.
 reset()

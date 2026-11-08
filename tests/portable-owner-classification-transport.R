@@ -259,14 +259,58 @@ stopifnot(identical(sent$profile, "portable_linear_regression.v1"),
           is.null(opls_result$unseen_validation_classes))
 write_response(owner_response())
 
-# 9. Residual classification stays residual for its other declared reasons and is
-# never sent to the owner.
-branched <- nirs4all_export_pipeline(nirs4all_pipeline(list(nirs4all_concat(list(
-  a = list(nirs4all_snv()), b = list(nirs4all_msc())))), nirs4all_sparse_pls_da(2L)))
-reset(); residual <- nirs4all_parse_execution_plan(branched, core_cli = stub)
-stopifnot(identical(residual$admission, "residual_b01_local"),
-          identical(unname(residual$profile$residual), "feature_branch"),
-          !file.exists(file.path(capture, "args")))
+# 9. Classification with a feature branch uses the graph classification profile
+# (`portable_feature_classification.v1`) through the same codec: integer ids from
+# R's factor level order, owner winner and unseen report copied, `feature_blocks`
+# untouched. The response below is canned (graph classification bank tags and join
+# widths per PUBLIC_API); nothing is computed or qualified here.
+feature_classification <- "portable_feature_classification.v1"
+blocks <- list("portable:join:0" = list(list(branch_id = "z_msc", column_count = 5L),
+                                        list(branch_id = "a_snv", column_count = 5L)))
+graph_response <- owner_response()
+graph_response$profile <- feature_classification
+graph_response$owner_profile <- "feature_graph.v1"
+graph_response$owner$profile <- "single_resampled_holdout_graph_classification_bank.v1"
+graph_response$variants <- lapply(graph_response$variants, function(v) {
+  v$feature_blocks <- blocks; v })
+graph_response$selected$feature_blocks <- blocks
+graph_response$owner$evidence$variants <- lapply(graph_response$variants, function(v)
+  list(ordinal = v$ordinal, feature_blocks = blocks))
+write_response(graph_response)
+branched_text <- paste0('{"name":"classifier","pipeline":[',
+  '{"class":"n4m.KennardStone","params":{"test_size":0.25}},',
+  '{"branch":{"z_msc":[{"class":"n4m.MSC"}],"a_snv":[{"class":"n4m.SNV"}]}},',
+  '{"merge":"features"},',
+  '{"model":{"class":"n4m.SparsePLSDA","params":{"sparsity_lambda":0.1}},',
+  '"_range_":[1,2,1],"param":"n_components"}]}')
+reset(); branched <- run(branched_text, list(X = X, y = y_factor))
+sent <- request()
+stopifnot(identical(sent$profile, feature_classification),
+          identical(unlist(sent$dataset$y), rep(0:2, 4L)),             # level order ids
+          !grepl("class_labels|class_values|virginica|setosa", raw_request()),
+          identical(names(sent$definition$pipeline[[2L]]$branch), c("z_msc", "a_snv")),
+          identical(branched$profile$route, "owner"),
+          identical(branched$profile$name, feature_classification),
+          identical(branched$profile$owner_profile, "feature_graph.v1"),
+          identical(branched$owner$profile,
+                    "single_resampled_holdout_graph_classification_bank.v1"),
+          identical(branched$targets, c("virginica", "setosa", "versicolor")),
+          identical(branched$variants[[1L]]$predictions, c("virginica", "setosa", "setosa")),
+          identical(branched$selected$accuracy, 0.5),                  # owner's winner
+          identical(branched$selected$variant_id, "v0"),
+          is.null(branched$selected$rmse), is.null(branched$selected$selected_package),
+          identical(branched$selected$feature_blocks, roundtrip(blocks)),
+          identical(branched$variants[[2L]]$feature_blocks, roundtrip(blocks)),
+          identical(branched$unseen_validation_classes, roundtrip(unseen)),
+          identical(branched$owner$evidence$unseen_validation_classes, roundtrip(unseen)),
+          identical(branched$class_values, levels_unsorted),
+          identical(vapply(branched$owner$evidence$variants, function(v)
+            v$feature_blocks[[1L]][[1L]]$branch_id, ""), c("z_msc", "z_msc")))
+# A linear classification response is a contract violation for the graph profile.
+write_response(owner_response())
+error <- failure(run(branched_text, list(X = X, y = y_factor)))
+stopifnot(grepl("unsupported portable owner response", conditionMessage(error)))
+write_response(owner_response())
 
 # 10. Boundary refusals stay on the R side, before any native call.
 reset()
