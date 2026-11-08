@@ -208,6 +208,23 @@ check passed (training and raw-Kennard-Stone holdout, MSC, non-default flags,
 terminal `models.pls.opls` identity). A record-backed dataset with a residual profile is
 refused by name (no X/y is invented).
 
+## No-fit generator expansion
+
+`nirs4all_expand_portable_pipelines(source, core_cli = NULL)` sends the complete
+original definition to the Core command `portable-pipeline-expand` (request
+`{schema_version: 1, definition}`, response `{schema_version: 1, definitions}`;
+no profile, dataset or Methods library). The owner enumerates the `_or_` /
+`_cartesian_` structural axes (first axis slowest), expands each structural
+variant's own inclusive component range, applies the search bounds and refuses
+modifiers, nested generators, splitters and unknown roots or intents. R builds one
+unfitted `nirs4all_pipeline()` per returned definition with
+`nirs4all_pipeline_from_portable()` and names them `variant_0001`, `variant_0002`,
+... by position; it generates nothing and has no local fallback. The Core CLI is
+a required, documented dependency of this function. `portable-pipeline-run` still
+refuses generator definitions. Private staged source, not qualified; the contract
+is `residual-enumeration-next/owner-implementation/PUBLIC_API.md`
+(SHA-256 `10c89b48a53af737d06abc487dc788158acc65904381d70e8203d65d93090400`).
+
 ## Tests
 
 Classification, graph and OPLS scripts were executed as stated in the status note;

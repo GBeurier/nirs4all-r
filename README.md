@@ -548,9 +548,12 @@ outside the model. The separate recipe is required to retrain, and plain PLS N4M
 does not expose scaling flags for independent recipe verification.
 `parsnip` and `mlr3` fitted states remain R-specific, as do custom-controller
 code and state.
-For portable n4m recipes, `nirs4all_expand_portable_pipelines()` expands the
-bounded Python `_or_`/`_cartesian_` preprocessing generators and PLS component
-ranges into named R pipelines. These can be passed to
+For portable n4m recipes, `nirs4all_expand_portable_pipelines()` is a no-fit
+operation: the Core `portable-pipeline-expand` command (a `nirs4all-core-archive`
+build that provides it; pass `core_cli` or set `NIRS4ALL_CORE_CLI`, no Methods
+library, no local fallback) expands the bounded Python `_or_`/`_cartesian_`
+generators and PLS component ranges, and R builds the named R pipelines
+(`variant_0001`, ...) from the returned concrete definitions. These can be passed to
 `nirs4all_dag_cv_refit_predict()` for native OOF selection; generator modifiers,
 other operators, and general DAG branch/stacking constructs still fail
 explicitly; the feature-only branch/merge form above is the bounded exception.

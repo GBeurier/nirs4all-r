@@ -1,5 +1,16 @@
 library(nirs4all)
 
+# Generator expansion is owner-executed (Core `portable-pipeline-expand`): the
+# real Core CLI is required (NOT RUN when absent; a failure under
+# NIRS4ALL_REQUIRE_CORE_PORTABLE=1). Everything below is the unchanged earlier test.
+core_cli_path <- Sys.getenv("NIRS4ALL_CORE_CLI")
+if (!nzchar(core_cli_path) || !file.exists(core_cli_path)) {
+  if (identical(Sys.getenv("NIRS4ALL_REQUIRE_CORE_PORTABLE"), "1"))
+    stop("portable-generators.R requires NIRS4ALL_CORE_CLI")
+  cat("NOT RUN: portable-generators.R (set NIRS4ALL_CORE_CLI)\n")
+  quit(save = "no", status = 0L)
+}
+
 # Python expand_spec() yields the four preprocessing sequences in this order:
 # [SNV, SNV], [SNV, SG], [SG, SNV], [SG, SG]. The final PLS range then
 # varies the component count inside each sequence.

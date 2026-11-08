@@ -319,6 +319,47 @@ stopifnot(identical(branched_plan$admission, "owner"),
           identical(request()$definition, jsonlite::fromJSON(branched, simplifyVector = FALSE)))
 write_response()
 
+# 7b. No-fit generator expansion: the complete original document goes to
+# `portable-pipeline-expand` (exact two-field request, no profile/dataset/library),
+# R builds one object per owner definition with the unchanged constructor and names
+# them by position; an owner refusal is an error with no local rerun.
+generator_doc <- list(name = "gen", future_root_control = list(flag = TRUE),
+  pipeline = list(list(`_comment` = "kept"),
+    list(`_or_` = list(list(class = "n4m.SNV"),
+                       list(class = "n4m.SavitzkyGolay",
+                            params = list(window_length = 5L, polyorder = 2L)))),
+    list(model = list(class = "n4m.PLS"), `_range_` = list(1L, 2L, 1L),
+         param = "n_components")))
+concrete <- function(step, components) list(name = "gen",
+  pipeline = list(step, list(model = list(class = "n4m.PLS",
+                                          params = list(n_components = components)))))
+snv_step <- list(class = "n4m.SNV")
+savgol_step <- list(class = "n4m.SavitzkyGolay",
+                    params = list(window_length = 5L, polyorder = 2L))
+definitions <- list(concrete(snv_step, 1L), concrete(snv_step, 2L),
+                    concrete(savgol_step, 1L), concrete(savgol_step, 2L))
+write_response(list(schema_version = 1L, definitions = definitions))
+reset(); expanded <- nirs4all_expand_portable_pipelines(generator_doc, core_cli = stub)
+args <- strsplit(readLines(file.path(capture, "args")), " ", fixed = TRUE)[[1L]]
+sent <- request()
+stopifnot(identical(args[[1L]], "portable-pipeline-expand"), length(args) == 5L,
+          identical(args[c(2L, 4L)], c("--input", "--output")),
+          identical(names(sent), c("schema_version", "definition")),
+          identical(sent$schema_version, 1L),
+          identical(sent$definition, jsonlite::fromJSON(jsonlite::toJSON(generator_doc,
+            auto_unbox = TRUE, null = "null", digits = I(17L)), simplifyVector = FALSE)),
+          identical(names(expanded), sprintf("variant_%04d", 1:4)))
+for (index in 1:4)
+  stopifnot(isTRUE(all.equal(expanded[[index]],
+    nirs4all_pipeline_from_portable(definitions[[index]]))))
+stopifnot(identical(vapply(expanded[[3L]]$steps, `[[`, "", "kind"), "savgol"),
+          identical(expanded[[2L]]$learner$spec$n_components, 2L))
+write(9L, file.path(capture, "exit"))
+error <- failure(nirs4all_expand_portable_pipelines(generator_doc, core_cli = stub))
+stopifnot(inherits(error, "nirs4all_portable_owner_refusal"),
+          file.exists(file.path(capture, "args")))
+reset(); write_response()
+
 # 8. Owner failure and unavailability are errors: no local rerun, no reroute.
 write(9L, file.path(capture, "exit"))
 error <- failure(nirs4all_run_portable_pipeline(linear, list(X = X, y = y),
