@@ -1,5 +1,17 @@
 library(nirs4all)
 
+# Only the portable owner route needs Core; direct Methods checks stay active.
+core_cli <- Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")
+if (!nzchar(core_cli)) core_cli <- "nirs4all-core-archive"
+if (!file.exists(core_cli)) core_cli <- unname(Sys.which(core_cli))
+core_available <- nzchar(core_cli) && file.exists(core_cli) && !dir.exists(core_cli)
+if (!core_available) {
+  if (identical(Sys.getenv("NIRS4ALL_REQUIRE_CORE_PORTABLE"), "1"))
+    stop("portable-branch-merge.R portable route requires nirs4all-core-archive")
+  message("SKIP portable-branch-merge.R: Core-backed portable route requires ",
+          "nirs4all-core-archive (NIRS4ALL_CORE_CLI or PATH); direct Methods checks still run")
+}
+
 X <- outer(seq_len(12L), seq_len(8L),
            function(i, j) sin(i * j / 7) + i * j / 50)
 y <- 2 + X[, 2L] - 0.3 * X[, 5L]
@@ -41,22 +53,26 @@ explicit$pipeline[[1L]]$branch <- lapply(names(recipe$pipeline[[1L]]$branch),
     steps = recipe$pipeline[[1L]]$branch[[name]]))
 stopifnot(isTRUE(all.equal(nirs4all_pipeline_from_portable(explicit), manual)))
 
-evaluated <- nirs4all_run_portable_pipeline(recipe, list(X = X, y = y))
-stopifnot(max(abs(evaluated$selected$predictions -
-  predict(nirs4all_fit(manual, X, y), X))) < 1e-12)
-expanded <- nirs4all_expand_portable_pipelines(recipe)
-stopifnot(length(expanded) == 1L,
-  max(abs(predict(nirs4all_fit(expanded[[1L]], X, y), X) -
-          predict(nirs4all_fit(manual, X, y), X))) < 1e-12)
+if (core_available) {
+  evaluated <- nirs4all_run_portable_pipeline(recipe, list(X = X, y = y))
+  stopifnot(max(abs(evaluated$selected$predictions -
+    predict(nirs4all_fit(manual, X, y), X))) < 1e-12)
+}
+if (core_available) {
+  expanded <- nirs4all_expand_portable_pipelines(recipe)
+  stopifnot(length(expanded) == 1L,
+    max(abs(predict(nirs4all_fit(expanded[[1L]], X, y), X) -
+            predict(nirs4all_fit(manual, X, y), X))) < 1e-12)
+}
 held_out <- recipe
 held_out$pipeline <- c(list(list(class = "n4m.KennardStone",
   params = list(test_size = 0.25))), held_out$pipeline)
-selection <- nirs4all_run_portable_pipeline(held_out, list(X = X, y = y))
+if (core_available) selection <- nirs4all_run_portable_pipeline(held_out, list(X = X, y = y))
 split <- n4m::kennard_stone_split(X, test_size = 0.25, zero_based = TRUE)
 expected_holdout <- predict(nirs4all_fit(manual,
   X[split$train + 1L, , drop = FALSE], y[split$train + 1L]),
   X[split$test + 1L, , drop = FALSE])
-stopifnot(identical(selection$split$kind, "KennardStone"),
+if (core_available) stopifnot(identical(selection$split$kind, "KennardStone"),
   max(abs(selection$selected$predictions - expected_holdout)) < 1e-10)
 
 exportable <- nirs4all_pipeline(list(nirs4all_concat(list(

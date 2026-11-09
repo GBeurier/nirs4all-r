@@ -1,5 +1,17 @@
 library(nirs4all)
 
+# Only the portable owner route needs Core; direct Methods checks stay active.
+core_cli <- Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")
+if (!nzchar(core_cli)) core_cli <- "nirs4all-core-archive"
+if (!file.exists(core_cli)) core_cli <- unname(Sys.which(core_cli))
+core_available <- nzchar(core_cli) && file.exists(core_cli) && !dir.exists(core_cli)
+if (!core_available) {
+  if (identical(Sys.getenv("NIRS4ALL_REQUIRE_CORE_PORTABLE"), "1"))
+    stop("portable-group-sparse-pls.R portable route requires nirs4all-core-archive")
+  message("SKIP portable-group-sparse-pls.R: Core-backed portable route requires ",
+          "nirs4all-core-archive (NIRS4ALL_CORE_CLI or PATH); direct Methods checks still run")
+}
+
 X <- outer(seq_len(28L), seq_len(8L), function(i, j)
   sin(i * j / 10) + cos(i / 3 + j / 8) + i * j / 110)
 colnames(X) <- paste0("wl", seq_len(ncol(X)))
@@ -39,7 +51,8 @@ for (steps in list(list(), list(nirs4all_snv()))) {
     stopifnot(identical(restored$learner$spec$params$group_assignment,
         unname(groups)),
       identical(restored$learner$spec$params$group_lambda, 0.2),
-      max(abs(predict(nirs4all_fit(restored, X, y), held) - expected)) < 1e-10,
+      max(abs(predict(nirs4all_fit(restored, X, y), held) - expected)) < 1e-10)
+    if (core_available) stopifnot(
       max(abs(nirs4all_run_portable_pipeline(exported,
         list(X = X, y = y))$selected$predictions -
         predict(nirs4all_fit(restored, X, y), X))) < 1e-10)

@@ -1,5 +1,17 @@
 library(nirs4all)
 
+# Only the portable owner route needs Core; direct Methods checks stay active.
+core_cli <- Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")
+if (!nzchar(core_cli)) core_cli <- "nirs4all-core-archive"
+if (!file.exists(core_cli)) core_cli <- unname(Sys.which(core_cli))
+core_available <- nzchar(core_cli) && file.exists(core_cli) && !dir.exists(core_cli)
+if (!core_available) {
+  if (identical(Sys.getenv("NIRS4ALL_REQUIRE_CORE_PORTABLE"), "1"))
+    stop("n4m-classification.R portable route requires nirs4all-core-archive")
+  message("SKIP n4m-classification.R: Core-backed portable route requires ",
+          "nirs4all-core-archive (NIRS4ALL_CORE_CLI or PATH); direct Methods checks still run")
+}
+
 rows <- as.vector(rbind(1:12, 51:62, 101:112))
 X <- as.matrix(iris[rows, 1:4])
 y <- iris$Species[rows]
@@ -21,7 +33,7 @@ portable <- list(name = "native_sparse_pls_da", pipeline = list(
   list(model = list(class = "n4m.SparsePLSDA",
                     params = list(sparsity_lambda = 0.05)),
        `_range_` = list(1L, 2L, 1L), param = "n_components")))
-for (source in list(portable,
+if (core_available) for (source in list(portable,
                     as.character(jsonlite::toJSON(portable, auto_unbox = TRUE)),
                     yaml::as.yaml(portable))) {
   for (with_holdout in c(FALSE, TRUE)) {
@@ -48,18 +60,22 @@ for (source in list(portable,
   }
 }
 numeric_classes <- as.integer(y) - 1L
-numeric_result <- nirs4all_run_portable_pipeline(portable,
-  list(X = X, y = numeric_classes))
-stopifnot(is.integer(numeric_result$targets),
-          identical(numeric_result$targets, numeric_classes),
-          all(vapply(numeric_result$variants, function(variant)
-            is.integer(variant$predictions) &&
-              all(variant$predictions %in% unique(numeric_classes)), logical(1))))
-for (index in seq_along(numeric_result$variants)) {
+if (core_available) {
+  numeric_result <- nirs4all_run_portable_pipeline(portable,
+    list(X = X, y = numeric_classes))
+  stopifnot(is.integer(numeric_result$targets),
+            identical(numeric_result$targets, numeric_classes),
+            all(vapply(numeric_result$variants, function(variant)
+              is.integer(variant$predictions) &&
+                all(variant$predictions %in% unique(numeric_classes)), logical(1))))
+}
+for (index in if (core_available) seq_along(numeric_result$variants) else
+    seq_len(2L)) {
   manual <- nirs4all_fit(nirs4all_pipeline(list(nirs4all_snv()),
     nirs4all_sparse_pls_da(index, 0.05)), X,
     factor(numeric_classes, levels = 0:2))
-  stopifnot(identical(numeric_result$variants[[index]]$predictions,
+  if (core_available)
+    stopifnot(identical(numeric_result$variants[[index]]$predictions,
                       as.integer(predict(manual, X)) - 1L))
 }
 stopifnot(inherits(try(nirs4all_run_portable_pipeline(portable,
@@ -71,10 +87,12 @@ if (requireNamespace("nirs4allformats", quietly = TRUE)) {
   one_model <- list(pipeline = list(list(class = "n4m.SNV"),
     list(model = list(class = "n4m.SparsePLSDA",
                       params = list(n_components = 2L)))))
-  formats_result <- nirs4all_run_portable_pipeline(one_model, formats_data)
-  stopifnot(identical(formats_result$targets, unname(formats_data$y)),
-            length(formats_result$selected$predictions) == nrow(formats_data$X),
-            is.finite(formats_result$selected$accuracy))
+  if (core_available) {
+    formats_result <- nirs4all_run_portable_pipeline(one_model, formats_data)
+    stopifnot(identical(formats_result$targets, unname(formats_data$y)),
+              length(formats_result$selected$predictions) == nrow(formats_data$X),
+              is.finite(formats_result$selected$accuracy))
+  }
 }
 fitted <- nirs4all_fit(pipeline, X, y)
 predictions <- predict(fitted, new_X)
@@ -158,7 +176,8 @@ if (nzchar(python)) {
     stop("Python n4m SNV sparse PLS-DA recipe oracle failed: ",
          paste(output, collapse = "\n"))
   oracle <- jsonlite::fromJSON(response)
-  stopifnot(identical(numeric_result$variants[[2L]]$predictions,
+  if (core_available)
+    stopifnot(identical(numeric_result$variants[[2L]]$predictions,
                       as.integer(oracle$predictions)))
   unlink(work, recursive = TRUE)
 }

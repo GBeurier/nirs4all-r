@@ -4,6 +4,18 @@
 # scale_x=scale_y=TRUE and is deliberately not the reference for this alias.
 library(nirs4all)
 
+# Only the portable owner route needs Core; direct Methods checks stay active.
+core_cli <- Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")
+if (!nzchar(core_cli)) core_cli <- "nirs4all-core-archive"
+if (!file.exists(core_cli)) core_cli <- unname(Sys.which(core_cli))
+core_available <- nzchar(core_cli) && file.exists(core_cli) && !dir.exists(core_cli)
+if (!core_available) {
+  if (identical(Sys.getenv("NIRS4ALL_REQUIRE_CORE_PORTABLE"), "1"))
+    stop("portable-mbpls.R portable route requires nirs4all-core-archive")
+  message("SKIP portable-mbpls.R: Core-backed portable route requires ",
+          "nirs4all-core-archive (NIRS4ALL_CORE_CLI or PATH); direct Methods checks still run")
+}
+
 X <- outer(seq_len(21L), seq_len(12L), function(s, b)
   sin(s * b / 9) + cos(s + b / 7) + s * b / 100)
 colnames(X) <- paste0("wl", seq_len(ncol(X)))
@@ -59,8 +71,10 @@ for (format in c("json", "yaml")) {
   parsed <- nirs4all_pipeline_from_portable(recipe)
   stopifnot(identical(parsed$learner$spec, pipeline$learner$spec),
     max(abs(predict(nirs4all_fit(parsed, X, y), held) - expected)) < 1e-10)
-  result <- nirs4all_run_portable_pipeline(recipe, list(X = X, y = y))
-  stopifnot(length(result$variants) == 1L)
+  if (core_available) {
+    result <- nirs4all_run_portable_pipeline(recipe, list(X = X, y = y))
+    stopifnot(length(result$variants) == 1L)
+  }
 }
 
 bundle <- nirs4all_export_trained_pipeline(fitted)

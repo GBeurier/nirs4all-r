@@ -4,6 +4,18 @@
 # coefficient predictions, not training-set fitted values.
 library(nirs4all)
 
+# Only the portable owner route needs Core; direct Methods checks stay active.
+core_cli <- Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")
+if (!nzchar(core_cli)) core_cli <- "nirs4all-core-archive"
+if (!file.exists(core_cli)) core_cli <- unname(Sys.which(core_cli))
+core_available <- nzchar(core_cli) && file.exists(core_cli) && !dir.exists(core_cli)
+if (!core_available) {
+  if (identical(Sys.getenv("NIRS4ALL_REQUIRE_CORE_PORTABLE"), "1"))
+    stop("portable-affine-methods.R portable route requires nirs4all-core-archive")
+  message("SKIP portable-affine-methods.R: Core-backed portable route requires ",
+          "nirs4all-core-archive (NIRS4ALL_CORE_CLI or PATH); direct Methods checks still run")
+}
+
 X <- outer(seq_len(21L), seq_len(8L), function(i, j)
   sin(i * j / 9) + cos(i + j / 7) + i * j / 100)
 X_test <- X[c(2L, 8L, 17L), , drop = FALSE] + 0.031
@@ -34,9 +46,11 @@ for (method in names(expected)) {
     stopifnot(identical(imported$learner$spec, original$learner$spec))
     prediction <- predict(nirs4all_fit(imported, X, y), X_test)
     stopifnot(max(abs(prediction - expected[[method]])) < 1e-10)
-    result <- nirs4all_run_portable_pipeline(recipe, list(X = X, y = y))
-    stopifnot(length(result$variants) == 1L,
-              length(result$selected$predictions) == nrow(X))
+    if (core_available) {
+      result <- nirs4all_run_portable_pipeline(recipe, list(X = X, y = y))
+      stopifnot(length(result$variants) == 1L,
+                length(result$selected$predictions) == nrow(X))
+    }
   }
 }
 

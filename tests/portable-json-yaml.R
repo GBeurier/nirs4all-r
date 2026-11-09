@@ -1,4 +1,17 @@
 library(nirs4all)
+
+# Only the portable owner route needs Core; direct Methods checks stay active.
+core_cli <- Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")
+if (!nzchar(core_cli)) core_cli <- "nirs4all-core-archive"
+if (!file.exists(core_cli)) core_cli <- unname(Sys.which(core_cli))
+core_available <- nzchar(core_cli) && file.exists(core_cli) && !dir.exists(core_cli)
+if (!core_available) {
+  if (identical(Sys.getenv("NIRS4ALL_REQUIRE_CORE_PORTABLE"), "1"))
+    stop("portable-json-yaml.R portable route requires nirs4all-core-archive")
+  message("SKIP portable-json-yaml.R: Core-backed portable route requires ",
+          "nirs4all-core-archive (NIRS4ALL_CORE_CLI or PATH); direct Methods checks still run")
+}
+
 # Exact copies of nirs4all-core/tests/parity/fixtures at transfer time.
 # Pinning their bytes makes later upstream fixture changes an explicit review.
 fixture_md5 <- c(
@@ -71,24 +84,26 @@ for (case in oracle$cases) {
               identical(tail(nirs4all_portable_class_names(loaded), 1L), classes$pls))
     plan <- nirs4all_parse_execution_plan(loaded)
     stopifnot(identical(plan$n_components, components))
-    result <- nirs4all_run_portable_pipeline(path, dataset)
-    stopifnot(identical(result$split$kind, case$split$kind),
-              identical(result$split$trainIndices,
-                        as.integer(unlist(case$split$trainIndices))),
-              identical(result$split$testIndices,
-                        as.integer(unlist(case$split$testIndices))),
-              length(result$variants) == length(case$variants),
-              max(abs(result$targets - as.numeric(unlist(case$targets)))) < 1e-12)
-    for (index in seq_along(result$variants)) {
-      actual <- result$variants[[index]]
-      expected <- case$variants[[index]]
-      stopifnot(actual$n_components == expected$n_components,
-                max(abs(actual$predictions -
-                        as.numeric(unlist(expected$predictions)))) < 1e-10,
-                abs(actual$rmse - expected$rmse) < 1e-10)
+    if (core_available) {
+      result <- nirs4all_run_portable_pipeline(path, dataset)
+      stopifnot(identical(result$split$kind, case$split$kind),
+                identical(result$split$trainIndices,
+                          as.integer(unlist(case$split$trainIndices))),
+                identical(result$split$testIndices,
+                          as.integer(unlist(case$split$testIndices))),
+                length(result$variants) == length(case$variants),
+                max(abs(result$targets - as.numeric(unlist(case$targets)))) < 1e-12)
+      for (index in seq_along(result$variants)) {
+        actual <- result$variants[[index]]
+        expected <- case$variants[[index]]
+        stopifnot(actual$n_components == expected$n_components,
+                  max(abs(actual$predictions -
+                          as.numeric(unlist(expected$predictions)))) < 1e-10,
+                  abs(actual$rmse - expected$rmse) < 1e-10)
+      }
+      stopifnot(result$selected$n_components == case$selected$n_components,
+                identical(result$evaluation$independent_test, FALSE))
     }
-    stopifnot(result$selected$n_components == case$selected$n_components,
-              identical(result$evaluation$independent_test, FALSE))
   }
   unlink(c(json_path, yaml_path))
 }
@@ -116,15 +131,19 @@ semantic_alias <- native_alias
 semantic_alias$pipeline[[1L]]$class <- "preprocessing.snv"
 semantic_alias$pipeline[[2L]]$model$class <- "models.pls.pls_fit_simple"
 for (definition in list(native_alias, semantic_alias)) {
-  result <- nirs4all_run_portable_pipeline(definition, dataset)
+  if (core_available) {
+    result <- nirs4all_run_portable_pipeline(definition, dataset)
+  }
   fitted <- nirs4all_fit(nirs4all_pipeline(
     list(nirs4all_snv(ddof = 1L)), nirs4all_pls(2L)),
     matrix(as.numeric(unlist(dataset$X)), dataset$rows, dataset$cols,
            byrow = TRUE), as.numeric(unlist(dataset$y)))
-  stopifnot(max(abs(result$selected$predictions -
-                    nirs4all_predict(fitted, matrix(
-                      as.numeric(unlist(dataset$X)), dataset$rows,
-                      dataset$cols, byrow = TRUE)))) < 1e-10)
+  if (core_available) {
+    stopifnot(max(abs(result$selected$predictions -
+                      nirs4all_predict(fitted, matrix(
+                        as.numeric(unlist(dataset$X)), dataset$rows,
+                        dataset$cols, byrow = TRUE)))) < 1e-10)
+  }
 }
 bad_params <- native_alias
 bad_params$pipeline[[1L]]$params$unknown <- 1L
@@ -149,9 +168,11 @@ for (extension in c("json", "yaml")) {
             identical(nirs4all_parse_execution_plan(path)$n_components, 2L),
             identical(nirs4all_portable_class_names(nirs4all_load_pipeline(path)),
                       c("n4m.SNV", "n4m.SavitzkyGolay", "n4m.PLS")))
-  result <- nirs4all_run_portable_pipeline(path, dataset)
-  stopifnot(max(abs(result$selected$predictions -
-                    nirs4all_predict(expected_fit, r_X))) < 1e-10)
+  if (core_available) {
+    result <- nirs4all_run_portable_pipeline(path, dataset)
+    stopifnot(max(abs(result$selected$predictions -
+                      nirs4all_predict(expected_fit, r_X))) < 1e-10)
+  }
   unlink(path)
 }
 reject_export <- function(pipeline) {

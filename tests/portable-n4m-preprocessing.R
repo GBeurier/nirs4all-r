@@ -1,5 +1,17 @@
 library(nirs4all)
 
+# Only the portable owner route needs Core; direct Methods checks stay active.
+core_cli <- Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")
+if (!nzchar(core_cli)) core_cli <- "nirs4all-core-archive"
+if (!file.exists(core_cli)) core_cli <- unname(Sys.which(core_cli))
+core_available <- nzchar(core_cli) && file.exists(core_cli) && !dir.exists(core_cli)
+if (!core_available) {
+  if (identical(Sys.getenv("NIRS4ALL_REQUIRE_CORE_PORTABLE"), "1"))
+    stop("portable-n4m-preprocessing.R portable route requires nirs4all-core-archive")
+  message("SKIP portable-n4m-preprocessing.R: Core-backed portable route requires ",
+          "nirs4all-core-archive (NIRS4ALL_CORE_CLI or PATH); direct Methods checks still run")
+}
+
 X <- outer(seq_len(18L), seq_len(8L),
            function(i, j) 3 + sin(i * j / 7) + i * j / 50)
 y <- 2 + X[, 2L] - 0.3 * X[, 5L]
@@ -54,13 +66,14 @@ for (name in names(cases)) {
   held_out$pipeline <- c(list(list(class = "n4m.KennardStone",
                                    params = list(test_size = 0.3))),
                          held_out$pipeline)
-  evaluated <- nirs4all_run_portable_pipeline(held_out,
+  if (core_available) evaluated <- nirs4all_run_portable_pipeline(held_out,
                                                list(X = X, y = y))
   split <- n4m::kennard_stone_split(X, test_size = 0.3, zero_based = TRUE)
   held_out_expected <- predict(nirs4all_fit(manual,
     X[split$train + 1L, , drop = FALSE], y[split$train + 1L]),
     X[split$test + 1L, , drop = FALSE])
-  stopifnot(max(abs(evaluated$selected$predictions - held_out_expected)) < 1e-10)
+  if (core_available)
+    stopifnot(max(abs(evaluated$selected$predictions - held_out_expected)) < 1e-10)
   if (nzchar(python)) {
     helper <- if (file.exists("helpers/native_preprocessing_peer.py"))
       "helpers/native_preprocessing_peer.py" else

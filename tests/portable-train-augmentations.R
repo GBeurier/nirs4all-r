@@ -1,5 +1,17 @@
 library(nirs4all)
 
+# Only the portable owner route needs Core; direct Methods checks stay active.
+core_cli <- Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")
+if (!nzchar(core_cli)) core_cli <- "nirs4all-core-archive"
+if (!file.exists(core_cli)) core_cli <- unname(Sys.which(core_cli))
+core_available <- nzchar(core_cli) && file.exists(core_cli) && !dir.exists(core_cli)
+if (!core_available) {
+  if (identical(Sys.getenv("NIRS4ALL_REQUIRE_CORE_PORTABLE"), "1"))
+    stop("portable-train-augmentations.R portable route requires nirs4all-core-archive")
+  message("SKIP portable-train-augmentations.R: Core-backed portable route requires ",
+          "nirs4all-core-archive (NIRS4ALL_CORE_CLI or PATH); direct Methods checks still run")
+}
+
 X <- outer(seq_len(30L), seq_len(12L), function(i, j)
   sin(i * j / 9) + cos((i + j) / 7) + i * j / 100)
 rownames(X) <- sprintf("id-%03d", seq_len(nrow(X)))
@@ -54,11 +66,13 @@ split <- n4m::kennard_stone_split(X, test_size = .3, zero_based = TRUE)
 train <- split$train + 1L
 valid <- split$test + 1L
 manual <- nirs4all_fit(pipeline, X[train, , drop = FALSE], y[train])
-actual <- nirs4all_run_portable_pipeline(recipe, list(X = X, y = y))
-stopifnot(identical(actual$split$trainIndices, as.integer(split$train)),
-          identical(actual$split$testIndices, as.integer(split$test)),
-          max(abs(actual$selected$predictions -
-                  predict(manual, X[valid, , drop = FALSE]))) < 1e-12)
+if (core_available) {
+  actual <- nirs4all_run_portable_pipeline(recipe, list(X = X, y = y))
+  stopifnot(identical(actual$split$trainIndices, as.integer(split$train)),
+            identical(actual$split$testIndices, as.integer(split$test)),
+            max(abs(actual$selected$predictions -
+                    predict(manual, X[valid, , drop = FALSE]))) < 1e-12)
+}
 
 reject <- function(definition) stopifnot(inherits(
   try(nirs4all_parse_execution_plan(definition), silent = TRUE), "try-error"))

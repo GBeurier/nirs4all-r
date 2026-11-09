@@ -1,5 +1,17 @@
 library(nirs4all)
 
+# Only the portable owner route needs Core; direct Methods checks stay active.
+core_cli <- Sys.getenv("NIRS4ALL_CORE_CLI", "nirs4all-core-archive")
+if (!nzchar(core_cli)) core_cli <- "nirs4all-core-archive"
+if (!file.exists(core_cli)) core_cli <- unname(Sys.which(core_cli))
+core_available <- nzchar(core_cli) && file.exists(core_cli) && !dir.exists(core_cli)
+if (!core_available) {
+  if (identical(Sys.getenv("NIRS4ALL_REQUIRE_CORE_PORTABLE"), "1"))
+    stop("spa-selection.R portable route requires nirs4all-core-archive")
+  message("SKIP spa-selection.R: Core-backed portable route requires ",
+          "nirs4all-core-archive (NIRS4ALL_CORE_CLI or PATH); direct Methods checks still run")
+}
+
 X <- outer(seq_len(37L), seq_len(12L), function(i, j)
   sin(i * j / 11) + cos(i / 3 + j / 7) + i * j / 170)
 y <- 0.9 + 0.6 * X[, 3L] - 0.4 * X[, 9L]
@@ -60,11 +72,11 @@ recipe <- list(pipeline = list(
   list(class = "n4m.KennardStone", params = list(test_size = 0.25)),
   list(class = "n4m.SPA", params = list(top_k = 5L, n_components = 2L)),
   list(model = list(class = "n4m.PLS", params = list(n_components = 2L)))))
-evaluated <- nirs4all_run_portable_pipeline(recipe, list(X = X, y = y))
+if (core_available) evaluated <- nirs4all_run_portable_pipeline(recipe, list(X = X, y = y))
 split <- n4m::kennard_stone_split(X, test_size = 0.25, zero_based = TRUE)
 held_fit <- nirs4all_fit(pipeline, X[split$train + 1L, , drop = FALSE],
                         y[split$train + 1L])
-stopifnot(max(abs(evaluated$selected$predictions -
+if (core_available) stopifnot(max(abs(evaluated$selected$predictions -
                   predict(held_fit, X[split$test + 1L, , drop = FALSE]))) < 1e-10,
           identical(evaluated$evaluation$scope, "selection_validation"))
 
