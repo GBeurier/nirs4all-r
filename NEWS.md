@@ -1,6 +1,6 @@
 # nirs4all 0.7.5
 
-- Dependency floors follow the native-container cohort: Methods `n4m >= 1.3.13`
+- Dependency floors follow the native-container cohort: Methods `n4m >= 1.3.15`
   (native N4MM format 3), `dagml`/DAG CLI `>= 0.4.0`, and the Core archive CLI and
   Python `nirs4all-core >= 0.5.0`. The two Core requirement statements are
   aligned; `nirs4allio >= 0.2.6` is unchanged.
