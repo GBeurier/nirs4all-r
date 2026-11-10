@@ -105,13 +105,22 @@ for (learner in list(nirs4all_pls(n_components = 2L),
   reject(predict(imported, held[, -1L, drop = FALSE]))
 
   bad <- doc
-  bad$preprocessing$sha256 <- paste0("0", substring(bad$preprocessing$sha256, 2L))
+  bad$preprocessing$sha256 <- paste0(
+    if (startsWith(doc$preprocessing$sha256, "0")) "1" else "0",
+    substring(doc$preprocessing$sha256, 2L))
+  stopifnot(!identical(bad$preprocessing$sha256, doc$preprocessing$sha256))
   reject(nirs4all_import_trained_pipeline(emit(bad)))
   bad <- doc
-  bad$model$sha256 <- paste0("0", substring(bad$model$sha256, 2L))
+  bad$model$sha256 <- paste0(
+    if (startsWith(doc$model$sha256, "0")) "1" else "0",
+    substring(doc$model$sha256, 2L))
+  stopifnot(!identical(bad$model$sha256, doc$model$sha256))
   reject(nirs4all_import_trained_pipeline(emit(bad)))
   bad <- doc
-  bad$manifest_sha256 <- paste0("0", substring(bad$manifest_sha256, 2L))
+  bad$manifest_sha256 <- paste0(
+    if (startsWith(doc$manifest_sha256, "0")) "1" else "0",
+    substring(doc$manifest_sha256, 2L))
+  stopifnot(!identical(bad$manifest_sha256, doc$manifest_sha256))
   reject(nirs4all_import_trained_pipeline(emit(bad)))
   bad <- doc
   manifest <- jsonlite::fromJSON(bad$manifest_json, simplifyVector = FALSE)

@@ -75,7 +75,11 @@ fitted <- nirs4all_fit(recipes$stateful, train, y[1:17])
 document <- jsonlite::fromJSON(nirs4all_export_trained_pipeline(fitted),
                                 simplifyVector = FALSE)
 tampered <- document
-tampered$model$sha256 <- paste0("0", substring(document$model$sha256, 2L))
+# Change the digest even when its first hexadecimal digit is already zero.
+tampered$model$sha256 <- paste0(
+  if (startsWith(document$model$sha256, "0")) "1" else "0",
+  substring(document$model$sha256, 2L))
+stopifnot(!identical(tampered$model$sha256, document$model$sha256))
 stopifnot(inherits(try(nirs4all_import_trained_pipeline(as.character(
   jsonlite::toJSON(tampered, auto_unbox = TRUE))), silent = TRUE), "try-error"))
 tampered <- document
