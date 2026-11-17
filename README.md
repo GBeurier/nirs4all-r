@@ -9,6 +9,21 @@ Formats 0.2.11 and Core 0.4.3. Install from
 <https://gbeurier.r-universe.dev>; the package has not been submitted to CRAN.
 See `NEWS.md` for the qualified profiles and their limits.
 
+## Version constraints
+
+Dependencies on packages from other nirs4all repositories are declared at
+**minor** granularity, never more precisely: `n4m (>= 1.3.0)`,
+`dagml (>= 0.4.0)`, `dagmldata (>= 0.2.0)` and `nirs4allio (>= 0.2.0)`, matching
+the ecosystem's Rust `"0.4"`, Python `>=0.4,<0.5` and npm `^0.4.0` ranges.
+`DESCRIPTION` declares lower bounds only: R can express an upper bound only by
+repeating a package entry, which this package does not rely on. The exact cohort an
+installation receives comes from the R-universe build and the release order. In
+return a patch release of an owner package changes no wire format, persisted
+schema, `.n4a` payload semantics or native ABI; such changes need at least a
+minor release (for 0.x, every minor is breaking). The native `n4m` library is
+accepted by its runtime ABI check, not by its version. The full policy is
+`docs/contracts/release/VERSION_CONSTRAINTS.md` in `nirs4all-ecosystem`.
+
 The public native API now includes `nirs4all_run`, workflow prediction/export/
 reload/retraining, result views and experiment persistence, resumable tuning,
 split-conformal calibration and frozen robustness audits. These workflows use
