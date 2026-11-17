@@ -1,0 +1,37 @@
+name: R CMD check
+
+# R-universe builds the package from these sources; check the DESCRIPTION,
+# namespace, documentation and tests on Linux before they reach it.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: R CMD check (ubuntu-latest, R release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      _R_CHECK_FORCE_SUGGESTS_: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      # Imports only: n4m comes from the R-universe that builds this package;
+      # optional Suggests and native CLIs are skipped by the tests themselves.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          dependencies: '"hard"'
+          extra-packages: any::rcmdcheck
+          extra-repositories: https://gbeurier.r-universe.dev
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          args: 'c("--no-manual")'
+          error-on: '"error"'
