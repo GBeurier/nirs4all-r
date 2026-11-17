@@ -24,13 +24,14 @@ jobs:
         with:
           r-version: release
           use-public-rspm: true
-      # Imports only: n4m comes from the R-universe that builds this package;
-      # optional Suggests and native CLIs are skipped by the tests themselves.
+          # n4m and the other owner packages come from the GBeurier R-universe.
+          extra-repositories: https://gbeurier.r-universe.dev
+      # Imports only; optional Suggests and native CLIs are skipped by the
+      # tests themselves.
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           dependencies: '"hard"'
           extra-packages: any::rcmdcheck
-          extra-repositories: https://gbeurier.r-universe.dev
       - uses: r-lib/actions/check-r-package@v2
         with:
           args: 'c("--no-manual")'
