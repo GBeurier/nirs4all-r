@@ -8,3 +8,4 @@
 ^[.]rlib$
 ^LICENSING(_FR)?[.]md$
 ^THIRD_PARTY_NOTICES[.]md$
+^[.]github$
