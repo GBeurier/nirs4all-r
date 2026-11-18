@@ -11,18 +11,21 @@ See `NEWS.md` for the qualified profiles and their limits.
 
 ## Version constraints
 
-Dependencies on packages from other nirs4all repositories are declared at
-**minor** granularity, never more precisely: `n4m (>= 1.3.0)`,
-`dagml (>= 0.4.0)`, `dagmldata (>= 0.2.0)` and `nirs4allio (>= 0.2.0)`, matching
-the ecosystem's Rust `"0.4"`, Python `>=0.4,<0.5` and npm `^0.4.0` ranges.
-`DESCRIPTION` declares lower bounds only: R can express an upper bound only by
-repeating a package entry, which this package does not rely on. The exact cohort an
-installation receives comes from the R-universe build and the release order. In
-return a patch release of an owner package changes no wire format, persisted
-schema, `.n4a` payload semantics or native ABI; such changes need at least a
-minor release (for 0.x, every minor is breaking). The native `n4m` library is
-accepted by its runtime ABI check, not by its version. The full policy is
-`docs/contracts/release/VERSION_CONSTRAINTS.md` in `nirs4all-ecosystem`.
+Versions are `X.Y.Z`. A patch (`Z`) carries fixes and purely additive,
+backward-compatible features (existing outputs, wire formats, schemas and ABI
+symbols unchanged); a minor (`Y`) carries any compatibility break (changed or
+removed API signature, ABI break or ABI version change, wire/schema/fixture
+change, renamed ids, changed numerical results). Dependencies on packages from
+other nirs4all repositories accept every patch of one tested minor series. R
+can express an upper bound only by repeating a package entry, so `DESCRIPTION`
+declares lower bounds only (`n4m (>= 1.3.0)`, `dagml (>= 0.4.0)`,
+`dagmldata (>= 0.2.0)`, `nirs4allio (>= 0.2.0)`) and each bound names the start
+of the tested series; moving to a new minor series is an explicit, tested change
+recorded in `NEWS.md`. The exact cohort an installation receives comes from the
+R-universe build and the release order. The native `n4m` library is accepted by
+its runtime ABI check, not by its version. The full policy is
+[`docs/contracts/release/VERSION_CONSTRAINTS.md`](https://github.com/GBeurier/nirs4all-ecosystem/blob/main/docs/contracts/release/VERSION_CONSTRAINTS.md) in
+`nirs4all-ecosystem`.
 
 The public native API now includes `nirs4all_run`, workflow prediction/export/
 reload/retraining, result views and experiment persistence, resumable tuning,
