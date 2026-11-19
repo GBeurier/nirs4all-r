@@ -2,7 +2,9 @@
 
 - Adopt the Methods `n4m` 1.5 series (required lower bound 1.5.0),
   optional `dagml` / DAG CLI 0.5 series, and Core CLI / Python Core 0.6
-  series. `dagmldata` 0.2 and IO 0.2 requirements are unchanged. R declares
+  series. Optional Python workspace access also selects the full SDK 1.6
+  series (required lower bound 1.6.0), whose Core requirement admits 0.6.
+  `dagmldata` 0.2 and IO 0.2 requirements are unchanged. R declares
   lower bounds in DESCRIPTION; these documented series are the release targets,
   and moving to another minor requires an explicit consumer decision.
   Current-cohort qualification is pending owner-package availability and the

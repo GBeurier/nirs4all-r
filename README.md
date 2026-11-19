@@ -26,7 +26,10 @@ of the selected series; moving to a new minor series requires explicit
 qualification and a consumer decision
 recorded in `NEWS.md`. The exact cohort an installation receives comes from the
 R-universe build and the release order. Core CLI and Python Core target the
-0.6 series; the optional DAG CLI targets 0.5. These are explicit series
+0.6 series; the optional DAG CLI targets 0.5. Optional Python workspace
+access selects the full SDK 1.6 series (`>=1.6.0`), whose dependency range
+admits Core 0.6. This workspace selection is separate from local R fit/predict
+and retains the qualification limits above. These are explicit series
 adoptions, rather than a claim that every higher version is qualified.
 The native `n4m` library is accepted by
 its runtime ABI check, not by its version. The full policy is

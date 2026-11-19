@@ -40,5 +40,6 @@ Encoding: UTF-8
 SystemRequirements: nirs4all-core-archive (>= 0.6.0, which provides the neutral
     n4a-write and n4a-read commands) and dag-ml-cli (>= 0.5.0)
     for optional native ZIP archive replay (POSIX); Python >= 3.11 with
-    nirs4all-core >= 0.6.0 and the full nirs4all SDK for optional workspace access
+    nirs4all-core >= 0.6.0 and the full nirs4all SDK >= 1.6.0
+    for optional workspace access
 NeedsCompilation: no
