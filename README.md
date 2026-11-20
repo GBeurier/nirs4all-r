@@ -3,11 +3,13 @@
 License: `CeCILL-2.1 OR AGPL-3.0-or-later` (your choice; R: `CeCILL-2.1 | AGPL (>= 3)`),
 with an optional commercial license (<nirs4all-admin@cirad.fr>); see `LICENSING.md`
 and `THIRD_PARTY_NOTICES.md`. R-universe builds this package from `nirs4all-r`.
-Version 0.7.0 requires the publicly distributed R binding `n4m >= 1.3.2`.
-The qualified native cohort is DAG-ML 0.3.37, DAG-ML-Data 0.2.13, IO 0.2.5,
-Formats 0.2.11 and Core 0.4.3. Install from
-<https://gbeurier.r-universe.dev>; the package has not been submitted to CRAN.
-See `NEWS.md` for the qualified profiles and their limits.
+Version 0.8.0 targets the R `n4m` 1.5 series (required lower bound 1.5.0),
+DAG-ML 0.5, DAG-ML-Data 0.2 and Core 0.6. Install from
+<https://gbeurier.r-universe.dev> once the owner cohort is available for your
+platform; the package has not been submitted to CRAN. The earlier qualified
+cohorts remain historical evidence. See [`NEWS.md`](NEWS.md) for the numerical
+changes, profiles and their limits. Current-cohort qualification is pending
+owner-package availability and executed package/native checks.
 
 ## Version constraints
 
@@ -18,11 +20,18 @@ removed API signature, ABI break or ABI version change, wire/schema/fixture
 change, renamed ids, changed numerical results). Dependencies on packages from
 other nirs4all repositories accept every patch of one tested minor series. R
 can express an upper bound only by repeating a package entry, so `DESCRIPTION`
-declares lower bounds only (`n4m (>= 1.3.0)`, `dagml (>= 0.4.0)`,
+declares lower bounds only (`n4m (>= 1.5.0)`, `dagml (>= 0.5.0)`,
 `dagmldata (>= 0.2.0)`, `nirs4allio (>= 0.2.0)`) and each bound names the start
-of the tested series; moving to a new minor series is an explicit, tested change
+of the selected series; moving to a new minor series requires explicit
+qualification and a consumer decision
 recorded in `NEWS.md`. The exact cohort an installation receives comes from the
-R-universe build and the release order. The native `n4m` library is accepted by
+R-universe build and the release order. Core CLI and Python Core target the
+0.6 series; the optional DAG CLI targets 0.5. Optional Python workspace
+access selects the full SDK 1.6 series (`>=1.6.0`), whose dependency range
+admits Core 0.6. This workspace selection is separate from local R fit/predict
+and retains the qualification limits above. These are explicit series
+adoptions, rather than a claim that every higher version is qualified.
+The native `n4m` library is accepted by
 its runtime ABI check, not by its version. The full policy is
 [`docs/contracts/release/VERSION_CONSTRAINTS.md`](https://github.com/GBeurier/nirs4all-ecosystem/blob/main/docs/contracts/release/VERSION_CONSTRAINTS.md) in
 `nirs4all-ecosystem`.
@@ -649,8 +658,8 @@ prediction <- nirs4all_core_archive_predict(
 )
 ```
 
-Install `nirs4all-core-archive` 0.4.2 or later, `dag-ml-cli` 0.3.37 or later and
-the R `n4m` binding 1.3.2 or later for this optional replay route. Core validates
+Use the selected `nirs4all-core-archive` 0.6 series, `dag-ml-cli` 0.5 series
+and R `n4m` 1.5 series for this optional replay route. Core validates
 the V1 container, resolves the entrypoint and passes the selected signed package bytes to DAG-ML; DAG-ML hydrates
 the state, schedules PREDICT and releases it through the persistent R process
 protocol. No Python interpreter is used. The installed raw adapter covers the

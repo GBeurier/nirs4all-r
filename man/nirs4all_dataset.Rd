@@ -16,7 +16,7 @@ nirs4all_multimodal_load(value, core_cli = Sys.which("nirs4all-core-archive"))
 
 nirs4all_multimodal_archive_predict(path, dataset, core_cli = Sys.which("nirs4all-core-archive"), dag_cli = Sys.which("dag-ml-cli"),
     workdir = tempfile("nirs4all-raw-archive-"), adapter_script = system.file("adapters", "nirs4all_core_multimodal_adapter.R",
-        package = "nirs4all"))
+        package = "nirs4all"), entrypoint = NULL)
 }
 \arguments{
   \item{value}{Native dataset or predictor envelope, or its JSON file.}
@@ -28,6 +28,7 @@ nirs4all_multimodal_archive_predict(path, dataset, core_cli = Sys.which("nirs4al
   \item{dag_cli}{Installed DAG-ML executable for native process replay.}
   \item{workdir}{New or empty native working directory to retain.}
   \item{adapter_script}{Installed persistent R adapter script for target-free archive replay.}
+  \item{entrypoint}{Optional named container entrypoint for native replay.}
 }
 \description{Normalize a raw dataset through native IO, compose the supported four-source scaler/tensor-PCA/mixed-column/Ridge profile through n4m, and persist complete native N4MF state with its IO schemas. Prediction requires a target-free prediction cohort. Native archive replay additionally uses Core and a persistent DAG-ML R adapter; this process route requires POSIX. Native numerical algorithms and parsers stay in their upstream packages.}
 \value{The corresponding native workflow, tuning study, calibrated result, dataset, predictor, result view, or invisible output path.}

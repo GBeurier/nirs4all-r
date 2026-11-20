@@ -1,3 +1,27 @@
+# nirs4all 0.8.0
+
+- Adopt the Methods `n4m` 1.5 series (required lower bound 1.5.0),
+  optional `dagml` / DAG CLI 0.5 series, and Core CLI / Python Core 0.6
+  series. Optional Python workspace access also selects the full SDK 1.6
+  series (required lower bound 1.6.0), whose Core requirement admits 0.6.
+  `dagmldata` 0.2 and IO 0.2 requirements are unchanged. R declares
+  lower bounds in DESCRIPTION; these documented series are the release targets,
+  and moving to another minor requires an explicit consumer decision.
+  Current-cohort qualification is pending owner-package availability and the
+  executed package/native checks. Retaining the existing optional IO lower
+  bound adds no IO 0.3 qualification claim.
+- **Numeric change:** adopting Methods 1.5 from the previous 1.3 cohort also
+  includes the Methods 1.4 standardization correction. Near-zero standard
+  deviations below `10 * DBL_EPSILON` use a scale of 1, and mirror-mode
+  Savitzky-Golay odd derivatives have exact-zero endpoints. Existing native
+  PLS / Ridge / standardization fits can therefore produce different numerical
+  outputs on rounding-noise columns. R continues to delegate all numerical
+  work to Methods. Replaying historical fitted states retains their stored
+  scales; retraining or refitting applies the newly selected owner rule.
+- Existing R recipe, trained-state and archive schemas are unchanged;
+  historical qualification snapshots retain their
+  original cohort and are not relabeled as current evidence.
+
 # nirs4all 0.7.5
 
 - Dependency floors follow the native-container cohort: Methods `n4m >= 1.3.15`
