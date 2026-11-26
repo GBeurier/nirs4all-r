@@ -10,8 +10,12 @@ if (nzchar(fixture)) {
   oracle <- jsonlite::fromJSON(Sys.getenv("NIRS4ALL_WORKSPACE_PREDICT_ORACLE"))
   session <- nirs4all_workspace_session(workspace, run)
   predicted <- nirs4all_workspace_predict(session, data$x, data$sample_ids)
+  observed <- as.numeric(unlist(predicted$y_pred))
+  expected <- as.numeric(oracle$y_pred)
   stopifnot(identical(unlist(predicted$sample_ids), data$sample_ids),
-            max(abs(unlist(predicted$y_pred) - as.numeric(oracle$y_pred))) < 1e-12)
+            length(expected) == nrow(data$x), length(observed) == length(expected),
+            length(expected) > 0L, all(is.finite(expected)), all(is.finite(observed)),
+            max(abs(observed - expected)) < 1e-12)
   archive <- tempfile("workspace é snapshot ", fileext=".n4w")
   destination <- tempfile("workspace é imported ")
   nirs4all_workspace_export(workspace, archive)

@@ -3,13 +3,11 @@
 License: `CeCILL-2.1 OR AGPL-3.0-or-later` (your choice; R: `CeCILL-2.1 | AGPL (>= 3)`),
 with an optional commercial license (<nirs4all-admin@cirad.fr>); see `LICENSING.md`
 and `THIRD_PARTY_NOTICES.md`. R-universe builds this package from `nirs4all-r`.
-Version 0.8.0 targets the R `n4m` 1.5 series (required lower bound 1.5.0),
-DAG-ML 0.5, DAG-ML-Data 0.2 and Core 0.6. Install from
-<https://gbeurier.r-universe.dev> once the owner cohort is available for your
-platform; the package has not been submitted to CRAN. The earlier qualified
-cohorts remain historical evidence. See [`NEWS.md`](NEWS.md) for the numerical
-changes, profiles and their limits. Current-cohort qualification is pending
-owner-package availability and executed package/native checks.
+Version 0.9.0 selects Formats 0.3, IO and Datasets 0.4, Core 0.7 and the
+optional Python SDK 1.7. The numerical engine uses R `n4m` 1.5, DAG-ML 0.5
+and DAG-ML-Data 0.2. The public R package host is
+<https://gbeurier.r-universe.dev>. See [NEWS.md](NEWS.md) for the observed
+reader change and the tested Linux profiles.
 
 ## Version constraints
 
@@ -21,14 +19,15 @@ change, renamed ids, changed numerical results). Dependencies on packages from
 other nirs4all repositories accept every patch of one tested minor series. R
 can express an upper bound only by repeating a package entry, so `DESCRIPTION`
 declares lower bounds only (`n4m (>= 1.5.0)`, `dagml (>= 0.5.0)`,
-`dagmldata (>= 0.2.0)`, `nirs4allio (>= 0.2.0)`) and each bound names the start
+`dagmldata (>= 0.2.0)`, `nirs4allformats (>= 0.3.0)`,
+`nirs4allio (>= 0.4.0)` and `nirs4alldatasets (>= 0.4.0)`) and each bound names the start
 of the selected series; moving to a new minor series requires explicit
 qualification and a consumer decision
 recorded in `NEWS.md`. The exact cohort an installation receives comes from the
 R-universe build and the release order. Core CLI and Python Core target the
-0.6 series; the optional DAG CLI targets 0.5. Optional Python workspace
-access selects the full SDK 1.6 series (`>=1.6.0`), whose dependency range
-admits Core 0.6. This workspace selection is separate from local R fit/predict
+0.7 series; the optional DAG CLI targets 0.5. Optional Python workspace
+access selects the full SDK 1.7 series (`>=1.7.0`), whose dependency range
+admits Core 0.7. This workspace selection is separate from local R fit/predict
 and retains the qualification limits above. These are explicit series
 adoptions, rather than a claim that every higher version is qualified.
 The native `n4m` library is accepted by
@@ -658,7 +657,7 @@ prediction <- nirs4all_core_archive_predict(
 )
 ```
 
-Use the selected `nirs4all-core-archive` 0.6 series, `dag-ml-cli` 0.5 series
+Use the selected `nirs4all-core-archive` 0.7 series, `dag-ml-cli` 0.5 series
 and R `n4m` 1.5 series for this optional replay route. Core validates
 the V1 container, resolves the entrypoint and passes the selected signed package bytes to DAG-ML; DAG-ML hydrates
 the state, schedules PREDICT and releases it through the persistent R process
