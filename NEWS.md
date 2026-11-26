@@ -1,3 +1,16 @@
+# nirs4all 0.9.0
+
+- Select the Formats 0.3 series. For WinISI/ISIscan constituent records,
+  a stored zero now decodes as missing. Reader output can therefore change
+  when importing historical files.
+- Select IO and Datasets 0.4 for optional R namespace discovery, Core 0.7
+  for native archive commands, and SDK 1.7 with Python Core 0.7 for optional
+  workspace access. The host delegates workspace operations to those packages.
+- Linux R checks exercised Formats regression and categorical classification,
+  Core archive creation and replay, and SDK workspace queries, prediction,
+  export and import. The workspace check requires one finite reference and
+  observed prediction per input row.
+
 # nirs4all 0.8.0
 
 - Adopt the Methods `n4m` 1.5 series (required lower bound 1.5.0),
